@@ -1,0 +1,9 @@
+from typing import Protocol
+
+
+class Connector(Protocol):
+    def run_command(self, command: str) -> str: ...
+
+    def open_interactive(self) -> object: ...
+
+    def close(self) -> None: ...

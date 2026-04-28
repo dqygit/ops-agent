@@ -1,0 +1,10 @@
+__pycache__/
+.worktrees/
+.claude/
+.pytest_cache/
+.venv/
+docs/superpowers/
+.python-version
+build/
+dist/
+main.spec
