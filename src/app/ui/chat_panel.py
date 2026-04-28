@@ -1,18 +1,10 @@
 from app.shared.enums import AssetType
-from PySide6.QtWidgets import QComboBox, QPushButton, QPlainTextEdit, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QComboBox, QFrame, QHBoxLayout, QLabel, QPlainTextEdit, QPushButton, QVBoxLayout, QWidget
 
 
 class ChatPanel(QWidget):
     def __init__(self):
         super().__init__()
-        self.model_selector = QComboBox()
-        self.conversation_box = QPlainTextEdit()
-        self.conversation_box.setReadOnly(True)
-        self.input_box = QPlainTextEdit()
-        self.attach_context_button = QPushButton("Attach Terminal Context")
-        self.run_button = QPushButton("Generate Plan")
-        self.approve_button = QPushButton("Approve")
-        self.reject_button = QPushButton("Reject")
         self._chat_service = None
         self._conversation_id = "conversation-1"
         self._asset = None
@@ -23,14 +15,59 @@ class ChatPanel(QWidget):
         self._pending_run_id = None
         self._session_id = 0
         self._agent_event_listener = None
-        layout = QVBoxLayout(self)
-        layout.addWidget(self.model_selector)
-        layout.addWidget(self.conversation_box)
-        layout.addWidget(self.input_box)
-        layout.addWidget(self.attach_context_button)
-        layout.addWidget(self.run_button)
-        layout.addWidget(self.approve_button)
-        layout.addWidget(self.reject_button)
+
+        self.model_selector = QComboBox()
+        self.conversation_box = QPlainTextEdit()
+        self.conversation_box.setReadOnly(True)
+        self.conversation_box.setPlaceholderText("Assistant output will appear here")
+        self.input_box = QPlainTextEdit()
+        self.input_box.setPlaceholderText("Describe the task you want to run against the selected asset")
+        self.attach_context_button = QPushButton("Attach Context")
+        self.run_button = QPushButton("Run Agent")
+        self.run_button.setObjectName("primaryButton")
+        self.approve_button = QPushButton("Approve")
+        self.approve_button.setObjectName("primaryButton")
+        self.reject_button = QPushButton("Reject")
+        self.reject_button.setObjectName("dangerButton")
+
+        root_layout = QVBoxLayout(self)
+        root_layout.setContentsMargins(0, 0, 0, 0)
+
+        card = QFrame()
+        card.setObjectName("panelCard")
+        card_layout = QVBoxLayout(card)
+        card_layout.setContentsMargins(14, 14, 14, 14)
+        card_layout.setSpacing(12)
+
+        title = QLabel("AI Workspace")
+        title.setObjectName("sectionTitle")
+        meta = QLabel("Review plans, approvals, and final assistant output")
+        meta.setObjectName("sectionMeta")
+        title_box = QVBoxLayout()
+        title_box.setContentsMargins(0, 0, 0, 0)
+        title_box.setSpacing(2)
+        title_box.addWidget(title)
+        title_box.addWidget(meta)
+        card_layout.addLayout(title_box)
+
+        card_layout.addWidget(self.model_selector)
+        card_layout.addWidget(self.conversation_box, 1)
+        card_layout.addWidget(self.input_box)
+
+        action_row = QHBoxLayout()
+        action_row.setSpacing(8)
+        action_row.addWidget(self.attach_context_button)
+        action_row.addWidget(self.run_button)
+        card_layout.addLayout(action_row)
+
+        approval_row = QHBoxLayout()
+        approval_row.setSpacing(8)
+        approval_row.addWidget(self.approve_button)
+        approval_row.addWidget(self.reject_button)
+        card_layout.addLayout(approval_row)
+
+        root_layout.addWidget(card)
+
         self.run_button.clicked.connect(self._handle_run_clicked)
         self.approve_button.clicked.connect(lambda: self._resume_pending_run(True))
         self.reject_button.clicked.connect(lambda: self._resume_pending_run(False))
@@ -93,7 +130,7 @@ class ChatPanel(QWidget):
         self._recent_messages = messages
         self._set_selected_model(model_name)
         lines = [f"{message['role']}: {message['content']}" for message in messages]
-        self.conversation_box.setPlainText("\n".join(lines))
+        self.conversation_box.setPlainText("\n\n".join(lines))
         self._restore_pending_approval()
 
     def set_terminal_context(self, terminal_context) -> None:
@@ -160,7 +197,7 @@ class ChatPanel(QWidget):
         if event_type == "assistant_status":
             lines.append(f"状态: {payload['value']}")
         elif event_type == "plan_ready":
-            lines.append("Plan:")
+            lines.append("Plan")
             for index, step in enumerate(payload.get("steps", []), start=1):
                 lines.append(f"{index}. {step['title']} -> {step['command']}")
         elif event_type == "approval_requested":
@@ -182,4 +219,5 @@ class ChatPanel(QWidget):
         if lines:
             current = self.conversation_box.toPlainText()
             addition = "\n".join(lines)
-            self.conversation_box.setPlainText(f"{current}\n{addition}".strip())
+            self.conversation_box.setPlainText(f"{current}\n\n{addition}".strip())
+            self.conversation_box.verticalScrollBar().setValue(self.conversation_box.verticalScrollBar().maximum())

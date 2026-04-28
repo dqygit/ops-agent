@@ -8,3 +8,5 @@ docs/superpowers/
 build/
 dist/
 main.spec
+node_modules/
+dist/

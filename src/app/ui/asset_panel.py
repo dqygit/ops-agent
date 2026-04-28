@@ -1,5 +1,15 @@
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QHBoxLayout, QListWidget, QListWidgetItem, QPushButton, QTabWidget, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QListWidget,
+    QListWidgetItem,
+    QPushButton,
+    QStackedWidget,
+    QVBoxLayout,
+    QWidget,
+)
 
 from app.services.asset_service import (
     create_asset_record,
@@ -13,31 +23,72 @@ from app.services.asset_service import (
 class AssetPanel(QWidget):
     def __init__(self):
         super().__init__()
-        self.asset_list = QListWidget()
-        self.history_list = QListWidget()
-        self.add_asset_button = QPushButton("Add Asset")
-        self.edit_asset_button = QPushButton("Edit Asset")
-        self.delete_asset_button = QPushButton("Delete Asset")
         self._session_factory = None
         self._asset_editor = None
         self._history_loader = None
         self._selection_listeners = []
         self._history_selection_listeners = []
-        tabs = QTabWidget()
-        tabs.addTab(self.asset_list, "Assets")
-        tabs.addTab(self.history_list, "History")
+
+        self.asset_list = QListWidget()
+        self.history_list = QListWidget()
+        self.add_asset_button = QPushButton("Add")
+        self.edit_asset_button = QPushButton("Edit")
+        self.delete_asset_button = QPushButton("Delete")
+        self.delete_asset_button.setObjectName("dangerButton")
+
+        self._assets_tab_button = QPushButton("Assets")
+        self._history_tab_button = QPushButton("History")
+        self._assets_tab_button.setObjectName("tabButton")
+        self._history_tab_button.setObjectName("tabButton")
+        self._stack = QStackedWidget()
+        self._stack.addWidget(self.asset_list)
+        self._stack.addWidget(self.history_list)
+
+        root_layout = QVBoxLayout(self)
+        root_layout.setContentsMargins(0, 0, 0, 0)
+
+        card = QFrame()
+        card.setObjectName("panelCard")
+        card_layout = QVBoxLayout(card)
+        card_layout.setContentsMargins(14, 14, 14, 14)
+        card_layout.setSpacing(12)
+
+        title = QLabel("Resource Explorer")
+        title.setObjectName("sectionTitle")
+        meta = QLabel("Manage assets and reopen previous assistant sessions")
+        meta.setObjectName("sectionMeta")
+
+        title_box = QVBoxLayout()
+        title_box.setContentsMargins(0, 0, 0, 0)
+        title_box.setSpacing(2)
+        title_box.addWidget(title)
+        title_box.addWidget(meta)
+        card_layout.addLayout(title_box)
+
+        tabs = QHBoxLayout()
+        tabs.setSpacing(8)
+        tabs.addWidget(self._assets_tab_button)
+        tabs.addWidget(self._history_tab_button)
+        card_layout.addLayout(tabs)
+
         actions = QHBoxLayout()
+        actions.setSpacing(8)
         actions.addWidget(self.add_asset_button)
         actions.addWidget(self.edit_asset_button)
         actions.addWidget(self.delete_asset_button)
-        layout = QVBoxLayout(self)
-        layout.addLayout(actions)
-        layout.addWidget(tabs)
+        card_layout.addLayout(actions)
+        card_layout.addWidget(self._stack, 1)
+
+        root_layout.addWidget(card)
+
+        self._assets_tab_button.clicked.connect(lambda: self._set_tab(0))
+        self._history_tab_button.clicked.connect(lambda: self._set_tab(1))
         self.add_asset_button.clicked.connect(self._handle_add_clicked)
         self.edit_asset_button.clicked.connect(self._handle_edit_clicked)
         self.delete_asset_button.clicked.connect(self.delete_selected_asset)
         self.asset_list.currentItemChanged.connect(self._handle_current_item_changed)
         self.history_list.itemClicked.connect(self._handle_history_item_clicked)
+        self._set_tab(0)
 
     def bind_asset_store(self, session_factory) -> None:
         self._session_factory = session_factory
@@ -64,8 +115,9 @@ class AssetPanel(QWidget):
             return
         with self._session_factory() as session:
             for asset in list_asset_records(session):
-                item = QListWidgetItem(f"{asset.name} ({asset.asset_type}) @ {asset.host}:{asset.port}")
+                item = QListWidgetItem(f"{asset.name}\n{asset.asset_type.upper()}  {asset.host}:{asset.port}")
                 item.setData(Qt.ItemDataRole.UserRole, asset.id)
+                item.setToolTip(f"{asset.name} ({asset.asset_type}) @ {asset.host}:{asset.port}")
                 self.asset_list.addItem(item)
                 if selected_asset_id is not None and asset.id == selected_asset_id:
                     self.asset_list.setCurrentItem(item)
@@ -75,7 +127,8 @@ class AssetPanel(QWidget):
         if self._history_loader is None or asset is None:
             return
         for assistant_session in self._history_loader(asset):
-            item = QListWidgetItem(assistant_session.title)
+            model_name = assistant_session.active_model or "unknown"
+            item = QListWidgetItem(f"{assistant_session.title}\nModel: {model_name}")
             item.setData(Qt.ItemDataRole.UserRole, assistant_session.id)
             item.setData(Qt.ItemDataRole.UserRole + 1, assistant_session.active_model)
             self.history_list.addItem(item)
@@ -156,3 +209,12 @@ class AssetPanel(QWidget):
         self.refresh_history(asset)
         for selection_listener in self._selection_listeners:
             selection_listener(asset)
+
+    def _set_tab(self, index: int) -> None:
+        self._stack.setCurrentIndex(index)
+        self._assets_tab_button.setProperty("active", index == 0)
+        self._history_tab_button.setProperty("active", index == 1)
+        self._assets_tab_button.style().unpolish(self._assets_tab_button)
+        self._assets_tab_button.style().polish(self._assets_tab_button)
+        self._history_tab_button.style().unpolish(self._history_tab_button)
+        self._history_tab_button.style().polish(self._history_tab_button)

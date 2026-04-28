@@ -3,7 +3,9 @@ anthropic==0.74.1
 bcrypt==5.0.0
 cffi==2.0.0
 cryptography==47.0.0
+fastapi==0.118.0
 greenlet==3.5.0
+httpx==0.28.1
 iniconfig==2.3.0
 invoke==3.0.3
 jsonpatch==1.33
