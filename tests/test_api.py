@@ -3,11 +3,13 @@ from sqlalchemy.pool import StaticPool
 from sqlmodel import SQLModel, Session, create_engine
 
 from app.api import app, get_chat_service, get_terminal_service
+from app.db.repositories import create_agent_task, create_approval, create_command_execution, create_task_steps
+from app.db.session import get_session
 from app.services.assistant_session_service import create_or_get_assistant_session
 from app.services.message_service import AssistantMessageService
 from app.services.model_service import ModelService
-from app.db.session import get_session
-from app.shared.enums import AssetType, ModelProvider
+from app.shared.enums import AssetType, ModelProvider, TaskStatus
+from app.shared.schemas import PlanStep
 
 
 class FakeChatService:
@@ -53,6 +55,8 @@ class FakeTerminalService:
         self.open_calls = []
         self.close_calls = []
         self.attach_calls = []
+        self.stream_calls = []
+        self.stream_messages = []
 
     def open_session(self, asset):
         self.open_calls.append(asset)
@@ -61,6 +65,23 @@ class FakeTerminalService:
             "channel": "channel-1",
             "error": "",
         }
+
+    async def stream_session(self, terminal_session_id, websocket):
+        self.stream_calls.append(terminal_session_id)
+        if terminal_session_id != 5:
+            await websocket.close(code=1008)
+            return
+        await websocket.accept()
+        while True:
+            message = await websocket.receive_json()
+            self.stream_messages.append(message)
+            if message["type"] == "input":
+                await websocket.send_json({"type": "output", "data": f"echo: {message['data']}"})
+            elif message["type"] == "resize":
+                await websocket.send_json({"type": "resized", "cols": message["cols"], "rows": message["rows"]})
+            elif message["type"] == "close":
+                await websocket.send_json({"type": "closed"})
+                return
 
     def attach_context(self, terminal_session_id, selection_label, selected_text):
         self.attach_calls.append(
@@ -143,11 +164,14 @@ def test_assets_api_lists_created_assets():
     app.dependency_overrides[get_session] = override_session
 
     try:
+        group_response = client.post("/api/groups", json={"name": "生产环境", "description": "prod hosts"})
+        group_id = group_response.json()["id"]
         create_response = client.post(
             "/api/assets",
             json={
                 "name": "edge-linux",
                 "asset_type": AssetType.LINUX.value,
+                "group_id": group_id,
                 "host": "10.0.0.99",
                 "port": 22,
                 "username": "ops",
@@ -160,15 +184,18 @@ def test_assets_api_lists_created_assets():
     finally:
         app.dependency_overrides.clear()
 
+    assert group_response.status_code == 201
     assert create_response.status_code == 201
     assert create_response.json()["name"] == "edge-linux"
     assert create_response.json()["asset_type"] == AssetType.LINUX.value
+    assert create_response.json()["group_id"] == group_id
     assert create_response.json()["tags"] == ["core", "prod"]
 
     assert list_response.status_code == 200
     assert list_response.json() == [
         {
             "id": 1,
+            "group_id": group_id,
             "name": "edge-linux",
             "asset_type": AssetType.LINUX.value,
             "host": "10.0.0.99",
@@ -176,9 +203,111 @@ def test_assets_api_lists_created_assets():
             "username": "ops",
             "auth_type": "password",
             "tags": ["core", "prod"],
+            "vendor": "",
             "description": "edge node",
         }
     ]
+
+
+def test_groups_api_crud_and_delete_preserves_assets():
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    SQLModel.metadata.create_all(engine)
+
+    def override_session():
+        with Session(engine) as session:
+            yield session
+
+    app.dependency_overrides[get_session] = override_session
+
+    try:
+        create_group_response = client.post("/api/groups", json={"name": "生产环境", "description": "prod hosts"})
+        group_id = create_group_response.json()["id"]
+        update_group_response = client.put(
+            f"/api/groups/{group_id}",
+            json={"name": "核心生产", "description": "core prod hosts"},
+        )
+        missing_group_update_response = client.put("/api/groups/999", json={"name": "missing"})
+        create_asset_response = client.post(
+            "/api/assets",
+            json={
+                "name": "edge-linux",
+                "asset_type": AssetType.LINUX.value,
+                "group_id": group_id,
+                "host": "10.0.0.99",
+                "username": "ops",
+                "auth_type": "password",
+            },
+        )
+        delete_group_response = client.delete(f"/api/groups/{group_id}")
+        missing_group_delete_response = client.delete(f"/api/groups/{group_id}")
+        list_assets_response = client.get("/api/assets")
+        list_groups_response = client.get("/api/groups")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert create_group_response.status_code == 201
+    assert create_group_response.json()["name"] == "生产环境"
+    assert update_group_response.status_code == 200
+    assert update_group_response.json()["name"] == "核心生产"
+    assert missing_group_update_response.status_code == 404
+    assert missing_group_update_response.json() == {"detail": "Group not found"}
+    assert create_asset_response.status_code == 201
+    assert create_asset_response.json()["group_id"] == group_id
+    assert delete_group_response.status_code == 204
+    assert missing_group_delete_response.status_code == 404
+    assert missing_group_delete_response.json() == {"detail": "Group not found"}
+    assert list_assets_response.status_code == 200
+    assert list_assets_response.json()[0]["group_id"] is None
+    assert list_groups_response.status_code == 200
+    assert list_groups_response.json() == []
+
+
+def test_assets_api_creates_local_terminal_without_ssh_fields():
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    SQLModel.metadata.create_all(engine)
+
+    def override_session():
+        with Session(engine) as session:
+            yield session
+
+    app.dependency_overrides[get_session] = override_session
+
+    try:
+        create_response = client.post(
+            "/api/assets",
+            json={
+                "name": "local-shell",
+                "asset_type": AssetType.LOCAL_TERMINAL.value,
+            },
+        )
+        list_response = client.get("/api/assets")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert create_response.status_code == 201
+    assert create_response.json() == {
+        "id": 1,
+        "group_id": None,
+        "name": "local-shell",
+        "asset_type": AssetType.LOCAL_TERMINAL.value,
+        "host": "",
+        "port": 22,
+        "username": "",
+        "auth_type": "",
+        "tags": [],
+        "vendor": "",
+        "description": "",
+    }
+    assert list_response.status_code == 200
+    assert list_response.json()[0]["asset_type"] == AssetType.LOCAL_TERMINAL.value
 
 
 def test_assets_api_lists_sessions_for_one_asset():
@@ -237,12 +366,18 @@ def test_assets_api_lists_sessions_for_one_asset():
             "asset_id": asset_id,
             "title": "conv-2",
             "active_model": "claude-opus-4-6",
+            "terminal_session_id": None,
+            "model_config_id": None,
+            "status": "active",
         },
         {
             "id": 1,
             "asset_id": asset_id,
             "title": "conv-1",
             "active_model": "claude-sonnet-4-6",
+            "terminal_session_id": None,
+            "model_config_id": None,
+            "status": "active",
         },
     ]
 
@@ -339,6 +474,8 @@ def test_chat_run_api_starts_run_restores_pending_approval_and_returns_ui_events
                         "command": "display interface brief",
                         "reason": "selected interface",
                         "risk_level": "low",
+                        "working_directory": "",
+                        "expected_output": "",
                     },
                 )()
             ],
@@ -421,6 +558,8 @@ def test_chat_run_api_starts_run_restores_pending_approval_and_returns_ui_events
                 "command": "display interface brief",
                 "reason": "selected interface",
                 "risk_level": "low",
+                "working_directory": "",
+                "expected_output": "",
             }
         ],
     }
@@ -539,6 +678,31 @@ def test_terminal_session_api_opens_attaches_context_and_closes_session():
     assert missing_session_response.json() == {"detail": "Terminal session not found"}
 
 
+def test_terminal_session_websocket_streams_input_output_resize_and_close():
+    fake_terminal_service = FakeTerminalService()
+    app.dependency_overrides[get_terminal_service] = lambda: fake_terminal_service
+
+    try:
+        with client.websocket_connect("/api/terminal/sessions/5/ws") as websocket:
+            websocket.send_json({"type": "input", "data": "pwd\r"})
+            assert websocket.receive_json() == {"type": "output", "data": "echo: pwd\r"}
+
+            websocket.send_json({"type": "resize", "cols": 120, "rows": 40})
+            assert websocket.receive_json() == {"type": "resized", "cols": 120, "rows": 40}
+
+            websocket.send_json({"type": "close"})
+            assert websocket.receive_json() == {"type": "closed"}
+    finally:
+        app.dependency_overrides.clear()
+
+    assert fake_terminal_service.stream_calls == [5]
+    assert fake_terminal_service.stream_messages == [
+        {"type": "input", "data": "pwd\r"},
+        {"type": "resize", "cols": 120, "rows": 40},
+        {"type": "close"},
+    ]
+
+
 def test_assets_api_gets_updates_and_deletes_one_asset():
     engine = create_engine(
         "sqlite://",
@@ -582,6 +746,28 @@ def test_assets_api_gets_updates_and_deletes_one_asset():
                 "description": "updated router",
             },
         )
+        missing_group_create_response = client.post(
+            "/api/assets",
+            json={
+                "name": "missing-group",
+                "asset_type": AssetType.LINUX.value,
+                "group_id": 999,
+                "host": "10.0.0.30",
+                "username": "ops",
+                "auth_type": "password",
+            },
+        )
+        missing_group_update_response = client.put(
+            f"/api/assets/{asset_id}",
+            json={
+                "name": "missing-group",
+                "asset_type": AssetType.LINUX.value,
+                "group_id": 999,
+                "host": "10.0.0.30",
+                "username": "ops",
+                "auth_type": "password",
+            },
+        )
         delete_response = client.delete(f"/api/assets/{asset_id}")
         missing_get_response = client.get(f"/api/assets/{asset_id}")
         missing_update_response = client.put(
@@ -606,6 +792,7 @@ def test_assets_api_gets_updates_and_deletes_one_asset():
     assert get_response.status_code == 200
     assert get_response.json() == {
         "id": asset_id,
+        "group_id": None,
         "name": "core-router",
         "asset_type": AssetType.HUAWEI.value,
         "host": "10.0.0.10",
@@ -613,12 +800,14 @@ def test_assets_api_gets_updates_and_deletes_one_asset():
         "username": "ops",
         "auth_type": "password",
         "tags": ["core"],
+        "vendor": "",
         "description": "router",
     }
 
     assert update_response.status_code == 200
     assert update_response.json() == {
         "id": asset_id,
+        "group_id": None,
         "name": "core-router-b",
         "asset_type": AssetType.LINUX.value,
         "host": "10.0.0.20",
@@ -626,8 +815,14 @@ def test_assets_api_gets_updates_and_deletes_one_asset():
         "username": "root",
         "auth_type": "key",
         "tags": ["prod", "db"],
+        "vendor": "",
         "description": "updated router",
     }
+
+    assert missing_group_create_response.status_code == 404
+    assert missing_group_create_response.json() == {"detail": "Group not found"}
+    assert missing_group_update_response.status_code == 404
+    assert missing_group_update_response.json() == {"detail": "Group not found"}
 
     assert delete_response.status_code == 204
     assert delete_response.text == ""
@@ -640,3 +835,391 @@ def test_assets_api_gets_updates_and_deletes_one_asset():
 
     assert missing_delete_response.status_code == 404
     assert missing_delete_response.json() == {"detail": "Asset not found"}
+
+
+def test_model_config_api_crud_default_and_masks_api_key(monkeypatch):
+    monkeypatch.setenv("OPS_AGENT_SECRET_KEY", "test-secret-key")
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    SQLModel.metadata.create_all(engine)
+
+    def override_session():
+        with Session(engine) as session:
+            yield session
+
+    app.dependency_overrides[get_session] = override_session
+
+    try:
+        first_response = client.post(
+            "/api/model-configs",
+            json={
+                "name": "primary",
+                "provider": ModelProvider.ANTHROPIC.value,
+                "base_url": "https://api.anthropic.com",
+                "api_key": "sk-test-primary",
+                "model_name": "claude-opus-4-7",
+                "is_default": True,
+                "description": "primary model",
+            },
+        )
+        first_id = first_response.json()["id"]
+        second_response = client.post(
+            "/api/model-configs",
+            json={
+                "name": "backup",
+                "provider": ModelProvider.OPENAI_COMPATIBLE.value,
+                "base_url": "https://example.test/v1",
+                "api_key": "openai-test-backup",
+                "model_name": "gpt-5.5",
+            },
+        )
+        second_id = second_response.json()["id"]
+        set_default_response = client.post(f"/api/model-configs/{second_id}/default")
+        list_response = client.get("/api/model-configs")
+        delete_default_response = client.delete(f"/api/model-configs/{second_id}")
+        delete_non_default_response = client.delete(f"/api/model-configs/{first_id}")
+        models_response = client.get("/api/models")
+        test_response = client.post(
+            "/api/model-configs/test",
+            json={
+                "provider": ModelProvider.ANTHROPIC.value,
+                "base_url": "https://api.anthropic.com",
+                "api_key": "sk-test-primary",
+                "model_name": "claude-opus-4-7",
+            },
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert first_response.status_code == 201
+    assert first_response.json()["api_key_masked"] == "sk-****mary"
+    assert second_response.status_code == 201
+    assert set_default_response.status_code == 200
+    assert set_default_response.json()["is_default"] is True
+    assert list_response.status_code == 200
+    assert {row["is_default"] for row in list_response.json()} == {False, True}
+    assert delete_default_response.status_code == 409
+    assert delete_non_default_response.status_code == 204
+    assert models_response.json()["selected_model"] == "gpt-5.5"
+    assert test_response.json() == {"success": True, "message": "Connection succeeded"}
+
+
+def test_console_api_bootstraps_and_runs_with_event_items():
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    SQLModel.metadata.create_all(engine)
+    fake_chat_service = FakeChatService()
+
+    def override_session():
+        with Session(engine) as session:
+            yield session
+
+    app.dependency_overrides[get_session] = override_session
+    app.dependency_overrides[get_chat_service] = lambda: fake_chat_service
+
+    try:
+        group_response = client.post("/api/groups", json={"name": "生产环境", "description": "prod hosts"})
+        group_id = group_response.json()["id"]
+        create_response = client.post(
+            "/api/assets",
+            json={
+                "name": "console-node",
+                "asset_type": AssetType.LINUX.value,
+                "group_id": group_id,
+                "host": "10.0.0.80",
+                "port": 22,
+                "username": "ops",
+                "auth_type": "password",
+                "tags": ["prod"],
+                "description": "console node",
+            },
+        )
+        asset_id = create_response.json()["id"]
+        bootstrap_response = client.get("/api/console/bootstrap")
+        run_response = client.post(
+            "/api/console/run",
+            json={"prompt": "检查磁盘", "currentEvents": [], "asset_id": asset_id, "model_name": "claude-sonnet-4-6"},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert group_response.status_code == 201
+    assert create_response.status_code == 201
+    assert bootstrap_response.status_code == 200
+    assert bootstrap_response.json()["assets"][0]["name"] == "console-node"
+    assert bootstrap_response.json()["assets"][0]["group_id"] == group_id
+    assert bootstrap_response.json()["groups"][0]["name"] == "生产环境"
+    assert bootstrap_response.json()["modelOptions"]
+    assert run_response.status_code == 200
+    assert run_response.json() == [
+        {"id": "api-0", "kind": "status", "text": "thinking"},
+        {"id": "api-1", "kind": "approval", "text": "Approve this execution plan?"},
+    ]
+    assert fake_chat_service.calls[0]["user_message"] == "检查磁盘"
+    assert fake_chat_service.calls[0]["asset"].id == asset_id
+    assert fake_chat_service.calls[0]["model_name"] == "claude-sonnet-4-6"
+
+
+def test_auto_approval_rule_api_crud_and_match():
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    SQLModel.metadata.create_all(engine)
+
+    def override_session():
+        with Session(engine) as session:
+            yield session
+
+    app.dependency_overrides[get_session] = override_session
+
+    try:
+        create_asset_response = client.post(
+            "/api/assets",
+            json={
+                "name": "router",
+                "asset_type": AssetType.HUAWEI.value,
+                "host": "10.0.0.90",
+                "port": 22,
+                "username": "ops",
+                "auth_type": "password",
+                "tags": ["core"],
+                "description": "router",
+            },
+        )
+        asset_id = create_asset_response.json()["id"]
+        with Session(engine) as session:
+            assistant_session = create_or_get_assistant_session(
+                session,
+                asset_id=asset_id,
+                conversation_id="auto-approval",
+                model_name="claude-opus-4-7",
+            )
+            session_id = assistant_session.id or 0
+        create_rule_response = client.post(
+            f"/api/chat/sessions/{session_id}/auto-approval-rules",
+            json={
+                "name": "display readonly",
+                "asset_type": AssetType.HUAWEI.value,
+                "asset_tags": ["core"],
+                "command_name": "display",
+                "max_risk_level": "low",
+                "readonly_only": True,
+            },
+        )
+        rule_id = create_rule_response.json()["id"]
+        match_response = client.post(
+            f"/api/chat/sessions/{session_id}/auto-approval-rules/match",
+            json={
+                "asset_type": AssetType.HUAWEI.value,
+                "asset_tags": ["core"],
+                "command": "display interface brief",
+                "risk_level": "low",
+            },
+        )
+        high_risk_response = client.post(
+            f"/api/chat/sessions/{session_id}/auto-approval-rules/match",
+            json={
+                "asset_type": AssetType.HUAWEI.value,
+                "asset_tags": ["core"],
+                "command": "display interface brief",
+                "risk_level": "high",
+            },
+        )
+        delete_response = client.delete(f"/api/auto-approval-rules/{rule_id}")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert create_rule_response.status_code == 201
+    assert create_rule_response.json()["asset_tags"] == ["core"]
+    assert match_response.status_code == 200
+    assert match_response.json()["matched"] is True
+    assert match_response.json()["rule_id"] == rule_id
+    assert high_risk_response.json() == {"matched": False, "rule_id": None, "reason": "high risk commands require manual approval"}
+    assert delete_response.status_code == 204
+
+
+def test_auto_approval_rule_rejects_shell_chaining_and_long_duration():
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    SQLModel.metadata.create_all(engine)
+
+    def override_session():
+        with Session(engine) as session:
+            yield session
+
+    app.dependency_overrides[get_session] = override_session
+
+    try:
+        create_asset_response = client.post(
+            "/api/assets",
+            json={
+                "name": "router",
+                "asset_type": AssetType.HUAWEI.value,
+                "host": "10.0.0.91",
+                "port": 22,
+                "username": "ops",
+                "auth_type": "password",
+                "tags": ["core"],
+                "description": "router",
+            },
+        )
+        asset_id = create_asset_response.json()["id"]
+        with Session(engine) as session:
+            assistant_session = create_or_get_assistant_session(
+                session,
+                asset_id=asset_id,
+                conversation_id="auto-approval-safety",
+                model_name="claude-opus-4-7",
+            )
+            session_id = assistant_session.id or 0
+        client.post(
+            f"/api/chat/sessions/{session_id}/auto-approval-rules",
+            json={
+                "name": "display readonly",
+                "asset_type": AssetType.HUAWEI.value,
+                "asset_tags": ["core"],
+                "command_name": "display",
+                "max_risk_level": "low",
+                "readonly_only": True,
+                "max_duration_seconds": 10,
+            },
+        )
+        chained_response = client.post(
+            f"/api/chat/sessions/{session_id}/auto-approval-rules/match",
+            json={
+                "asset_type": AssetType.HUAWEI.value,
+                "asset_tags": ["core"],
+                "command": "display interface brief; reboot",
+                "risk_level": "low",
+            },
+        )
+        long_response = client.post(
+            f"/api/chat/sessions/{session_id}/auto-approval-rules/match",
+            json={
+                "asset_type": AssetType.HUAWEI.value,
+                "asset_tags": ["core"],
+                "command": "display interface brief",
+                "risk_level": "low",
+                "estimated_duration_seconds": 11,
+            },
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert chained_response.json() == {"matched": False, "rule_id": None, "reason": "no matching rule"}
+    assert long_response.json() == {"matched": False, "rule_id": None, "reason": "no matching rule"}
+
+
+def test_task_detail_api_returns_steps_approvals_and_command_executions():
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    SQLModel.metadata.create_all(engine)
+
+    def override_session():
+        with Session(engine) as session:
+            yield session
+
+    app.dependency_overrides[get_session] = override_session
+
+    try:
+        create_asset_response = client.post(
+            "/api/assets",
+            json={
+                "name": "task-node",
+                "asset_type": AssetType.LINUX.value,
+                "host": "10.0.0.92",
+                "port": 22,
+                "username": "ops",
+                "auth_type": "password",
+                "tags": [],
+                "description": "",
+            },
+        )
+        asset_id = create_asset_response.json()["id"]
+        with Session(engine) as session:
+            assistant_session = create_or_get_assistant_session(
+                session,
+                asset_id=asset_id,
+                conversation_id="task-detail",
+                model_name="claude-opus-4-7",
+            )
+            session_id = assistant_session.id or 0
+            task = create_agent_task(
+                session,
+                session_id=session_id,
+                run_id="run-detail",
+                asset_id=asset_id,
+                user_input="检查磁盘",
+                attached_terminal_context="{}",
+                task_type="Check system resources",
+                risk_level="low",
+                status=TaskStatus.COMPLETED.value,
+            )
+            task_id = task.id or 0
+            steps = create_task_steps(
+                session,
+                task_id,
+                [PlanStep(title="Check disk", command="df -h", reason="readonly", expected_output="disk usage")],
+            )
+            step_id = steps[0].id or 0
+            approval = create_approval(
+                session,
+                task_id=task_id,
+                step_id=step_id,
+                asset_id=asset_id,
+                terminal_session_id=0,
+                command="df -h",
+                working_directory="/tmp",
+                risk_level="low",
+                llm_explanation="readonly",
+                expected_output="disk usage",
+                decision="approved",
+                operator="ui",
+            )
+            create_command_execution(
+                session,
+                task_id=task_id,
+                step_id=step_id,
+                asset_id=asset_id,
+                terminal_session_id=0,
+                approval_id=approval.id,
+                command="df -h",
+                status=TaskStatus.COMPLETED.value,
+                working_directory="/tmp",
+                output="ok",
+                error_output="",
+                exit_code=0,
+            )
+        run_response = client.get("/api/chat/runs/run-detail")
+        task_response = client.get(f"/api/tasks/{task_id}")
+        stop_response = client.post(f"/api/tasks/{task_id}/stop")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert run_response.status_code == 200
+    assert run_response.json()["steps"][0]["command"] == "df -h"
+    assert task_response.json()["approvals"][0]["expected_output"] == "disk usage"
+    assert task_response.json()["command_executions"][0]["output"] == "ok"
+    assert stop_response.json()["status"] == "stopped"
+
+
+def test_api_default_dependencies_are_configured(monkeypatch):
+    monkeypatch.setenv("OPS_AGENT_SECRET_KEY", "test-secret-key")
+    app.dependency_overrides.clear()
+
+    assert get_chat_service() is not None
+    assert get_terminal_service() is not None

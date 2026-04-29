@@ -1,22 +1,16 @@
 import { ActionRow } from '../layout/ActionRow'
-import { DangerButton, PrimaryButton, SecondaryButton } from '../layout/Button'
+import { DangerButton, PrimaryButton } from '../layout/Button'
 
 type AssistantActionsProps = {
-  onRun: () => void
+  onApprove: () => void
+  onReject: () => void
 }
 
-export function AssistantActions({ onRun }: AssistantActionsProps) {
+export function AssistantActions({ onApprove, onReject }: AssistantActionsProps) {
   return (
-    <>
-      <ActionRow>
-        <SecondaryButton>Attach Context</SecondaryButton>
-        <PrimaryButton onClick={onRun}>Run Agent</PrimaryButton>
-      </ActionRow>
-
-      <ActionRow>
-        <PrimaryButton>Approve</PrimaryButton>
-        <DangerButton>Reject</DangerButton>
-      </ActionRow>
-    </>
+    <ActionRow>
+      <PrimaryButton onClick={onApprove}>Approve</PrimaryButton>
+      <DangerButton onClick={onReject}>Reject</DangerButton>
+    </ActionRow>
   )
 }

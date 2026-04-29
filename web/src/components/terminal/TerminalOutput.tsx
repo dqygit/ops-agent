@@ -1,11 +1,188 @@
+import { useEffect, useRef } from 'react'
+import { FitAddon } from '@xterm/addon-fit'
+import { Terminal } from '@xterm/xterm'
+import '@xterm/xterm/css/xterm.css'
+
 type TerminalOutputProps = {
+  sessionKey: string
   output: string
+  onInput: (data: string) => void
+  onResize: (cols: number, rows: number) => void
 }
 
-export function TerminalOutput({ output }: TerminalOutputProps) {
+function stripReplayControlSequences(value: string) {
+  return value
+    .replace(/\u001b\[c/g, '')
+    .replace(/\u001b\[\?1004h/g, '')
+    .replace(/\u001b\[\?1004l/g, '')
+    .replace(/\u001b\[\?9001h/g, '')
+    .replace(/\u001b\[\?9001l/g, '')
+}
+
+export function TerminalOutput({ sessionKey, output, onInput, onResize }: TerminalOutputProps) {
+  const containerRef = useRef<HTMLDivElement | null>(null)
+  const terminalHostRef = useRef<HTMLDivElement | null>(null)
+  const terminalRef = useRef<Terminal | null>(null)
+  const fitAddonRef = useRef<FitAddon | null>(null)
+  const writtenLengthRef = useRef(0)
+  const replayingRef = useRef(false)
+  const onInputRef = useRef(onInput)
+  const onResizeRef = useRef(onResize)
+  const lastSentInputRef = useRef<{ value: string; timestamp: number } | null>(null)
+
+  useEffect(() => {
+    onInputRef.current = onInput
+    onResizeRef.current = onResize
+  }, [onInput, onResize])
+
+  const emitInput = (data: string) => {
+    if (replayingRef.current || /^\u001b\[(I|O|\?1;2c)$/.test(data)) {
+      return
+    }
+
+    const now = Date.now()
+    const lastInput = lastSentInputRef.current
+    if (lastInput !== null && lastInput.value === data && now - lastInput.timestamp < 20) {
+      return
+    }
+    lastSentInputRef.current = { value: data, timestamp: now }
+    onInputRef.current(data)
+  }
+
+  useEffect(() => {
+    if (terminalHostRef.current === null) {
+      return
+    }
+
+    const terminal = new Terminal({
+      cursorBlink: true,
+      fontFamily: 'Consolas, "Courier New", monospace',
+      fontSize: 14,
+      convertEol: true,
+      theme: {
+        background: '#060c0e',
+        foreground: '#e5e7eb',
+      },
+    })
+    const fitAddon = new FitAddon()
+    terminal.loadAddon(fitAddon)
+    terminal.open(terminalHostRef.current)
+    const helperTextarea = terminalHostRef.current.querySelector('textarea') as HTMLTextAreaElement | null
+    requestAnimationFrame(() => {
+      fitAddon.fit()
+      onResizeRef.current(terminal.cols, terminal.rows)
+    })
+    terminal.onData((data) => emitInput(data))
+
+    const handleNativeKeyDown = (event: KeyboardEvent) => {
+      if (event.ctrlKey || event.metaKey || event.altKey) {
+        return
+      }
+
+      if (event.key === 'Enter') {
+        event.preventDefault()
+        emitInput('\r')
+        return
+      }
+
+      if (event.key === 'Backspace') {
+        event.preventDefault()
+        emitInput('\u007f')
+        return
+      }
+
+      if (event.key === 'Tab') {
+        event.preventDefault()
+        emitInput('\t')
+        return
+      }
+
+      if (event.key.length === 1) {
+        event.preventDefault()
+        emitInput(event.key)
+      }
+    }
+
+    helperTextarea?.addEventListener('keydown', handleNativeKeyDown)
+
+    const handleResize = () => {
+      fitAddon.fit()
+      onResizeRef.current(terminal.cols, terminal.rows)
+    }
+
+    window.addEventListener('resize', handleResize)
+    terminalRef.current = terminal
+    fitAddonRef.current = fitAddon
+
+    return () => {
+      helperTextarea?.removeEventListener('keydown', handleNativeKeyDown)
+      window.removeEventListener('resize', handleResize)
+      terminal.dispose()
+      terminalRef.current = null
+      fitAddonRef.current = null
+      writtenLengthRef.current = 0
+    }
+  }, [])
+
+  useEffect(() => {
+    const terminal = terminalRef.current
+    const fitAddon = fitAddonRef.current
+    if (terminal === null || fitAddon === null) {
+      return
+    }
+
+    if (output.length < writtenLengthRef.current) {
+      terminal.clear()
+      writtenLengthRef.current = 0
+    }
+
+    const nextChunk = output.slice(writtenLengthRef.current)
+    if (nextChunk.length > 0) {
+      replayingRef.current = true
+      terminal.write(nextChunk)
+      writtenLengthRef.current = output.length
+      queueMicrotask(() => {
+        replayingRef.current = false
+      })
+    }
+    fitAddon.fit()
+  }, [output])
+
+  useEffect(() => {
+    const terminal = terminalRef.current
+    const fitAddon = fitAddonRef.current
+    if (terminal === null || fitAddon === null) {
+      return
+    }
+
+    terminal.clear()
+    writtenLengthRef.current = 0
+
+    if (output.length > 0) {
+      replayingRef.current = true
+      terminal.write(stripReplayControlSequences(output))
+      writtenLengthRef.current = output.length
+      queueMicrotask(() => {
+        replayingRef.current = false
+      })
+    }
+
+    requestAnimationFrame(() => {
+      fitAddon.fit()
+    })
+  }, [sessionKey])
+
   return (
-    <div className="terminal-view" aria-label="Terminal output">
-      <pre>{output}</pre>
+    <div
+      ref={containerRef}
+      className="terminal-view"
+      aria-label="Terminal output"
+      onMouseDown={() => {
+        terminalRef.current?.focus()
+      }}
+      tabIndex={0}
+    >
+      <div ref={terminalHostRef} className="terminal-host" />
     </div>
   )
 }

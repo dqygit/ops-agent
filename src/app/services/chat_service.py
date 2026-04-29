@@ -95,6 +95,8 @@ class ChatService:
                     command=step.command,
                     reason=step.reason,
                     risk_level=step.risk_level,
+                    working_directory=step.working_directory,
+                    expected_output=step.expected_output,
                 )
                 for step in steps
             ],

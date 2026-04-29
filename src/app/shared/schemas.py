@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, SecretStr
+from pydantic import BaseModel, Field, SecretStr, model_validator
 
 from app.shared.enums import AssetType, ModelProvider, TaskStatus
 
@@ -6,13 +6,27 @@ from app.shared.enums import AssetType, ModelProvider, TaskStatus
 class AssetCreate(BaseModel):
     name: str
     asset_type: AssetType
-    host: str
+    group_id: int | None = None
+    host: str = ""
     port: int = 22
-    username: str
-    auth_type: str
+    username: str = ""
+    auth_type: str = ""
     credential_secret: SecretStr | None = None
     tags: list[str] = Field(default_factory=list)
+    vendor: str = ""
     description: str = ""
+
+    @model_validator(mode="after")
+    def validate_connection_fields(self):
+        if self.asset_type is AssetType.LOCAL_TERMINAL:
+            return self
+        if not self.host:
+            raise ValueError("host is required for remote assets")
+        if not self.username:
+            raise ValueError("username is required for remote assets")
+        if not self.auth_type:
+            raise ValueError("auth_type is required for remote assets")
+        return self
 
 
 class ModelConfig(BaseModel):
@@ -20,6 +34,9 @@ class ModelConfig(BaseModel):
     model_name: str
     base_url: str
     api_key: SecretStr
+    name: str = "default"
+    is_default: bool = True
+    description: str = ""
     timeout_seconds: int = 30
     temperature: float = 0.2
     max_tokens: int = 1024
@@ -36,6 +53,8 @@ class PlanStep(BaseModel):
     command: str
     reason: str
     risk_level: str = "low"
+    working_directory: str = ""
+    expected_output: str = ""
 
 
 class AgentTaskSummary(BaseModel):

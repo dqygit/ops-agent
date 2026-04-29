@@ -1,49 +1,29 @@
-import { ActionRow } from '../layout/ActionRow'
-import { DangerButton, SecondaryButton } from '../layout/Button'
+import type { AssetPayload } from '../../api'
 import { PanelCard } from '../layout/PanelCard'
-import { SectionHeader } from '../layout/SectionHeader'
-import type { Asset, SessionRecord } from '../../types/ops'
+import type { Asset, AssetGroup } from '../../types/ops'
 import { AssetList } from './AssetList'
-import { AssetTabs } from './AssetTabs'
-import { HistoryList } from './HistoryList'
 
 type AssetSidebarProps = {
   assets: Asset[]
-  history: SessionRecord[]
+  groups: AssetGroup[]
   selectedAssetId: number
-  tab: 'assets' | 'history'
   onSelectAsset: (assetId: number) => void
-  onTabChange: (tab: 'assets' | 'history') => void
+  onUpdateAsset: (assetId: number, payload: AssetPayload) => Promise<Asset>
+  onDeleteAsset: (assetId: number) => Promise<void>
+  onAddAsset: () => void
 }
 
-export function AssetSidebar({
-  assets,
-  history,
-  selectedAssetId,
-  tab,
-  onSelectAsset,
-  onTabChange,
-}: AssetSidebarProps) {
+export function AssetSidebar({ assets, groups, selectedAssetId, onSelectAsset, onUpdateAsset, onDeleteAsset, onAddAsset }: AssetSidebarProps) {
   return (
     <PanelCard>
-      <SectionHeader
-        title="Resource Explorer"
-        description="Manage assets and reopen previous assistant sessions"
-      />
+      <div className="asset-sidebar-header">
+        <div>
+          <h2 className="section-title">主机连接</h2>
+        </div>
+        <button type="button" className="asset-add-button" aria-label="添加主机连接" onClick={onAddAsset}>+</button>
+      </div>
 
-      <AssetTabs tab={tab} onTabChange={onTabChange} />
-
-      <ActionRow>
-        <SecondaryButton>Add</SecondaryButton>
-        <SecondaryButton>Edit</SecondaryButton>
-        <DangerButton>Delete</DangerButton>
-      </ActionRow>
-
-      {tab === 'assets' ? (
-        <AssetList assets={assets} selectedAssetId={selectedAssetId} onSelectAsset={onSelectAsset} />
-      ) : (
-        <HistoryList history={history} />
-      )}
+      <AssetList assets={assets} groups={groups} selectedAssetId={selectedAssetId} onSelectAsset={onSelectAsset} onUpdateAsset={onUpdateAsset} onDeleteAsset={onDeleteAsset} />
     </PanelCard>
   )
 }

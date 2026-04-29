@@ -10,3 +10,5 @@ dist/
 main.spec
 node_modules/
 dist/
+release/
+.mypy_cache/

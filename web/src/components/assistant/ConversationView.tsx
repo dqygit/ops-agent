@@ -5,6 +5,14 @@ type ConversationViewProps = {
   events: EventItem[]
 }
 
+const eventTitles: Record<Exclude<EventItem['kind'], 'plan'>, string> = {
+  status: 'Agent',
+  approval: 'Approval',
+  output: 'Output',
+  final: 'Conclusion',
+  error: 'Error',
+}
+
 export function ConversationView({ events }: ConversationViewProps) {
   if (events.length === 0) {
     return (
@@ -22,8 +30,8 @@ export function ConversationView({ events }: ConversationViewProps) {
       {events.map((event) => {
         if (event.kind === 'plan') {
           return (
-            <article key={event.id} className="event-card">
-              <h3 className="event-title">Plan</h3>
+            <article key={event.id} className="event-card event-plan">
+              <h3 className="event-title">Command</h3>
               <ol className="plan-list">
                 {event.steps.map((step, index) => (
                   <li key={`${event.id}-${index}`}>
@@ -38,7 +46,8 @@ export function ConversationView({ events }: ConversationViewProps) {
 
         return (
           <article key={event.id} className={`event-card event-${event.kind}`}>
-            <p>{event.text}</p>
+            <h3 className="event-title">{eventTitles[event.kind]}</h3>
+            {event.kind === 'output' ? <pre>{event.text}</pre> : <p>{event.text}</p>}
           </article>
         )
       })}

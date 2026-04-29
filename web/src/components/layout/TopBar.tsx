@@ -1,13 +1,18 @@
 import { SecondaryButton } from './Button'
 
-export function TopBar() {
+type TopBarProps = {
+  onOpenSettings?: () => void
+}
+
+export function TopBar({ onOpenSettings }: TopBarProps) {
   return (
     <header className="top-bar">
       <div>
         <h1 className="app-title">Ops Agent Console</h1>
-        <p className="app-subtitle">Assets, terminal sessions, and assistant workflows</p>
       </div>
-      <SecondaryButton>Settings</SecondaryButton>
+      <div className="top-status-row" aria-label="Console status">
+        <SecondaryButton onClick={onOpenSettings}>Settings</SecondaryButton>
+      </div>
     </header>
   )
 }

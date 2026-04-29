@@ -3,7 +3,12 @@ from enum import Enum
 
 class AssetType(str, Enum):
     LINUX = "linux"
+    LOCAL_TERMINAL = "local_terminal"
+    NETWORK = "network"
+    CISCO = "cisco"
     HUAWEI = "huawei"
+    JUNIPER = "juniper"
+    H3C = "h3c"
 
 
 class TaskStatus(str, Enum):
@@ -14,6 +19,8 @@ class TaskStatus(str, Enum):
     RUNNING = "running"
     COMPLETED = "completed"
     FAILED = "failed"
+    STOPPED = "stopped"
+    SKIPPED = "skipped"
 
 
 class ModelProvider(str, Enum):
@@ -27,6 +34,22 @@ class TerminalEventType(str, Enum):
     ERROR = "error"
     CONTEXT_ATTACHED = "context_attached"
     OUTPUT = "terminal_output"
+    COMMAND_STARTED = "command_started"
+    COMMAND_FINISHED = "command_finished"
+
+
+class ApprovalDecision(str, Enum):
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    AUTO_APPROVED = "auto_approved"
+
+
+class CommandExecutionStatus(str, Enum):
+    QUEUED = "queued"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
 
 
 class TaskType(str, Enum):

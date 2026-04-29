@@ -14,7 +14,7 @@ export function AssetTabs({ tab, onTabChange }: AssetTabsProps) {
         role="tab"
         aria-selected={tab === 'assets'}
       >
-        Assets
+        主机资源
       </Button>
       <Button
         variant={tab === 'history' ? 'tab-active' : 'default'}
@@ -22,7 +22,7 @@ export function AssetTabs({ tab, onTabChange }: AssetTabsProps) {
         role="tab"
         aria-selected={tab === 'history'}
       >
-        History
+        直接连接
       </Button>
     </div>
   )

@@ -211,7 +211,20 @@ def test_chat_service_returns_pending_approval_view_from_store():
     runtime = FakeRuntime()
     approval_store = FakeApprovalStore(
         task=type("TaskRow", (), {"id": 8, "run_id": "run-8", "session_id": 12, "status": "pending_approval"})(),
-        steps=[type("StepRow", (), {"title": "Check route", "command": "display ip routing-table", "reason": "selected route", "risk_level": "low"})()],
+        steps=[
+            type(
+                "StepRow",
+                (),
+                {
+                    "title": "Check route",
+                    "command": "display ip routing-table",
+                    "reason": "selected route",
+                    "risk_level": "low",
+                    "working_directory": "",
+                    "expected_output": "",
+                },
+            )()
+        ],
     )
     service = ChatService(runtime=runtime, approval_store=approval_store)
 

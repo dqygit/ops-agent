@@ -1,202 +1,185 @@
-from sqlmodel import Session, SQLModel, create_engine, select
-from PySide6.QtGui import QTextCursor
-from PySide6.QtWidgets import QApplication
+import pytest
 
-from app.db.models import TerminalEvent, TerminalSession
-from app.db.repositories import create_terminal_event, create_terminal_session, update_terminal_session
+from app.core.connectors.server import ServerConnector
 from app.services.terminal_service import TerminalService
-from app.ui.terminal_panel import TerminalPanel
-
-
-class FakePersistence:
-    def __init__(self):
-        self.next_session_id = 1
-        self.sessions = []
-        self.session_updates = []
-        self.events = []
-
-    def create_session(self, asset_id: int) -> int:
-        session_id = self.next_session_id
-        self.next_session_id += 1
-        self.sessions.append({"id": session_id, "asset_id": asset_id})
-        return session_id
-
-    def update_session(self, terminal_session_id: int, *, status: str | None = None, last_error: str | None = None, ended: bool = False):
-        self.session_updates.append(
-            {
-                "terminal_session_id": terminal_session_id,
-                "status": status,
-                "last_error": last_error,
-                "ended": ended,
-            }
-        )
-
-    def record_event(self, terminal_session_id: int, event_type: str, metadata=""):
-        self.events.append((terminal_session_id, event_type, metadata))
-
-
-class DbPersistence:
-    def __init__(self, engine):
-        self._engine = engine
-
-    def create_session(self, asset_id: int) -> int:
-        with Session(self._engine) as session:
-            row = create_terminal_session(session, asset_id)
-            return row.id or 0
-
-    def update_session(self, terminal_session_id: int, *, status: str | None = None, last_error: str | None = None, ended: bool = False):
-        from datetime import UTC, datetime
-
-        with Session(self._engine) as session:
-            update_terminal_session(
-                session,
-                terminal_session_id,
-                status=status,
-                last_error=last_error,
-                ended_at=datetime.now(UTC) if ended else None,
-            )
-
-    def record_event(self, terminal_session_id: int, event_type: str, metadata=""):
-        with Session(self._engine) as session:
-            create_terminal_event(session, terminal_session_id, event_type, metadata)
 
 
 class FakeConnector:
     def __init__(self):
-        self.close_calls = 0
+        self.closed = False
+        self.output = ""
+        self.writes = []
+        self.resizes = []
 
     def open_interactive(self):
-        return "channel-1"
+        return "connected"
+
+    def read(self):
+        output = self.output
+        self.output = ""
+        return output
+
+    def write(self, data):
+        self.writes.append(data)
+        self.output = f"echo: {data}"
+
+    def resize(self, cols, rows):
+        self.resizes.append((cols, rows))
 
     def close(self):
-        self.close_calls += 1
-        return None
+        self.closed = True
 
 
-class FailingConnector:
-    def open_interactive(self):
-        raise RuntimeError("credential missing")
+class FakePersistence:
+    def __init__(self):
+        self.next_id = 1
+        self.sessions = []
+        self.updates = []
+        self.events = []
 
-    def close(self):
-        return None
+    def create_session(self, asset_id):
+        terminal_session_id = self.next_id
+        self.next_id += 1
+        self.sessions.append({"id": terminal_session_id, "asset_id": asset_id})
+        return terminal_session_id
+
+    def update_session(self, terminal_session_id, **kwargs):
+        self.updates.append({"terminal_session_id": terminal_session_id, **kwargs})
+
+    def record_event(self, terminal_session_id, event_type, metadata=""):
+        self.events.append(
+            {
+                "terminal_session_id": terminal_session_id,
+                "event_type": event_type,
+                "metadata": metadata,
+            }
+        )
 
 
-def test_terminal_service_records_connection_and_context_attachment_events():
+class FakeWebSocket:
+    def __init__(self, messages):
+        self.messages = list(messages)
+        self.accepted = False
+        self.closed = None
+        self.sent = []
+
+    async def accept(self):
+        self.accepted = True
+
+    async def close(self, code=1000):
+        self.closed = code
+
+    async def receive_json(self):
+        if not self.messages:
+            return {"type": "close"}
+        return self.messages.pop(0)
+
+    async def send_json(self, message):
+        self.sent.append(message)
+
+
+def test_terminal_service_closes_connector_when_open_fails():
+    class FailingConnector(FakeConnector):
+        def open_interactive(self):
+            raise RuntimeError("open failed")
+
+    connector = FailingConnector()
     persistence = FakePersistence()
-    service = TerminalService(
-        connector_factory=lambda _asset: FakeConnector(),
-        persistence=persistence,
-    )
+    service = TerminalService(connector_factory=lambda _asset: connector, persistence=persistence)
 
-    session = service.open_session(asset={"id": 3, "asset_type": "linux"})
-    attachment = service.attach_context(
-        terminal_session_id=session["terminal_session_id"],
-        selection_label="selected route block",
-        selected_text="default via 10.0.0.1",
-    )
+    result = service.open_session({"id": 10})
 
-    assert session["channel"] == "channel-1"
-    assert attachment.selection_label == "selected route block"
-    assert persistence.events[0][1] == "connected"
-    assert persistence.events[1][1] == "context_attached"
+    assert result == {"terminal_session_id": None, "channel": None, "error": "open failed"}
+    assert connector.closed is True
+    assert persistence.updates == [{"terminal_session_id": 1, "status": "failed", "last_error": "open failed"}]
+    assert persistence.events[-1] == {"terminal_session_id": 1, "event_type": "error", "metadata": "open failed"}
 
 
-def test_terminal_service_tracks_and_closes_open_sessions():
+def test_terminal_service_creates_one_connector_per_session_and_closes_only_requested_session():
+    connectors = []
     persistence = FakePersistence()
+
+    def connector_factory(_asset):
+        connector = FakeConnector()
+        connectors.append(connector)
+        return connector
+
+    service = TerminalService(connector_factory=connector_factory, persistence=persistence)
+
+    first = service.open_session({"id": 10})
+    second = service.open_session({"id": 10})
+
+    assert first == {"terminal_session_id": 1, "channel": "terminal connected", "error": ""}
+    assert second == {"terminal_session_id": 2, "channel": "terminal connected", "error": ""}
+    assert len(connectors) == 2
+
+    assert service.close_session(1) is True
+    assert connectors[0].closed is True
+    assert connectors[1].closed is False
+    assert service.get_session(2) is not None
+
+
+@pytest.mark.anyio
+async def test_terminal_service_stream_writes_resizes_outputs_and_closes_session():
     connector = FakeConnector()
-    service = TerminalService(
-        connector_factory=lambda _asset: connector,
-        persistence=persistence,
-    )
-
-    session = service.open_session(asset={"id": 3, "asset_type": "linux"})
-    session_manager = service.get_session(session["terminal_session_id"])
-
-    assert session_manager is not None
-    assert session_manager.is_open is True
-    assert service.close_session(session["terminal_session_id"]) is True
-    assert service.get_session(session["terminal_session_id"]) is None
-    assert connector.close_calls == 1
-    assert persistence.events[-1][1] == "disconnected"
-    assert persistence.session_updates[-1]["status"] == "disconnected"
-
-
-def test_terminal_service_ignores_unknown_session_close():
-    service = TerminalService(
-        connector_factory=lambda _asset: FakeConnector(),
-        persistence=FakePersistence(),
-    )
-
-    assert service.close_session(999) is False
-
-
-def test_terminal_service_returns_error_when_connection_fails():
     persistence = FakePersistence()
-    service = TerminalService(
-        connector_factory=lambda _asset: FailingConnector(),
-        persistence=persistence,
+    service = TerminalService(connector_factory=lambda _asset: connector, persistence=persistence)
+    result = service.open_session({"id": 20})
+    websocket = FakeWebSocket(
+        [
+            {"type": "input", "data": "pwd\r"},
+            {"type": "resize", "cols": 120, "rows": 40},
+            {"type": "close"},
+        ]
     )
 
-    session = service.open_session(asset={"id": 3, "asset_type": "linux"})
+    await service.stream_session(result["terminal_session_id"], websocket)
 
-    assert session["terminal_session_id"] is None
-    assert session["channel"] is None
-    assert session["error"] == "credential missing"
-    assert persistence.events[-1][1] == "error"
-    assert persistence.session_updates[-1]["status"] == "error"
-
-
-
-def test_terminal_service_persists_sessions_and_events_to_database():
-    engine = create_engine("sqlite://")
-    SQLModel.metadata.create_all(engine)
-    service = TerminalService(
-        connector_factory=lambda _asset: FakeConnector(),
-        persistence=DbPersistence(engine),
-    )
-
-    session = service.open_session(asset={"id": 3, "asset_type": "linux"})
-    service.attach_context(
-        terminal_session_id=session["terminal_session_id"],
-        selection_label="selected route block",
-        selected_text="default via 10.0.0.1",
-    )
-    service.close_session(session["terminal_session_id"])
-
-    with Session(engine) as db_session:
-        terminal_session = db_session.exec(select(TerminalSession)).one()
-        terminal_events = list(db_session.exec(select(TerminalEvent)).all())
-
-    terminal_events.sort(key=lambda event: event.id or 0)
-    assert terminal_session.asset_id == 3
-    assert terminal_session.status == "disconnected"
-    assert terminal_session.ended_at is not None
-    assert [event.event_type for event in terminal_events] == ["connected", "context_attached", "disconnected"]
-    assert "selected route block" in terminal_events[1].event_data
+    assert websocket.accepted is True
+    assert connector.writes == ["pwd\r"]
+    assert connector.resizes == [(120, 40)]
+    assert {"type": "output", "data": "echo: pwd\r"} in websocket.sent
+    assert {"type": "closed"} in websocket.sent
+    assert connector.closed is True
+    assert service.get_session(result["terminal_session_id"]) is None
+    assert any(event["event_type"] == "disconnected" for event in persistence.events)
 
 
+@pytest.mark.anyio
+async def test_terminal_service_stream_rejects_missing_session():
+    service = TerminalService(connector_factory=lambda _asset: FakeConnector(), persistence=FakePersistence())
+    websocket = FakeWebSocket([])
 
-def test_terminal_panel_attaches_selected_text_through_terminal_service():
-    app = QApplication.instance() or QApplication([])
-    persistence = FakePersistence()
-    attachments = []
-    service = TerminalService(
-        connector_factory=lambda _asset: FakeConnector(),
-        persistence=persistence,
-    )
-    panel = TerminalPanel()
-    panel.bind_terminal_service(service)
-    panel.bind_context_attached_listener(lambda attachment: attachments.append(attachment))
-    panel.set_asset_context({"id": 3, "name": "core-router", "host": "10.0.0.10", "port": 22})
+    await service.stream_session(999, websocket)
 
-    cursor = panel.terminal_view.textCursor()
-    cursor.select(QTextCursor.SelectionType.Document)
-    panel.terminal_view.setTextCursor(cursor)
-    attachment = panel.attach_selected_context("selected terminal output")
+    assert websocket.accepted is False
+    assert websocket.closed == 1008
 
-    assert app is not None
-    assert attachment is not None
-    assert attachment.selection_label == "selected terminal output"
-    assert attachment.selected_text == "channel-1"
-    assert attachments[-1].selected_text == "channel-1"
-    assert persistence.events[-1][1] == "context_attached"
+
+def test_server_connector_interactive_channel_reads_writes_and_resizes():
+    class FakeChannel:
+        def __init__(self):
+            self.sent = []
+            self.resizes = []
+
+        def recv_ready(self):
+            return True
+
+        def recv(self, size):
+            return b"hello"
+
+        def send(self, data):
+            self.sent.append(data)
+
+        def resize_pty(self, *, width, height):
+            self.resizes.append((width, height))
+
+    connector = ServerConnector(host="example.test", port=22, username="ops", password="redacted")
+    connector.channel = FakeChannel()
+
+    assert connector.read() == "hello"
+    connector.write("pwd\r")
+    connector.resize(120, 40)
+
+    assert connector.channel.sent == ["pwd\r"]
+    assert connector.channel.resizes == [(120, 40)]

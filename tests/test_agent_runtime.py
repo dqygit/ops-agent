@@ -4,6 +4,13 @@ from app.shared.enums import AssetType, ModelProvider, TaskStatus
 from app.shared.schemas import ModelConfig, PlanStep, TerminalContextAttachment
 
 
+class ApprovalEvent(dict):
+    def __eq__(self, other):
+        if isinstance(other, dict):
+            return all(self.get(key) == value for key, value in other.items())
+        return super().__eq__(other)
+
+
 class FakePersistence:
     def __init__(self):
         self.created_tasks = []
@@ -11,8 +18,10 @@ class FakePersistence:
         self.task_updates = []
         self.step_updates = []
         self.approvals = []
+        self.approval_details = []
         self.terminal_events = []
         self.model_usages = []
+        self.command_executions = []
 
     def create_task(self, *, session_id: int, run_id: str, asset_id: int, user_input: str, terminal_context, plan_steps):
         self.created_tasks.append(
@@ -34,20 +43,30 @@ class FakePersistence:
     def update_task_status(self, *, task_id: int, status: str, final_summary: str | None = None):
         self.task_updates.append({"task_id": task_id, "status": status, "final_summary": final_summary})
 
-    def update_step(self, *, step_id: int, status: str, output=None, error_message=None, started_at=None, finished_at=None):
+    def update_step(self, *, step_id: int, status: str, output=None, error_message=None, exit_code=None, started_at=None, finished_at=None):
         self.step_updates.append(
             {
                 "step_id": step_id,
                 "status": status,
                 "output": output,
                 "error_message": error_message,
+                "exit_code": exit_code,
                 "started_at": started_at,
                 "finished_at": finished_at,
             }
         )
 
-    def record_approval(self, *, task_id: int, approved: bool):
-        self.approvals.append({"task_id": task_id, "approved": approved})
+    def record_approval(self, *, task_id: int, approved: bool, **kwargs):
+        self.approvals.append(ApprovalEvent({"task_id": task_id, "approved": approved, **kwargs}))
+        self.approval_details.append({"task_id": task_id, "approved": approved, **kwargs})
+
+    def create_command_execution(self, **payload):
+        command_execution_id = 301 + len(self.command_executions)
+        self.command_executions.append({"id": command_execution_id, **payload})
+        return command_execution_id
+
+    def update_command_execution(self, *, command_execution_id: int, **updates):
+        self.command_executions.append({"id": command_execution_id, **updates})
 
     def record_terminal_event(self, *, terminal_session_id: int, event_type: str, metadata=""):
         self.terminal_events.append(
@@ -98,7 +117,9 @@ class FakePlanner:
 
 
 class FakeExecutor:
-    def __call__(self, step, emit=None):
+    def __call__(self, step, *, state=None, emit=None):
+        assert state is not None
+        assert state["asset_id"] == 1
         if emit is not None:
             emit("GigabitEthernet0/0/1 up")
         return {
@@ -141,7 +162,9 @@ class FakeStreamingSummarizer:
 
 
 class FakeFailingExecutor:
-    def __call__(self, step, emit=None):
+    def __call__(self, step, *, state=None, emit=None):
+        assert state is not None
+        assert state["asset_id"] == 1
         if emit is not None:
             emit("permission denied")
         return {
@@ -225,6 +248,9 @@ def test_agent_runtime_resumes_after_approval_and_produces_summary():
 
     assert result["approved"] is True
     assert persistence.approvals == [{"task_id": 101, "approved": True}]
+    assert persistence.approval_details[0]["asset_id"] == 1
+    assert persistence.approval_details[0]["step_ids"] == [201]
+    assert persistence.approval_details[0]["steps"][0].command == "display interface brief"
     assert persistence.task_updates[0]["status"] == TaskStatus.APPROVED.value
     assert persistence.task_updates[1]["status"] == TaskStatus.RUNNING.value
     assert persistence.task_updates[-1] == {
@@ -288,6 +314,9 @@ def test_agent_runtime_stops_when_plan_is_rejected():
 
     assert result["approved"] is False
     assert persistence.approvals == [{"task_id": 101, "approved": False}]
+    assert persistence.approval_details[0]["asset_id"] == 1
+    assert persistence.approval_details[0]["step_ids"] == [201]
+    assert persistence.approval_details[0]["steps"][0].command == "display interface brief"
     assert persistence.task_updates == [{"task_id": 101, "status": TaskStatus.REJECTED.value, "final_summary": None}]
     assert persistence.model_usages == []
     assert result["execution_results"] == []
@@ -357,6 +386,9 @@ def test_agent_runtime_streams_summary_chunks_before_final_message():
     ]
     assert persistence.created_steps == [{"task_id": 101, "plan_steps": result["plan_steps"]}]
     assert persistence.approvals == [{"task_id": 101, "approved": True}]
+    assert persistence.approval_details[0]["asset_id"] == 1
+    assert persistence.approval_details[0]["step_ids"] == [201]
+    assert persistence.approval_details[0]["steps"][0].command == "display interface brief"
     assert persistence.model_usages == [
         {
             "task_id": 101,

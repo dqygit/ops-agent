@@ -19,6 +19,15 @@ class TerminalSessionManager:
         self._is_open = True
         return self._channel
 
+    def read(self):
+        return self._connector.read()
+
+    def write(self, data: str) -> None:
+        self._connector.write(data)
+
+    def resize(self, cols: int, rows: int) -> None:
+        self._connector.resize(cols, rows)
+
     def close(self) -> None:
         if not self._is_open:
             return

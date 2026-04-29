@@ -1,19 +1,23 @@
 import json
 import os
-import sys
 from datetime import UTC, datetime
+from importlib import import_module
+from typing import Any
 
-from pydantic import SecretStr
-from PySide6.QtWidgets import QApplication
 from sqlmodel import Session
 
-from app.core.agent.runtime import AgentRuntime
+from app.api import app
+from app.api.dependencies import get_chat_service
+from app.api.terminal import get_terminal_service
 from app.core.agent.planner import build_plan
+from app.core.agent.runtime import AgentRuntime
 from app.core.connectors.network import NetworkConnector
 from app.core.connectors.server import ServerConnector
+from app.core.terminal.local_pty import LocalPtyConnector
 from app.db.repositories import (
     create_agent_task,
     create_approval,
+    create_command_execution,
     create_model_usage,
     create_task_steps,
     create_terminal_event,
@@ -22,31 +26,46 @@ from app.db.repositories import (
     get_pending_agent_task_by_session_id,
     list_task_steps_by_task_id,
     update_agent_task,
+    update_command_execution,
     update_task_step,
     update_terminal_session,
 )
 from app.db.session import engine, init_db
 from app.integrations.llm.factory import build_llm_provider
-from app.services.asset_service import get_asset_credential_record
+from app.services.asset_service import get_asset_credential_record, get_asset_record
 from app.services.assistant_session_service import create_or_get_assistant_session, list_assistant_session_records
+from app.services.auto_approval_service import AutoApprovalService
 from app.services.chat_service import ChatService
-from app.services.message_service import AssistantMessageService
 from app.services.credential_service import CredentialService
+from app.services.message_service import AssistantMessageService
 from app.services.model_service import ModelService
+from app.services.secret_key import get_ops_agent_secret_key
 from app.services.terminal_service import TerminalService
 from app.shared.config import APP_DIR
 from app.shared.enums import AssetType, TaskStatus
 from app.shared.schemas import ModelConfig
-from app.ui.main_window import MainWindow
-from app.ui.settings_dialog import SettingsDialog
 
 
 class DemoConnector:
+    def __init__(self):
+        self._output = ""
+
     def run_command(self, command: str) -> str:
         return f"demo output: {command}"
 
     def open_interactive(self) -> object:
         return "demo terminal connected"
+
+    def read(self) -> str:
+        output = self._output
+        self._output = ""
+        return output
+
+    def write(self, data: str) -> None:
+        self._output += f"demo output: {data}"
+
+    def resize(self, cols: int, rows: int) -> None:
+        return None
 
     def close(self) -> None:
         return None
@@ -62,14 +81,15 @@ def _run_connector_command(connector, command: str, emit=None) -> str:
 def _build_connector(asset):
     if asset is None:
         raise ValueError("asset is required")
+    asset_type = AssetType(asset.asset_type)
+    if asset_type is AssetType.LOCAL_TERMINAL:
+        return LocalPtyConnector()
     with Session(engine) as session:
         credential = get_asset_credential_record(session, asset.id)
     if credential is None:
-        return DemoConnector()
-    secret_key = os.environ.get("OPS_AGENT_SECRET_KEY", "dev-secret-key")
-    credential_service = CredentialService(secret_key=secret_key)
+        raise ValueError("missing credentials for asset")
+    credential_service = CredentialService(secret_key=get_ops_agent_secret_key())
     secret = credential_service.decrypt_secret(credential.encrypted_blob)
-    asset_type = AssetType(asset.asset_type)
     if asset_type is AssetType.LINUX:
         return ServerConnector(
             host=asset.host,
@@ -77,10 +97,17 @@ def _build_connector(asset):
             username=asset.username,
             password=secret,
         )
-    if asset_type is AssetType.HUAWEI:
+    network_device_types = {
+        AssetType.NETWORK: asset.vendor or "generic",
+        AssetType.CISCO: "cisco",
+        AssetType.HUAWEI: "huawei",
+        AssetType.JUNIPER: "juniper",
+        AssetType.H3C: "h3c",
+    }
+    if asset_type in network_device_types:
         return NetworkConnector(
             {
-                "device_type": "huawei",
+                "device_type": network_device_types[asset_type],
                 "host": asset.host,
                 "port": asset.port,
                 "username": asset.username,
@@ -125,7 +152,7 @@ class RuntimePersistence:
         risk_level = plan_steps[0].risk_level if plan_steps else "low"
         attached_terminal_context = ""
         if terminal_context is not None:
-            attached_terminal_context = json.dumps(terminal_context.model_dump(), ensure_ascii=False)
+            attached_terminal_context = json.dumps(_dump_terminal_context(terminal_context), ensure_ascii=False)
         with Session(engine) as session:
             row = create_agent_task(
                 session,
@@ -156,6 +183,7 @@ class RuntimePersistence:
         status: str,
         output: str | None = None,
         error_message: str | None = None,
+        exit_code: int | None = None,
         started_at: datetime | None = None,
         finished_at: datetime | None = None,
     ):
@@ -166,17 +194,74 @@ class RuntimePersistence:
                 status=status,
                 output=output,
                 error_message=error_message,
+                exit_code=exit_code,
                 started_at=started_at,
                 finished_at=finished_at,
             )
 
-    def record_approval(self, *, task_id: int, approved: bool):
+    def record_approval(self, *, task_id: int, asset_id: int, terminal_context, steps, step_ids, approved: bool):
+        terminal_session_id = _get_terminal_session_id(terminal_context)
+        with Session(engine) as session:
+            for index, step in enumerate(steps):
+                create_approval(
+                    session,
+                    task_id=task_id,
+                    step_id=step_ids[index] if index < len(step_ids) else None,
+                    asset_id=asset_id,
+                    terminal_session_id=terminal_session_id,
+                    command=step.command,
+                    working_directory=step.working_directory,
+                    risk_level=step.risk_level,
+                    llm_explanation=step.reason,
+                    expected_output=step.expected_output,
+                    decision="approved" if approved else "rejected",
+                    operator="ui",
+                )
+
+    def record_step_auto_approval(self, *, task_id: int, asset_id: int, terminal_context, step, reason: str):
+        terminal_session_id = _get_terminal_session_id(terminal_context)
         with Session(engine) as session:
             create_approval(
                 session,
                 task_id=task_id,
-                decision="approved" if approved else "rejected",
-                operator="ui",
+                asset_id=asset_id,
+                terminal_session_id=terminal_session_id,
+                command=step.command,
+                working_directory=step.working_directory,
+                risk_level=step.risk_level,
+                llm_explanation=step.reason,
+                expected_output=step.expected_output,
+                decision="approved",
+                operator="auto",
+                comment=reason,
+            )
+
+    def create_command_execution(self, *, task_id: int, step_id: int, asset_id: int, terminal_context, command: str, working_directory: str, started_at: datetime) -> int:
+        terminal_session_id = _get_terminal_session_id(terminal_context) or 0
+        with Session(engine) as session:
+            row = create_command_execution(
+                session,
+                task_id=task_id,
+                step_id=step_id,
+                asset_id=asset_id,
+                terminal_session_id=terminal_session_id,
+                command=command,
+                status=TaskStatus.RUNNING.value,
+                working_directory=working_directory,
+                started_at=started_at,
+            )
+            return row.id or 0
+
+    def update_command_execution(self, *, command_execution_id: int, status: str, output: str, error_output: str, exit_code: int | None, finished_at: datetime):
+        with Session(engine) as session:
+            update_command_execution(
+                session,
+                command_execution_id,
+                status=status,
+                output=output,
+                error_output=error_output,
+                exit_code=exit_code,
+                finished_at=finished_at,
             )
 
     def record_terminal_event(self, *, terminal_session_id: int, event_type: str, metadata=""):
@@ -226,20 +311,53 @@ class TerminalPersistence:
             create_terminal_event(session, terminal_session_id, event_type, metadata)
 
 
-def build_main_window() -> MainWindow:
-    init_db()
-    selected_asset = {"value": None}
-    model_service = ModelService()
-    model_config = model_service.load_settings()
+def _dump_terminal_context(terminal_context) -> dict[str, Any]:
+    if isinstance(terminal_context, dict):
+        return terminal_context
+    if hasattr(terminal_context, "model_dump"):
+        return terminal_context.model_dump()
+    return {
+        "terminal_session_id": getattr(terminal_context, "terminal_session_id", 0),
+        "selection_label": getattr(terminal_context, "selection_label", ""),
+        "selected_text": getattr(terminal_context, "selected_text", ""),
+    }
+
+
+def _get_terminal_session_id(terminal_context) -> int | None:
+    if isinstance(terminal_context, dict):
+        value = terminal_context.get("terminal_session_id")
+        return int(value) if value else None
+    return getattr(terminal_context, "terminal_session_id", None) if terminal_context is not None else None
+
+
+def _build_auto_approval_checker():
+    def checker(*, session_id: int, asset_type: str, command: str, risk_level: str) -> dict[str, Any] | None:
+        if not session_id:
+            return None
+        with Session(engine) as session:
+            rule, reason = AutoApprovalService().match_rule(
+                session,
+                session_id,
+                asset_type=asset_type,
+                asset_tags=[],
+                command=command,
+                risk_level=risk_level,
+            )
+        if rule is None:
+            return None
+        return {"matched": True, "rule_id": rule.id or 0, "reason": reason}
+
+    return checker
+
+
+def _build_runtime(model_config: ModelConfig) -> AgentRuntime:
     provider = build_llm_provider(model_config)
 
-    def execute_step(step, emit=None):
-        asset = selected_asset["value"]
-        connector = _build_connector(asset) if asset is not None else DemoConnector()
-        asset_name = getattr(asset, "name", None) if asset is not None else None
+    def execute_step(step, *, state, emit=None):
+        with Session(engine) as session:
+            asset = get_asset_record(session, state["asset_id"])
+        connector = _build_connector(asset)
         output = _run_connector_command(connector, step.command, emit)
-        if asset_name:
-            output = f"[{asset_name}] {output}"
         return {
             "command": step.command,
             "output": output,
@@ -249,7 +367,7 @@ def build_main_window() -> MainWindow:
             "title": step.title,
         }
 
-    runtime = AgentRuntime(
+    return AgentRuntime(
         planner=build_plan,
         step_executor=execute_step,
         summarizer=lambda user_input, execution_results, recent_messages=None: provider.stream_summarize(
@@ -260,100 +378,61 @@ def build_main_window() -> MainWindow:
         ),
         persistence=RuntimePersistence(),
         model_config=model_config,
+        auto_approval_checker=_build_auto_approval_checker(),
     )
-    window = MainWindow()
 
-    def apply_model_config(config):
-        nonlocal model_config, provider
-        model_config = config
-        provider = build_llm_provider(model_config)
-        runtime._model_config = model_config
-        window.assistant_panel.set_available_models(
-            model_service.list_available_models(model_config.provider),
-            model_config.model_name,
-        )
-        window.assistant_panel.set_session_context(
-            conversation_id=window.assistant_panel._conversation_id,
-            asset_type=window.assistant_panel._asset_type,
-            model_name=model_config.model_name,
-            terminal_context=window.assistant_panel._terminal_context,
-            recent_messages=window.assistant_panel._recent_messages,
-        )
 
-    def save_model_config(config):
-        apply_model_config(model_service.save_settings(config))
-
-    def open_settings_dialog() -> None:
-        dialog = SettingsDialog(model_config, save_model_config)
-        dialog.exec()
-    window.settings_button.clicked.connect(open_settings_dialog)
-    window.asset_panel.bind_asset_store(lambda: Session(engine))
-    chat_service = ChatService(
+def build_chat_service() -> ChatService:
+    model_config = ModelService().load_settings()
+    runtime = _build_runtime(model_config)
+    return ChatService(
         runtime=runtime,
         session_store=AssistantSessionStore(),
         message_service=AssistantMessageService(lambda: Session(engine)),
         approval_store=ApprovalStore(),
     )
-    window.assistant_panel.bind_chat_service(chat_service)
-    window.asset_panel.bind_history_loader(
-        lambda asset: chat_service.list_assistant_sessions(asset_id=asset.id) if asset is not None else []
-    )
-    apply_model_config(model_config)
-    terminal_service = TerminalService(
+
+
+def build_terminal_service() -> TerminalService:
+    return TerminalService(
         connector_factory=_build_connector,
         persistence=TerminalPersistence(),
     )
-    window.terminal_panel.bind_terminal_service(terminal_service)
-    window.terminal_panel.bind_context_attached_listener(window.assistant_panel.set_terminal_context)
 
-    def handle_agent_event(event) -> None:
-        window.terminal_panel.apply_agent_event(event)
-        if event.get("type") == "assistant_final":
-            refresh_selected_asset_history()
 
-    window.assistant_panel.bind_agent_event_listener(handle_agent_event)
-    window.assistant_panel.attach_context_button.clicked.connect(window.terminal_panel.attach_selected_context)
+_chat_service: ChatService | None = None
+_terminal_service: TerminalService | None = None
 
-    def refresh_selected_asset_history() -> None:
-        asset = selected_asset["value"]
-        window.asset_panel.refresh_history(asset)
 
-    def handle_history_selected(session_id: int, model_name: str | None) -> None:
-        messages = chat_service.list_assistant_messages(session_id=session_id)
-        window.assistant_panel.load_session(
-            session_id=session_id,
-            messages=messages,
-            model_name=model_name or model_config.model_name,
-        )
+def configured_chat_service() -> ChatService:
+    global _chat_service
+    if _chat_service is None:
+        _chat_service = build_chat_service()
+    return _chat_service
 
-    def handle_asset_selected(asset) -> None:
-        selected_asset["value"] = asset
-        window.terminal_panel.set_asset_context(asset)
-        window.assistant_panel.set_asset_context(asset)
-        if asset is None:
-            return
-        sessions = chat_service.list_assistant_sessions(asset_id=asset.id)
-        if sessions:
-            latest_session = sessions[0]
-            handle_history_selected(latest_session.id or 0, latest_session.active_model)
 
-    window.asset_panel.bind_history_selection_listener(handle_history_selected)
-    window.asset_panel.bind_selection_listener(handle_asset_selected)
-    if window.asset_panel.asset_list.count() > 0:
-        window.asset_panel.asset_list.setCurrentRow(0)
-    else:
-        window.terminal_panel.set_asset_context(None)
-        window.assistant_panel.set_asset_context(None)
-    return window
+def configured_terminal_service() -> TerminalService:
+    global _terminal_service
+    if _terminal_service is None:
+        _terminal_service = build_terminal_service()
+    return _terminal_service
+
+
+def configure_api_dependencies() -> None:
+    app.dependency_overrides[get_chat_service] = configured_chat_service
+    app.dependency_overrides[get_terminal_service] = configured_terminal_service
 
 
 def main() -> None:
     APP_DIR.mkdir(parents=True, exist_ok=True)
-    init_db()
-    app = QApplication(sys.argv)
-    window = build_main_window()
-    window.show()
-    sys.exit(app.exec())
+    configure_api_dependencies()
+
+    host = os.environ.get("OPS_AGENT_HOST", "127.0.0.1")
+    port = int(os.environ.get("OPS_AGENT_PORT", "8000"))
+    import_module("uvicorn").run(app, host=host, port=port)
+
+
+configure_api_dependencies()
 
 
 if __name__ == "__main__":

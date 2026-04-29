@@ -1,305 +1,186 @@
 # Ops Agent
 
-Ops Agent 是一个面向运维场景的本地桌面应用原型，用于把资产管理、终端会话、AI 任务规划、审批流和执行结果汇总放到同一个界面中。
+Ops Agent 是一个面向运维场景的 AI 助手控制台。它把资产管理、终端连接、AI 对话、命令审批和执行结果反馈整合到一个 Web 界面中，帮助运维人员在保留人工控制权的前提下，让 AI 参与排障、巡检和操作执行。
 
-当前项目基于 Python、PySide6 和 SQLModel 构建，适合用于 Linux 主机与华为网络设备的巡检、命令执行辅助和会话留痕。
+## 它解决什么问题
 
-## 功能概览
+在日常运维中，工程师通常需要在资产台账、终端工具、知识经验和操作记录之间反复切换。Ops Agent 的目标是提供一个统一工作台：
 
-- 资产管理：新增、编辑、删除运维资产
-- 终端会话：为选中的资产建立终端连接并记录事件
-- 上下文附加：可将终端选中文本附加给 AI 会话
-- AI 任务运行：基于输入生成计划、逐步执行并汇总结果
-- 审批流：任务执行前进入审批状态，可批准或拒绝
-- 历史会话：按资产查看并重新打开历史助手会话
-- 本地持久化：将资产、消息、任务、审批、终端事件保存到 SQLite
-- 模型切换：支持 Anthropic 与 OpenAI Compatible 提供方
+1. 选择要操作的资产。
+2. 打开对应终端，查看当前上下文。
+3. 向 AI 描述目标或问题。
+4. 由 AI 生成操作计划和建议命令。
+5. 用户审批后执行命令。
+6. 将输出结果回传给 AI，继续分析或生成下一步建议。
 
-## 界面结构
+这不是一个完全自动化的运维机器人，而是一个以人工审批为边界的 AI 运维助手。
 
-应用主界面由三个主要面板组成：
+## 核心能力
 
-- **Resource Explorer**：管理资产与查看历史会话
-- **Terminal Session**：展示当前资产的连接状态和终端输出
-- **AI Workspace**：输入任务、查看计划、处理审批与阅读最终结果
+### 资产统一管理
 
-入口位于 [src/app/main.py](src/app/main.py)。主窗口定义位于 [src/app/ui/main_window.py](src/app/ui/main_window.py)。
+支持维护本地终端、Linux 主机和网络设备等资产信息。资产可以作为终端连接和助手对话的上下文，让 AI 的建议围绕具体对象展开。
 
-## 技术栈
+### Web 终端工作台
 
-- Python 3.13
-- PySide6
-- SQLModel / SQLAlchemy
-- Pydantic v2
-- Anthropic SDK
-- OpenAI SDK
-- Netmiko / Paramiko
-- pytest
-- PyInstaller
+在浏览器中为资产创建终端会话，支持本地 PTY、Linux SSH 和网络设备连接。终端输出可以作为助手分析上下文的一部分。
 
-## 目录结构
+### AI 助手对话
+
+助手可以基于资产信息、终端上下文和用户输入生成操作计划，解释每一步的目的、风险和预期结果，并在命令执行后继续分析输出。
+
+### 命令审批闭环
+
+命令默认不会直接执行，需要用户确认后才会下发。系统会记录计划、审批、命令、输出和执行结果，便于追踪操作过程。
+
+### 模型配置
+
+支持配置 Anthropic 或 OpenAI Compatible 模型，并选择默认模型用于助手对话。
+
+### 会话内自动审批
+
+支持为当前助手会话配置低风险命令的自动审批规则。自动审批只在当前会话内生效，高风险操作仍应由用户人工确认。
+
+## 典型使用流程
 
 ```text
-ops-agent/
-├─ src/app/
-│  ├─ core/                  # 任务规划、运行时、连接器、终端上下文、安全控制
-│  ├─ db/                    # 数据模型、仓储、数据库初始化
-│  ├─ integrations/llm/      # LLM 抽象、工厂和 provider 实现
-│  ├─ services/              # 资产、消息、任务、模型、终端等服务
-│  ├─ shared/                # 配置、枚举、共享 schema
-│  ├─ ui/                    # 主窗口、资产面板、聊天面板、终端面板、设置对话框
-│  └─ main.py                # 应用入口
-├─ tests/                    # 单元测试与 UI 流程测试
-├─ requirements.txt          # Python 依赖
-├─ pytest.ini                # pytest 配置
-├─ pyrightconfig.json        # Pyright 配置
-└─ main.spec                 # PyInstaller 打包配置
+添加资产 → 打开终端 → 询问助手 → 查看计划 → 审批命令 → 执行命令 → 分析输出 → 继续下一步
 ```
 
-## 运行要求
+示例场景：
 
-建议环境：
+- 登录一台 Linux 主机，排查服务异常。
+- 查看网络设备状态，并让助手解释输出含义。
+- 对重复性低风险检查命令启用会话内自动审批。
+- 在一个任务中保留 AI 建议、人工审批和执行结果的完整记录。
 
-- Python 3.13
-- Windows 11 或 Linux
-- 可用的图形界面环境
+完整产品工作流见 [docs/workflow.md](docs/workflow.md)。
 
-项目的类型检查配置在 [pyrightconfig.json](pyrightconfig.json) 中声明 Python 版本为 3.13。
+## 界面模块
 
-## 安装依赖
+- **资产面板**：查看、创建和选择运维资产。
+- **终端面板**：连接资产并执行交互式命令。
+- **助手面板**：与 AI 对话，生成计划并分析输出。
+- **设置面板**：配置模型分组、模型和默认模型。
 
-先创建虚拟环境，再安装依赖。
+## 安全原则
 
-### Windows PowerShell
+Ops Agent 的默认原则是用户保留最终控制权：
 
-```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-```
+- 命令默认需要人工审批后才会执行。
+- 自动审批规则只在当前助手会话内生效。
+- 高风险命令不应仅凭 LLM 判断自动执行。
+- 密码和 API Key 应脱敏展示，不能写入普通日志。
+- 命令、审批、输出和执行结果需要可追踪。
 
-### macOS / Linux / Git Bash
+## 技术组成
+
+- 后端：Python、FastAPI、SQLModel、SQLite
+- 前端：React、TypeScript、Vite、Tailwind CSS、xterm.js
+- 连接能力：本地 PTY、SSH、网络设备连接器
+- LLM：Anthropic、OpenAI Compatible
+
+## 本地运行
+
+### 1. 安装后端依赖
 
 ```bash
 python -m venv .venv
-source .venv/bin/activate
+source .venv/Scripts/activate
 pip install -r requirements.txt
 ```
 
-## 启动方式
-
-### 按模块启动
+### 2. 启动后端 API
 
 ```bash
 PYTHONPATH=src python -m app.main
 ```
 
-Windows PowerShell：
-
-```powershell
-$env:PYTHONPATH = "src"
-python -m app.main
-```
-
-### 直接运行入口文件
+默认监听 `127.0.0.1:8000`。可通过环境变量覆盖：
 
 ```bash
-python src/app/main.py
+OPS_AGENT_HOST=127.0.0.1 OPS_AGENT_PORT=8000 PYTHONPATH=src python -m app.main
 ```
 
-应用启动时会创建本地数据目录并初始化数据库，相关逻辑位于 [src/app/main.py:350-356](src/app/main.py#L350-L356)。
+运行数据默认保存在用户目录下的 `.ops-agent` 目录中，包括 SQLite 数据库和设置文件。
 
-## 数据与配置文件
-
-应用数据目录位于：
-
-```text
-~/.ops-agent/
-```
-
-当前代码中使用的主要路径定义在 [src/app/shared/config.py](src/app/shared/config.py)：
-
-- `~/.ops-agent/ops_agent.db`：主 SQLite 数据库
-- `~/.ops-agent/settings.json`：模型设置文件
-- `~/.ops-agent/ops_agent.test.db`：测试数据库路径常量
-
-## 模型配置
-
-模型设置由 [src/app/services/model_service.py](src/app/services/model_service.py) 管理。
-
-默认配置：
-
-- Provider：`anthropic`
-- Model：`claude-opus-4-7`
-- Base URL：`https://api.anthropic.com`
-- API Key：未配置时回退到 `demo-key`
-- Temperature：`0.2`
-- Max tokens：`256`
-
-当前支持的 provider：
-
-- `anthropic`
-- `openai_compatible`
-
-当前内置的模型列表：
-
-- Anthropic：`claude-opus-4-7`、`claude-sonnet-4-6`
-- OpenAI Compatible：`gpt-5.5`、`gpt-5.4`
-
-### 环境变量
-
-Anthropic 默认配置会读取：
-
-- `ANTHROPIC_API_KEY`
-- `ANTHROPIC_BASE_URL`
-
-资产密文解密会读取：
-
-- `OPS_AGENT_SECRET_KEY`
-
-示例：
+### 3. 安装前端依赖
 
 ```bash
-export ANTHROPIC_API_KEY="your-api-key"
-export OPS_AGENT_SECRET_KEY="replace-with-a-strong-secret"
+cd web
+npm install
 ```
 
-Windows PowerShell：
+### 4. 配置前端环境变量
 
-```powershell
-$env:ANTHROPIC_API_KEY = "your-api-key"
-$env:OPS_AGENT_SECRET_KEY = "replace-with-a-strong-secret"
+```bash
+cp .env.example .env
 ```
 
-### 应用内设置
+常用配置：
 
-应用包含设置对话框，可在界面中编辑：
+```env
+VITE_CONSOLE_DATA_SOURCE=api
+VITE_API_BASE_URL=
+```
 
-- Provider
-- Model
-- Base URL
-- API Key
+`VITE_API_BASE_URL` 为空时，前端使用当前 origin 访问 API；开发时可以设置为后端地址，例如 `http://127.0.0.1:8000`。
 
-相关逻辑见 [src/app/ui/settings_dialog.py](src/app/ui/settings_dialog.py) 和 [src/app/services/model_service.py](src/app/services/model_service.py)。
+### 5. 启动 Web 控制台
 
-## 资产类型与连接行为
+```bash
+npm run dev
+```
 
-当前定义的资产类型位于 [src/app/shared/enums.py](src/app/shared/enums.py)：
+## 测试与构建
 
-- `linux`
-- `huawei`
-
-连接行为定义在 [src/app/main.py:62-90](src/app/main.py#L62-L90)：
-
-- `linux` 资产使用 `ServerConnector`
-- `huawei` 资产使用 `NetworkConnector`
-- 当资产没有凭据时，回退到 `DemoConnector`，便于演示和 UI 测试
-
-## 核心模块
-
-### 1. Agent Runtime
-
-- [src/app/core/agent/planner.py](src/app/core/agent/planner.py)
-- [src/app/core/agent/runtime.py](src/app/core/agent/runtime.py)
-
-负责计划生成、步骤执行、事件流转和最终摘要。
-
-### 2. Connectors
-
-- [src/app/core/connectors/server.py](src/app/core/connectors/server.py)
-- [src/app/core/connectors/network.py](src/app/core/connectors/network.py)
-
-负责不同资产类型的连接封装。
-
-### 3. Executor 与安全控制
-
-- [src/app/core/executor/command_catalog.py](src/app/core/executor/command_catalog.py)
-- [src/app/core/executor/safety_guard.py](src/app/core/executor/safety_guard.py)
-- [src/app/core/executor/command_executor.py](src/app/core/executor/command_executor.py)
-
-负责命令目录、执行流程与安全检查。
-
-### 4. Services
-
-- [src/app/services/asset_service.py](src/app/services/asset_service.py)
-- [src/app/services/chat_service.py](src/app/services/chat_service.py)
-- [src/app/services/task_service.py](src/app/services/task_service.py)
-- [src/app/services/terminal_service.py](src/app/services/terminal_service.py)
-
-负责资产、会话、消息、任务、终端和模型配置等业务逻辑。
-
-### 5. UI
-
-- [src/app/ui/asset_panel.py](src/app/ui/asset_panel.py)
-- [src/app/ui/terminal_panel.py](src/app/ui/terminal_panel.py)
-- [src/app/ui/chat_panel.py](src/app/ui/chat_panel.py)
-
-负责桌面界面与交互流程。
-
-## 开发
-
-### 运行测试
+运行后端测试：
 
 ```bash
 pytest
 ```
 
-[pytest.ini](pytest.ini) 已配置：
-
-```ini
-[pytest]
-pythonpath = src
-```
-
-通常可以直接在仓库根目录运行测试。
-
-### 类型检查
+运行前端类型检查和构建：
 
 ```bash
-pyright
+cd web
+npm run build
 ```
 
-### 当前测试覆盖
-
-从现有测试文件看，覆盖点主要包括：
-
-- 任务规划与运行时
-- 安全规则与命令目录
-- 任务、模型、终端等服务层
-- 聊天流程与 UI 主流程
-- 主程序初始化与事件联动
-
-## 打包
-
-仓库包含 [main.spec](main.spec)，可使用 PyInstaller 打包：
+按当前系统打包发布文件：
 
 ```bash
-pyinstaller main.spec
+python script/package.py
 ```
 
-当前 spec 以 `src/app/main.py` 为入口，生成名为 `main` 的产物，且 `console=True`。
+Windows 也可以使用 PowerShell 包装脚本：
+
+```powershell
+.\script\package.ps1
+```
+
+macOS/Linux 也可以使用 shell 包装脚本：
+
+```bash
+./script/package.sh
+```
+
+打包产物会输出到 `release/<system>/`，例如 `release/windows/ops-agent-windows-x64.zip` 或 `release/linux/ops-agent-linux-x64.tar.gz`。
+
+## 项目结构
+
+```text
+src/app/              后端应用代码
+src/app/api/          FastAPI 路由
+src/app/core/         Agent、连接器、终端和命令执行核心逻辑
+src/app/db/           数据模型、数据库会话和仓储函数
+src/app/services/     业务服务
+src/app/shared/       配置、枚举和共享 schema
+tests/                Python 测试
+web/                  React Web 控制台
+docs/                 产品和工作流文档
+```
 
 ## 当前状态
 
-从代码结构和测试覆盖来看，这个项目更接近一个**可运行的桌面原型**，已经具备：
-
-- 完整的 UI 骨架
-- 本地数据库持久化
-- 资产与会话管理
-- AI 任务规划与审批流
-- 基础连接器与模型配置
-- 一批围绕核心流程的自动化测试
-
-如果要进一步走向生产化，通常还需要继续补强：
-
-- 真实设备接入验证
-- 更严格的命令白名单与安全策略
-- 更完整的日志、审计和异常处理
-- 安装分发与升级机制
-- 更明确的部署与配置管理方案
-
-## 许可证
-
-仓库当前未包含明确的 License 文件。
-
-如果计划开源，建议补充 `LICENSE` 并在 README 中说明授权方式。
+Ops Agent 目前是面向本地开发和功能验证的原型项目。生产使用前需要结合实际环境补充认证授权、审计策略、密钥管理、权限隔离和部署方案。
