@@ -42,7 +42,7 @@ class ServerConnector:
 
     def write(self, data: str) -> None:
         if self.channel is not None:
-            self.channel.send(data)
+            self.channel.send(data.encode('utf-8'))
 
     def resize(self, cols: int, rows: int) -> None:
         if self.channel is not None:

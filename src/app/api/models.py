@@ -4,7 +4,7 @@ from sqlalchemy.exc import OperationalError
 from sqlmodel import Session
 
 from app.api.schemas import ModelConfigCreate, ModelConfigUpdate, ModelConfigView, ModelConnectionTestRequest, ModelConnectionTestResponse, ModelsView
-from app.db.repositories import create_model_config, delete_model_config, get_default_model_config, get_model_config, list_model_configs, set_default_model_config, update_model_config
+from app.db.repositories.models import create_model_config, delete_model_config, get_default_model_config, get_model_config, list_model_configs, set_default_model_config, update_model_config
 from app.db.session import get_session
 from app.services.model_service import ModelService
 from app.shared.enums import ModelProvider

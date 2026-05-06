@@ -4,20 +4,9 @@ from datetime import UTC, datetime
 from sqlmodel import select
 
 from app.db.models import Asset, AssetGroup
-from app.db.repositories import (
-    create_asset,
-    create_asset_group,
-    create_audit_log,
-    create_credential,
-    delete_asset_graph,
-    delete_asset_group,
-    get_asset_group,
-    get_credential_by_asset_id,
-    list_asset_groups,
-    list_assets,
-    update_asset_group,
-    update_credential,
-)
+from app.db.repositories.assets import create_asset, create_asset_group, delete_asset_graph, delete_asset_group, get_asset_group, list_asset_groups, list_assets, update_asset_group
+from app.db.repositories.audit import create_audit_log
+from app.db.repositories.credentials import create_credential, get_credential_by_asset_id, update_credential
 from app.services.credential_service import CredentialService
 from app.services.secret_key import get_ops_agent_secret_key
 

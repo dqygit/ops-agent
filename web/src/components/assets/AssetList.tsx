@@ -107,8 +107,8 @@ export function AssetList({ assets, groups, selectedAssetId, onSelectAsset, onUp
 
   return (
     <>
-      <div className="list-panel asset-list-panel" aria-label="Host connections" onMouseLeave={() => setMenuAssetId(null)}>
-        {visibleAssets.length === 0 ? <p className="status-line">暂无远程资产</p> : null}
+      <div className="flex flex-col h-full bg-ops-panel" aria-label="Host connections" onMouseLeave={() => setMenuAssetId(null)}>
+        {visibleAssets.length === 0 ? <p className="text-center py-10 text-ops-muted text-sm">暂无远程资产</p> : null}
         {assetGroups.map((group) => {
           const groupKey = String(group.id)
           const groupAssets = groupedAssets[groupKey] ?? []
@@ -117,17 +117,17 @@ export function AssetList({ assets, groups, selectedAssetId, onSelectAsset, onUp
           }
 
           return (
-            <section key={groupKey} className="asset-group" aria-label={group.label}>
-              <h3 className="asset-group-title">{group.label}</h3>
-              <ul className="asset-group-list">
+            <section key={groupKey} className="mb-4" aria-label={group.label}>
+              <h3 className="px-4 py-1.5 text-[11px] font-semibold text-ops-muted uppercase tracking-wider bg-ops-deep/50">{group.label}</h3>
+              <ul className="flex flex-col list-none m-0 p-0">
                 {groupAssets.map((asset) => {
                   const selected = asset.id === selectedAssetId
                   const menuOpen = asset.id === menuAssetId
                   const panelOpen = editingAsset?.id === asset.id || deletingAsset?.id === asset.id
 
                   return (
-                    <li key={asset.id} className="asset-list-row">
-                      <div className={`asset-card-shell${menuOpen || panelOpen ? ' asset-card-shell-active' : ''}`}>
+                    <li key={asset.id} className="relative border-b border-ops-border/10 last:border-b-0">
+                      <div className={`relative flex items-center group ${menuOpen || panelOpen ? 'bg-ops-border/10' : ''}`}>
                         <ListItemCard
                           title={asset.name}
                           meta={getAssetMeta(asset)}
@@ -143,7 +143,7 @@ export function AssetList({ assets, groups, selectedAssetId, onSelectAsset, onUp
 
                         <button
                           type="button"
-                          className="asset-menu-trigger"
+                          className="absolute right-2 opacity-0 group-hover:opacity-100 focus:opacity-100 p-1.5 hover:bg-ops-border/20 text-ops-muted hover:text-ops-text rounded transition-all z-10"
                           aria-label={`${asset.name} 操作`}
                           onClick={(event) => {
                             event.stopPropagation()
@@ -152,14 +152,15 @@ export function AssetList({ assets, groups, selectedAssetId, onSelectAsset, onUp
                             setMenuAssetId((current) => (current === asset.id ? null : asset.id))
                           }}
                         >
-                          ⋯
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="1"></circle><circle cx="12" cy="5" r="1"></circle><circle cx="12" cy="19" r="1"></circle></svg>
                         </button>
                       </div>
 
                       {menuOpen ? (
-                        <div className="asset-context-menu" role="menu" aria-label={`${asset.name} actions`}>
+                        <div className="absolute right-2 top-10 w-32 py-1 bg-ops-strong border border-ops-border/30 rounded shadow-xl z-20" role="menu" aria-label={`${asset.name} actions`}>
                           <button
                             type="button"
+                            className="w-full text-left px-3 py-1.5 text-sm text-ops-text hover:bg-ops-border/20 transition-colors"
                             role="menuitem"
                             onClick={() => {
                               setEditingAsset(asset)
@@ -173,6 +174,7 @@ export function AssetList({ assets, groups, selectedAssetId, onSelectAsset, onUp
                           </button>
                           <button
                             type="button"
+                            className="w-full text-left px-3 py-1.5 text-sm text-red-400 hover:bg-red-500/10 transition-colors"
                             role="menuitem"
                             onClick={() => {
                               setDeletingAsset(asset)
@@ -189,14 +191,16 @@ export function AssetList({ assets, groups, selectedAssetId, onSelectAsset, onUp
                       ) : null}
 
                       {editingAsset?.id === asset.id ? (
-                        <section className="asset-inline-panel" role="dialog" aria-labelledby={`edit-asset-title-${asset.id}`}>
-                          <div className="asset-inline-panel-header">
-                            <h3 id={`edit-asset-title-${asset.id}`} className="modal-title">编辑主机连接</h3>
-                            <button type="button" className="asset-inline-close" onClick={() => {
+                        <section className="bg-ops-deep/80 border-t border-ops-border/20 p-4" role="dialog" aria-labelledby={`edit-asset-title-${asset.id}`}>
+                          <div className="flex items-center justify-between mb-3">
+                            <h3 id={`edit-asset-title-${asset.id}`} className="text-sm font-medium text-ops-text">编辑主机连接</h3>
+                            <button type="button" className="text-ops-muted hover:text-ops-text p-1" onClick={() => {
                               setEditingAsset(null)
                               setEditAssetForm(null)
                               setEditAssetError(null)
-                            }}>×</button>
+                            }}>
+                              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                            </button>
                           </div>
                           <div className="asset-form-grid asset-inline-grid">
                             <label>

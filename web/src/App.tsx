@@ -130,10 +130,10 @@ export function App() {
   }
 
   return (
-    <div className="app-shell">
+    <div className="flex flex-col h-screen w-screen bg-ops-bg text-ops-text overflow-hidden">
       <TopBar onOpenSettings={() => setActiveModal('settings')} />
 
-      <main className="layout-grid">
+      <main className="flex-1 flex overflow-hidden">
         <AssetSidebar
           assets={bootstrap.assets}
           groups={bootstrap.groups}
@@ -155,14 +155,14 @@ export function App() {
             onSelectTab={setActiveTerminalAssetId}
           />
         ) : (
-          <section className="panel-card panel-fill">
-            <p className="status-line">暂无资产，请先添加资产。</p>
+          <section className="flex-1 flex items-center justify-center bg-ops-panel border-x border-ops-border/30 backdrop-blur-md">
+            <p className="text-ops-muted text-sm">暂无资产，请先添加资产。</p>
           </section>
         )}
 
         {loadError ? (
-          <section className="panel-card panel-fill">
-            <p className="status-line">{loadError}</p>
+          <section className="flex-1 flex items-center justify-center bg-ops-panel border-x border-ops-border/30 backdrop-blur-md">
+            <p className="text-ops-red text-sm">{loadError}</p>
           </section>
         ) : null}
 
@@ -189,25 +189,25 @@ export function App() {
       </main>
 
       {activeModal === 'add-asset' ? (
-        <div className="modal-backdrop" role="presentation">
-          <form className="asset-modal" role="dialog" aria-modal="true" aria-labelledby="add-asset-title" onSubmit={handleAddAssetSubmit}>
-            <h3 id="add-asset-title" className="modal-title">添加资产</h3>
-            <div className="asset-form-grid">
-              <label>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" role="presentation">
+          <form className="w-[500px] max-w-[90vw] max-h-[90vh] overflow-y-auto bg-ops-strong border border-ops-border/50 rounded-xl p-6 shadow-2xl flex flex-col gap-4" role="dialog" aria-modal="true" aria-labelledby="add-asset-title" onSubmit={handleAddAssetSubmit}>
+            <h3 id="add-asset-title" className="text-lg font-medium text-ops-text pb-2 border-b border-ops-border/30">添加资产</h3>
+            <div className="grid grid-cols-2 gap-4">
+              <label className="flex flex-col gap-1 text-sm text-ops-muted col-span-2 sm:col-span-1">
                 类型
-                <select className="field-control" value={addAssetForm.mode} onChange={(event) => updateAddAssetForm('mode', event.target.value)}>
+                <select className="bg-ops-deep text-ops-text border border-ops-border rounded-md px-3 py-1.5 focus:outline-none focus:border-ops-green" value={addAssetForm.mode} onChange={(event) => updateAddAssetForm('mode', event.target.value)}>
                   <option value="ssh">SSH</option>
                   <option value="serial">Serial</option>
                   <option value="telnet">Telnet</option>
                 </select>
               </label>
-              <label>
+              <label className="flex flex-col gap-1 text-sm text-ops-muted col-span-2 sm:col-span-1">
                 名称
-                <input className="field-control" value={addAssetForm.name} onChange={(event) => updateAddAssetForm('name', event.target.value)} placeholder={addAssetForm.mode === 'serial' ? '串口设备' : addAssetForm.mode === 'telnet' ? 'telnet-switch-01' : 'backup-linux-03'} required />
+                <input className="bg-ops-deep text-ops-text border border-ops-border rounded-md px-3 py-1.5 focus:outline-none focus:border-ops-green" value={addAssetForm.name} onChange={(event) => updateAddAssetForm('name', event.target.value)} placeholder={addAssetForm.mode === 'serial' ? '串口设备' : addAssetForm.mode === 'telnet' ? 'telnet-switch-01' : 'backup-linux-03'} required />
               </label>
-              <label>
+              <label className="flex flex-col gap-1 text-sm text-ops-muted col-span-2 sm:col-span-1">
                 分组
-                <select className="field-control" value={addAssetForm.groupId} onChange={(event) => updateAddAssetForm('groupId', event.target.value)}>
+                <select className="bg-ops-deep text-ops-text border border-ops-border rounded-md px-3 py-1.5 focus:outline-none focus:border-ops-green" value={addAssetForm.groupId} onChange={(event) => updateAddAssetForm('groupId', event.target.value)}>
                   <option value="">未分组</option>
                   {bootstrap.groups.map((group) => (
                     <option key={group.id} value={group.id}>{group.name}</option>
@@ -216,32 +216,32 @@ export function App() {
               </label>
               {addAssetForm.mode === 'ssh' ? (
                 <>
-                  <label>
+                  <label className="flex flex-col gap-1 text-sm text-ops-muted col-span-2 sm:col-span-1">
                     地址
-                    <input className="field-control" value={addAssetForm.host} onChange={(event) => updateAddAssetForm('host', event.target.value)} placeholder="10.10.3.19" required />
+                    <input className="bg-ops-deep text-ops-text border border-ops-border rounded-md px-3 py-1.5 focus:outline-none focus:border-ops-green" value={addAssetForm.host} onChange={(event) => updateAddAssetForm('host', event.target.value)} placeholder="10.10.3.19" required />
                   </label>
-                  <label>
+                  <label className="flex flex-col gap-1 text-sm text-ops-muted col-span-2 sm:col-span-1">
                     端口
-                    <input className="field-control" type="number" min="1" max="65535" value={addAssetForm.port} onChange={(event) => updateAddAssetForm('port', event.target.value)} placeholder="22" required />
+                    <input className="bg-ops-deep text-ops-text border border-ops-border rounded-md px-3 py-1.5 focus:outline-none focus:border-ops-green" type="number" min="1" max="65535" value={addAssetForm.port} onChange={(event) => updateAddAssetForm('port', event.target.value)} placeholder="22" required />
                   </label>
-                  <label>
+                  <label className="flex flex-col gap-1 text-sm text-ops-muted col-span-2 sm:col-span-1">
                     用户名
-                    <input className="field-control" value={addAssetForm.username} onChange={(event) => updateAddAssetForm('username', event.target.value)} placeholder="ops" required />
+                    <input className="bg-ops-deep text-ops-text border border-ops-border rounded-md px-3 py-1.5 focus:outline-none focus:border-ops-green" value={addAssetForm.username} onChange={(event) => updateAddAssetForm('username', event.target.value)} placeholder="ops" required />
                   </label>
-                  <label>
+                  <label className="flex flex-col gap-1 text-sm text-ops-muted col-span-2 sm:col-span-1">
                     认证方式
-                    <select className="field-control" value={addAssetForm.authType} onChange={(event) => updateAddAssetForm('authType', event.target.value)}>
+                    <select className="bg-ops-deep text-ops-text border border-ops-border rounded-md px-3 py-1.5 focus:outline-none focus:border-ops-green" value={addAssetForm.authType} onChange={(event) => updateAddAssetForm('authType', event.target.value)}>
                       <option value="password">密码</option>
                       <option value="key">密钥</option>
                       <option value="password_and_key">密码 + 密钥</option>
                     </select>
                   </label>
-                  <label>
+                  <label className="flex flex-col gap-1 text-sm text-ops-muted col-span-2">
                     {addAssetForm.authType === 'key' ? '密钥内容' : addAssetForm.authType === 'password_and_key' ? '密码或密钥凭据' : '密码'}
                     {addAssetForm.authType === 'key' ? (
-                      <textarea className="field-control" value={addAssetForm.credentialSecret} onChange={(event) => updateAddAssetForm('credentialSecret', event.target.value)} placeholder="粘贴私钥内容" rows={5} required />
+                      <textarea className="bg-ops-deep text-ops-text border border-ops-border rounded-md px-3 py-1.5 focus:outline-none focus:border-ops-green font-mono" value={addAssetForm.credentialSecret} onChange={(event) => updateAddAssetForm('credentialSecret', event.target.value)} placeholder="粘贴私钥内容" rows={5} required />
                     ) : (
-                      <input className="field-control" type="password" value={addAssetForm.credentialSecret} onChange={(event) => updateAddAssetForm('credentialSecret', event.target.value)} placeholder={addAssetForm.authType === 'password_and_key' ? '输入密码或密钥口令' : '请输入登录密码'} required />
+                      <input className="bg-ops-deep text-ops-text border border-ops-border rounded-md px-3 py-1.5 focus:outline-none focus:border-ops-green" type="password" value={addAssetForm.credentialSecret} onChange={(event) => updateAddAssetForm('credentialSecret', event.target.value)} placeholder={addAssetForm.authType === 'password_and_key' ? '输入密码或密钥口令' : '请输入登录密码'} required />
                     )}
                   </label>
                 </>

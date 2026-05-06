@@ -5,5 +5,5 @@ type ActionRowProps = {
 }
 
 export function ActionRow({ children }: ActionRowProps) {
-  return <div className="action-row">{children}</div>
+  return <div className="flex items-center gap-3 p-4 border-t border-ops-border/20 shrink-0">{children}</div>
 }

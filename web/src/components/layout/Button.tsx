@@ -8,14 +8,15 @@ type ButtonProps = {
 } & ButtonHTMLAttributes<HTMLButtonElement>
 
 export function Button({ children, className = '', variant = 'default', type = 'button', ...props }: ButtonProps) {
+  const baseClasses = "inline-flex items-center justify-center px-4 py-2 text-sm font-medium rounded-md transition-colors focus:outline-none"
   const variantClassName = {
-    default: 'button button-default',
-    primary: 'button button-primary',
-    danger: 'button button-danger',
-    'tab-active': 'button button-tab-active',
+    default: 'text-ops-text bg-ops-border/10 hover:bg-ops-border/20 border border-transparent',
+    primary: 'text-ops-bg bg-ops-cyan hover:bg-ops-cyan/90 border border-transparent',
+    danger: 'text-white bg-red-600 hover:bg-red-700 border border-transparent',
+    'tab-active': 'bg-ops-border/20 text-ops-cyan border-b-2 border-ops-cyan rounded-b-none',
   }[variant]
 
-  const mergedClassName = className ? `${variantClassName} ${className}` : variantClassName
+  const mergedClassName = `${baseClasses} ${variantClassName} ${className}`.trim()
 
   return (
     <button type={type} className={mergedClassName} {...props}>

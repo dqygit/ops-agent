@@ -6,7 +6,7 @@ from pydantic import SecretStr
 from sqlmodel import Session
 
 from app.db.models import ModelConfigRecord
-from app.db.repositories import list_model_names_by_provider
+from app.db.repositories.models import list_model_names_by_provider
 from app.services.credential_service import CredentialService
 from app.services.secret_key import get_ops_agent_secret_key
 from app.shared import config as shared_config
@@ -28,14 +28,15 @@ class ModelService:
         return session_override or default_config
 
     def build_default_config(self) -> ModelConfig:
+        provider = os.environ.get("OPS_AGENT_MODEL_PROVIDER", ModelProvider.ANTHROPIC.value)
         return ModelConfig(
-            provider=ModelProvider.ANTHROPIC,
-            model_name="claude-opus-4-7",
+            provider=ModelProvider(provider),
+            model_name=os.environ.get("OPS_AGENT_MODEL_NAME", "claude-opus-4-7"),
             base_url=os.environ.get("ANTHROPIC_BASE_URL", "https://api.anthropic.com"),
             api_key=SecretStr(os.environ.get("ANTHROPIC_API_KEY", "demo-key")),
-            timeout_seconds=30,
-            temperature=0.2,
-            max_tokens=256,
+            timeout_seconds=int(os.environ.get("OPS_AGENT_MODEL_TIMEOUT_SECONDS", "30")),
+            temperature=float(os.environ.get("OPS_AGENT_MODEL_TEMPERATURE", "0.2")),
+            max_tokens=int(os.environ.get("OPS_AGENT_MODEL_MAX_TOKENS", "2560")),
         )
 
     def load_settings(self) -> ModelConfig:

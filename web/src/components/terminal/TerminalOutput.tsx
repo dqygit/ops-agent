@@ -175,14 +175,14 @@ export function TerminalOutput({ sessionKey, output, onInput, onResize }: Termin
   return (
     <div
       ref={containerRef}
-      className="terminal-view"
+      className="flex-1 w-full bg-ops-deep p-2 relative overflow-hidden focus:outline-none"
       aria-label="Terminal output"
       onMouseDown={() => {
         terminalRef.current?.focus()
       }}
       tabIndex={0}
     >
-      <div ref={terminalHostRef} className="terminal-host" />
+      <div ref={terminalHostRef} className="w-full h-full" />
     </div>
   )
 }

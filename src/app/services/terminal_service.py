@@ -1,10 +1,16 @@
 from functools import partial
+from typing import Any, Awaitable, Callable, TypeVar, cast
 
 import anyio
 from starlette.websockets import WebSocketDisconnect
 
 from app.core.terminal.context_bridge import build_terminal_context
 from app.core.terminal.session_manager import TerminalSessionManager
+
+
+T = TypeVar("T")
+RunSyncCallable = Callable[..., Awaitable[T]]
+run_sync = cast(RunSyncCallable[Any], getattr(anyio.to_thread, "run_sync"))
 
 
 class TerminalService:
@@ -55,14 +61,14 @@ class TerminalService:
         except WebSocketDisconnect:
             pass
         except Exception as exc:
-            await anyio.to_thread.run_sync(partial(self._persistence.update_session, terminal_session_id, status="failed", last_error=str(exc)))
-            await anyio.to_thread.run_sync(self._persistence.record_event, terminal_session_id, "error", str(exc))
+            await run_sync(partial(self._persistence.update_session, terminal_session_id, status="failed", last_error=str(exc)))
+            await run_sync(self._persistence.record_event, terminal_session_id, "error", str(exc))
             try:
                 await websocket.send_json({"type": "error", "message": str(exc)})
             except Exception:
                 pass
         finally:
-            await anyio.to_thread.run_sync(self.close_session, terminal_session_id)
+            await run_sync(self.close_session, terminal_session_id)
 
     async def _receive_websocket_input(self, terminal_session_id: int, session_manager, websocket, closed, send_lock) -> None:
         try:
@@ -70,7 +76,7 @@ class TerminalService:
                 message = await websocket.receive_json()
                 message_type = message.get("type")
                 if message_type == "input":
-                    await anyio.to_thread.run_sync(session_manager.write, message.get("data", ""))
+                    await run_sync(session_manager.write, message.get("data", ""))
                 elif message_type == "resize":
                     try:
                         cols = int(message.get("cols", 80))
@@ -79,12 +85,12 @@ class TerminalService:
                         async with send_lock:
                             await websocket.send_json({"type": "error", "message": "invalid terminal size"})
                         continue
-                    await anyio.to_thread.run_sync(session_manager.resize, cols, rows)
+                    await run_sync(session_manager.resize, cols, rows)
                 elif message_type == "close":
                     async with send_lock:
                         await websocket.send_json({"type": "closed"})
                     return
-                await anyio.to_thread.run_sync(self._persistence.record_event, terminal_session_id, message_type or "message", message)
+                await run_sync(self._persistence.record_event, terminal_session_id, message_type or "message", message)
         except WebSocketDisconnect:
             return
         finally:
@@ -92,9 +98,9 @@ class TerminalService:
 
     async def _send_terminal_output(self, terminal_session_id: int, session_manager, websocket, closed, send_lock) -> None:
         while True:
-            output = await anyio.to_thread.run_sync(session_manager.read)
+            output = await run_sync(session_manager.read)
             if output:
-                await anyio.to_thread.run_sync(self._persistence.record_event, terminal_session_id, "terminal_output", output)
+                await run_sync(self._persistence.record_event, terminal_session_id, "terminal_output", output)
                 try:
                     async with send_lock:
                         await websocket.send_json({"type": "output", "data": output})
@@ -102,9 +108,9 @@ class TerminalService:
                     closed.set()
                     return
             if closed.is_set():
-                final_output = await anyio.to_thread.run_sync(session_manager.read)
+                final_output = await run_sync(session_manager.read)
                 if final_output:
-                    await anyio.to_thread.run_sync(self._persistence.record_event, terminal_session_id, "terminal_output", final_output)
+                    await run_sync(self._persistence.record_event, terminal_session_id, "terminal_output", final_output)
                     async with send_lock:
                         await websocket.send_json({"type": "output", "data": final_output})
                 return

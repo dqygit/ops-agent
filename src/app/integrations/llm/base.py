@@ -1,47 +1,39 @@
 from collections.abc import Iterator
-from dataclasses import dataclass
-from typing import Any, Protocol, runtime_checkable
+from dataclasses import dataclass, field
+from typing import Any, Literal, Protocol, runtime_checkable
 
+from app.integrations.tool import LLMToolCall, LLMToolChoice, LLMToolDefinition
 from app.shared.schemas import ModelConfig
 
-SYSTEM_PROMPT = "你是一个网络运维助手。基于用户请求和命令输出，给出简洁、准确、可执行的中文总结。"
+LLMMessageRole = Literal["system", "user", "assistant", "tool"]
 
 
 @dataclass(frozen=True)
-class LLMConversation:
-    system_prompt: str
-    messages: list[dict[str, str]]
+class LLMMessage:
+    role: LLMMessageRole
+    content: str
+    tool_call_id: str | None = None
+    name: str | None = None
 
 
-def build_summary_conversation(
-    user_input: str,
-    command_outputs: list[str],
-    recent_messages: list[dict[str, Any]] | None = None,
-) -> LLMConversation:
-    joined_outputs = "\n".join(f"{index}. {output}" for index, output in enumerate(command_outputs, start=1))
-    return LLMConversation(
-        system_prompt=SYSTEM_PROMPT,
-        messages=[
-            *(recent_messages or []),
-            {
-                "role": "user",
-                "content": f"用户请求: {user_input}\n\n命令输出:\n{joined_outputs}",
-            },
-        ],
-    )
+@dataclass(frozen=True)
+class LLMCompletionRequest:
+    messages: list[LLMMessage]
+    tools: list[LLMToolDefinition] = field(default_factory=list)
+    tool_choice: LLMToolChoice | None = None
+    temperature: float | None = None
+    max_tokens: int | None = None
+
+
+@dataclass(frozen=True)
+class LLMCompletionResponse:
+    text: str = ""
+    tool_calls: list[LLMToolCall] = field(default_factory=list)
+    finish_reason: str | None = None
 
 
 @runtime_checkable
 class SupportsSummarize(Protocol):
-    def summarize(
-        self,
-        *,
-        config: ModelConfig,
-        user_input: str,
-        command_outputs: list[str],
-        recent_messages: list[dict[str, Any]] | None = None,
-    ) -> str: ...
-
     def stream_summarize(
         self,
         *,
@@ -50,3 +42,13 @@ class SupportsSummarize(Protocol):
         command_outputs: list[str],
         recent_messages: list[dict[str, Any]] | None = None,
     ) -> Iterator[str]: ...
+
+
+@runtime_checkable
+class SupportsCompletion(Protocol):
+    def complete(
+        self,
+        *,
+        config: ModelConfig,
+        request: LLMCompletionRequest,
+    ) -> LLMCompletionResponse: ...

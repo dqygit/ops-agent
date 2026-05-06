@@ -172,10 +172,6 @@ export function useConsoleData() {
       const socket = new WebSocket(buildTerminalWebSocketUrl(tabItem.sessionId))
       currentSockets[tabItem.assetId] = socket
 
-      socket.addEventListener('open', () => {
-        socket.send(JSON.stringify({ type: 'input', data: '\r' }))
-      })
-
       socket.addEventListener('message', (event) => {
         try {
           const payload = JSON.parse(event.data) as {

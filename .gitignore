@@ -12,3 +12,6 @@ node_modules/
 dist/
 release/
 .mypy_cache/
+.env
+.roo/
+.ops-agent/

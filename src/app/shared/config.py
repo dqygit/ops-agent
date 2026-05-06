@@ -1,7 +1,8 @@
 from pathlib import Path
 
 
-APP_DIR = Path.home() / ".ops-agent"
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+APP_DIR = PROJECT_ROOT / ".ops-agent"
 DB_PATH = APP_DIR / "ops_agent.db"
 SETTINGS_PATH = APP_DIR / "settings.json"
 TEST_DB_PATH = APP_DIR / "ops_agent.test.db"

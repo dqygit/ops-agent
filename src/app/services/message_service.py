@@ -1,4 +1,4 @@
-from app.db.repositories import create_assistant_message, list_assistant_messages
+from app.db.repositories.assistant import create_assistant_message, list_assistant_messages
 
 
 class AssistantMessageService:
