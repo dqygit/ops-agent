@@ -1,4 +1,5 @@
 import json
+from datetime import UTC, datetime
 from typing import Any, cast
 
 from sqlalchemy import desc
@@ -81,3 +82,29 @@ def list_terminal_events_by_session_id(session: Session, terminal_session_id: in
         ).all()
     )
     return list(reversed(rows[:limit]))
+
+
+class TerminalSessionRepository:
+    def __init__(self, engine):
+        self._engine = engine
+
+    def create_session(self, asset_id: int) -> int:
+        with Session(self._engine) as session:
+            row = create_terminal_session(session, asset_id)
+            if row.id is None:
+                raise ValueError("terminal session id is required")
+            return row.id
+
+    def update_session(self, terminal_session_id: int, *, status: str | None = None, last_error: str | None = None, ended: bool = False) -> None:
+        with Session(self._engine) as session:
+            update_terminal_session(
+                session,
+                terminal_session_id,
+                status=status,
+                last_error=last_error,
+                ended_at=datetime.now(UTC) if ended else None,
+            )
+
+    def record_event(self, terminal_session_id: int, event_type: str, metadata: Any = "") -> None:
+        with Session(self._engine) as session:
+            create_terminal_event(session, terminal_session_id, event_type, metadata)

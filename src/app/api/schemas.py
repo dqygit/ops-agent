@@ -24,6 +24,7 @@ class AssetGroupView(BaseModel):
 class AssetView(BaseModel):
     id: int
     group_id: int | None = None
+    ssh_key_id: int | None = None
     name: str
     asset_type: str
     host: str
@@ -128,6 +129,15 @@ class ModelConnectionTestRequest(BaseModel):
 class ModelConnectionTestResponse(BaseModel):
     success: bool
     message: str
+
+
+class SSHKeyView(BaseModel):
+    id: int
+    name: str
+    public_key: str
+    has_passphrase: bool
+    created_at: datetime
+    updated_at: datetime
 
 
 class AssistantMessageView(BaseModel):
@@ -299,6 +309,7 @@ class ConsoleBootstrapView(BaseModel):
     groups: list[AssetGroupView]
     historyByAsset: dict[int, list[ConsoleSessionRecordView]]
     modelOptions: list[str]
+    sshKeys: list[SSHKeyView] = Field(default_factory=list)
     terminalSessionId: int | None = None
     terminalSessionChannel: str | None = None
     terminalSessionError: str = ""

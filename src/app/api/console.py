@@ -5,7 +5,9 @@ from sqlmodel import Session
 
 from app.api.assets import to_asset_view
 from app.api.groups import to_asset_group_view
+from app.api.ssh_keys import to_ssh_key_view
 from app.api.schemas import ConsoleApprovalRequest, ConsoleBootstrapView, ConsoleRunRequest, ConsoleSessionRecordView
+from app.services.ssh_key_service import list_ssh_key_records
 from app.api.terminal import get_terminal_service
 from app.db.repositories.models import get_default_model_config, list_model_configs
 from app.db.session import get_session
@@ -41,6 +43,7 @@ def get_console_bootstrap(
             vendor="",
             description="默认本地终端",
             group_id=None,
+            ssh_key_id=None,
         )
     terminal_session_result = {"terminal_session_id": None, "channel": None, "error": ""}
     terminal_session_result = terminal_service.open_session(local_terminal_asset)
@@ -55,5 +58,5 @@ def get_console_bootstrap(
         initialPrompt="",
         terminalOutput="",
         initialEvents=[],
+        sshKeys=[to_ssh_key_view(record) for record in list_ssh_key_records(session)],
     )
-

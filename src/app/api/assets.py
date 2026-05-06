@@ -4,7 +4,7 @@ from sqlmodel import Session
 from app.api.schemas import AssetContextView, AssetView, AssistantSessionView, TerminalEventSummaryView, TerminalSessionSummaryView
 from app.db.repositories.terminal import list_terminal_events_by_session_id, list_terminal_sessions_by_asset_id
 from app.db.session import get_session
-from app.services.asset_service import GroupNotFoundError, create_asset_record, delete_asset_record, get_asset_record, list_asset_records, update_asset_record
+from app.services.asset_service import GroupNotFoundError, SSHKeyNotFoundError, create_asset_record, delete_asset_record, get_asset_record, list_asset_records, update_asset_record
 from app.shared.schemas import AssetCreate
 
 router = APIRouter()
@@ -14,6 +14,7 @@ def to_asset_view(asset) -> AssetView:
     return AssetView(
         id=asset.id or 0,
         group_id=asset.group_id,
+        ssh_key_id=asset.ssh_key_id,
         name=asset.name,
         asset_type=asset.asset_type,
         host=asset.host,
@@ -45,6 +46,8 @@ def create_asset(payload: AssetCreate, session: Session = Depends(get_session)) 
         asset = create_asset_record(session, payload)
     except GroupNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Group not found") from exc
+    except SSHKeyNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="SSH key not found") from exc
     return to_asset_view(asset)
 
 
@@ -54,6 +57,8 @@ def update_asset(asset_id: int, payload: AssetCreate, session: Session = Depends
         asset = update_asset_record(session, asset_id, payload)
     except GroupNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Group not found") from exc
+    except SSHKeyNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="SSH key not found") from exc
     if asset is None:
         raise HTTPException(status_code=404, detail="Asset not found")
     return to_asset_view(asset)

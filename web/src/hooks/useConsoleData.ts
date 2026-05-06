@@ -13,7 +13,7 @@ import {
 } from '../api'
 import type { AssetPayload } from '../api'
 import type { ConsoleBootstrap } from '../types/api'
-import type { Asset, AssetGroup, EventItem } from '../types/ops'
+import type { Asset, AssetGroup, EventItem, SSHKey } from '../types/ops'
 
 const LOCAL_TERMINAL_ASSET_ID = 0
 
@@ -36,6 +36,7 @@ const defaultLocalTerminalAsset: Asset = {
   tags: [],
   vendor: '',
   description: '默认本地终端',
+  sshKeyId: null,
 }
 
 const emptyBootstrap: ConsoleBootstrap = {
@@ -49,6 +50,7 @@ const emptyBootstrap: ConsoleBootstrap = {
   initialPrompt: '',
   terminalOutput: '',
   initialEvents: [],
+  sshKeys: [],
 }
 
 function buildTerminalWebSocketUrl(terminalSessionId: number) {
@@ -323,6 +325,14 @@ export function useConsoleData() {
     setSelectedModel((currentModel) => (modelOptions.length === 0 || modelOptions.includes(currentModel) ? currentModel : modelOptions[0]))
   }
 
+  const replaceSSHKeys = (sshKeys: SSHKey[]) => {
+    setBootstrap((currentBootstrap) => ({
+      ...currentBootstrap,
+      sshKeys,
+      assets: currentBootstrap.assets.map((asset) => (asset.sshKeyId !== null && !sshKeys.some((sshKey) => sshKey.id === asset.sshKeyId) ? { ...asset, sshKeyId: null } : asset)),
+    }))
+  }
+
   const runAgent = async () => {
     try {
       const nextEvents = await runAgentApi(
@@ -381,6 +391,7 @@ export function useConsoleData() {
     deleteAsset,
     replaceGroups,
     replaceModelOptions,
+    replaceSSHKeys,
     runAgent,
     approveRun: () => void submitApproval(true),
     rejectRun: () => void submitApproval(false),

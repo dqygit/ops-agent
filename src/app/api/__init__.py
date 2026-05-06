@@ -8,6 +8,7 @@ from app.api.groups import router as groups_router
 from app.api.health import router as health_router
 from app.api.models import router as models_router
 from app.api.console import router as console_router
+from app.api.ssh_keys import router as ssh_keys_router
 from app.api.terminal import get_terminal_service, router as terminal_router
 from app.db.session import Session, engine, init_db
 from app.services.asset_service import ensure_default_asset_group
@@ -28,6 +29,7 @@ app.include_router(assets_router)
 app.include_router(terminal_router)
 app.include_router(groups_router)
 app.include_router(console_router)
+app.include_router(ssh_keys_router)
 
 
 __all__ = [
@@ -39,5 +41,6 @@ __all__ = [
     "console_router",
     "lifespan",
     "models_router",
+    "ssh_keys_router",
     "terminal_router",
 ]

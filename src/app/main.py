@@ -1,8 +1,11 @@
 
 import os
 from importlib import import_module
+
 from app.api import app
+from app.services.terminal_service import TerminalService
 from app.shared.config import APP_DIR
+
 
 def main() -> None:
     APP_DIR.mkdir(parents=True, exist_ok=True)

@@ -4,8 +4,8 @@ from typing import Any, Awaitable, Callable, TypeVar, cast
 import anyio
 from starlette.websockets import WebSocketDisconnect
 
-from app.core.terminal.context_bridge import build_terminal_context
-from app.core.terminal.session_manager import TerminalSessionManager
+from app.core.connectors.context_bridge import build_terminal_context
+from app.core.connectors.session_manager import TerminalSessionManager
 
 
 T = TypeVar("T")

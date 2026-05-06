@@ -17,6 +17,7 @@ class Asset(SQLModel, table=True):
     __tablename__: ClassVar[str] = "assets"
     id: int | None = Field(default=None, primary_key=True)
     group_id: int | None = None
+    ssh_key_id: int | None = None
     name: str
     asset_type: str
     host: str = ""
@@ -36,6 +37,19 @@ class Credential(SQLModel, table=True):
     asset_id: int
     encryption_version: str
     encrypted_blob: str
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
+class SSHKey(SQLModel, table=True):
+    __tablename__: ClassVar[str] = "ssh_keys"
+    id: int | None = Field(default=None, primary_key=True)
+    name: str
+    public_key: str = ""
+    private_key_encryption_version: str
+    encrypted_private_key: str
+    passphrase_encryption_version: str | None = None
+    encrypted_passphrase: str | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 

@@ -1,4 +1,4 @@
-import type { Asset, AssetGroup, EventItem, SessionRecord } from './ops'
+import type { Asset, AssetGroup, EventItem, SessionRecord, SSHKey } from './ops'
 
 export type ConsoleBootstrap = {
   assets: Asset[]
@@ -11,4 +11,5 @@ export type ConsoleBootstrap = {
   initialPrompt: string
   terminalOutput: string
   initialEvents: EventItem[]
+  sshKeys: SSHKey[]
 }

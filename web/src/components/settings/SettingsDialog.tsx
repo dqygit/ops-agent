@@ -3,20 +3,25 @@ import { type FormEvent, useEffect, useState } from 'react'
 import {
   createGroup,
   createModelConfig,
+  createSSHKey,
   deleteGroup,
   deleteModelConfig,
+  deleteSSHKey,
   getGroups,
   getModelConfigs,
+  getSSHKeys,
   setDefaultModelConfig,
   testModelConfig,
   updateGroup,
   updateModelConfig,
+  updateSSHKey,
 } from '../../api'
-import type { AssetGroup, ModelConfig } from '../../types/ops'
+import type { AssetGroup, ModelConfig, SSHKey } from '../../types/ops'
 import { DeleteConfirmDialog } from './DeleteConfirmDialog'
 import { GroupsSection } from './GroupsSection'
 import { ModelsSection } from './ModelsSection'
-import type { GroupForm, ModelForm, SettingsDialogProps, SettingsSection } from './settingsTypes'
+import { SSHKeysSection } from './SSHKeysSection'
+import type { GroupForm, ModelForm, SettingsDialogProps, SettingsSection, SSHKeyForm } from './settingsTypes'
 
 const emptyGroupForm: GroupForm = {
   name: '',
@@ -34,6 +39,22 @@ const emptyModelForm: ModelForm = {
   temperature: '0.2',
   maxTokens: '1024',
   description: '',
+}
+
+const emptySSHKeyForm: SSHKeyForm = {
+  name: '',
+  publicKey: '',
+  privateKey: '',
+  passphrase: '',
+}
+
+function sshKeyToForm(sshKey: SSHKey): SSHKeyForm {
+  return {
+    name: sshKey.name,
+    publicKey: sshKey.publicKey,
+    privateKey: '',
+    passphrase: '',
+  }
 }
 
 function getModelOptions(configs: ModelConfig[]) {
@@ -55,10 +76,11 @@ function modelToForm(config: ModelConfig): ModelForm {
   }
 }
 
-export function SettingsDialog({ initialGroups, selectedModel, onSelectedModelChange, onGroupsChange, onModelOptionsChange, onClose }: SettingsDialogProps) {
+export function SettingsDialog({ initialGroups, selectedModel, sshKeys: initialSSHKeys, onSelectedModelChange, onGroupsChange, onModelOptionsChange, onSSHKeysChange, onClose }: SettingsDialogProps) {
   const [activeSection, setActiveSection] = useState<SettingsSection>('groups')
   const [groups, setGroups] = useState<AssetGroup[]>(initialGroups)
   const [modelConfigs, setModelConfigs] = useState<ModelConfig[]>([])
+  const [sshKeys, setSSHKeys] = useState<SSHKey[]>(initialSSHKeys)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [groupForm, setGroupForm] = useState<GroupForm>(emptyGroupForm)
@@ -69,6 +91,10 @@ export function SettingsDialog({ initialGroups, selectedModel, onSelectedModelCh
   const [showModelForm, setShowModelForm] = useState(false)
   const [editingModel, setEditingModel] = useState<ModelConfig | null>(null)
   const [deletingModel, setDeletingModel] = useState<ModelConfig | null>(null)
+  const [sshKeyForm, setSSHKeyForm] = useState<SSHKeyForm>(emptySSHKeyForm)
+  const [showSSHKeyForm, setShowSSHKeyForm] = useState(false)
+  const [editingSSHKey, setEditingSSHKey] = useState<SSHKey | null>(null)
+  const [deletingSSHKey, setDeletingSSHKey] = useState<SSHKey | null>(null)
   const [saving, setSaving] = useState(false)
   const [testResult, setTestResult] = useState<string | null>(null)
 
@@ -76,11 +102,13 @@ export function SettingsDialog({ initialGroups, selectedModel, onSelectedModelCh
     setLoading(true)
     setError(null)
     try {
-      const [nextGroups, nextModels] = await Promise.all([getGroups(), getModelConfigs()])
+      const [nextGroups, nextModels, nextSSHKeys] = await Promise.all([getGroups(), getModelConfigs(), getSSHKeys()])
       setGroups(nextGroups)
       onGroupsChange(nextGroups)
       setModelConfigs(nextModels)
       onModelOptionsChange(getModelOptions(nextModels))
+      setSSHKeys(nextSSHKeys)
+      onSSHKeysChange(nextSSHKeys)
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : '加载设置失败')
     } finally {
@@ -159,6 +187,26 @@ export function SettingsDialog({ initialGroups, selectedModel, onSelectedModelCh
     setTestResult(null)
     setModelForm(emptyModelForm)
     setShowModelForm(true)
+  }
+
+  const startCreateSSHKey = () => {
+    setEditingSSHKey(null)
+    setDeletingSSHKey(null)
+    setSSHKeyForm(emptySSHKeyForm)
+    setShowSSHKeyForm(true)
+  }
+
+  const startEditSSHKey = (sshKey: SSHKey) => {
+    setEditingSSHKey(sshKey)
+    setDeletingSSHKey(null)
+    setSSHKeyForm(sshKeyToForm(sshKey))
+    setShowSSHKeyForm(true)
+  }
+
+  const cancelSSHKeyForm = () => {
+    setEditingSSHKey(null)
+    setShowSSHKeyForm(false)
+    setSSHKeyForm(emptySSHKeyForm)
   }
 
   const startEditModel = (config: ModelConfig) => {
@@ -270,6 +318,57 @@ export function SettingsDialog({ initialGroups, selectedModel, onSelectedModelCh
     }
   }
 
+  const saveSSHKey = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setSaving(true)
+    setError(null)
+    try {
+      const payload = {
+        name: sshKeyForm.name.trim(),
+        public_key: sshKeyForm.publicKey.trim(),
+        private_key: sshKeyForm.privateKey.trim() || undefined,
+        passphrase: sshKeyForm.passphrase.trim() || undefined,
+      }
+      const savedSSHKey = editingSSHKey
+        ? await updateSSHKey(editingSSHKey.id, payload)
+        : await createSSHKey({
+            name: payload.name,
+            public_key: payload.public_key,
+            private_key: sshKeyForm.privateKey.trim(),
+            passphrase: payload.passphrase,
+          })
+      const nextSSHKeys = editingSSHKey
+        ? sshKeys.map((item) => (item.id === savedSSHKey.id ? savedSSHKey : item))
+        : [savedSSHKey, ...sshKeys]
+      setSSHKeys(nextSSHKeys)
+      onSSHKeysChange(nextSSHKeys)
+      cancelSSHKeyForm()
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : '保存 SSH 密钥失败')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const confirmDeleteSSHKey = async () => {
+    if (!deletingSSHKey) {
+      return
+    }
+    setSaving(true)
+    setError(null)
+    try {
+      await deleteSSHKey(deletingSSHKey.id)
+      const nextSSHKeys = sshKeys.filter((item) => item.id !== deletingSSHKey.id)
+      setSSHKeys(nextSSHKeys)
+      onSSHKeysChange(nextSSHKeys)
+      setDeletingSSHKey(null)
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : '删除 SSH 密钥失败')
+    } finally {
+      setSaving(false)
+    }
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" role="presentation">
       <section className="w-[800px] max-w-[90vw] h-[600px] max-h-[90vh] bg-ops-strong border border-ops-border/50 rounded-xl shadow-2xl flex flex-col overflow-hidden" role="dialog" aria-modal="true" aria-labelledby="settings-title">
@@ -282,14 +381,15 @@ export function SettingsDialog({ initialGroups, selectedModel, onSelectedModelCh
         </div>
         <div className="flex flex-1 overflow-hidden">
           <nav className="w-[200px] border-r border-ops-border/20 bg-ops-deep p-4 flex flex-col gap-1 shrink-0 overflow-y-auto" aria-label="设置导航">
-            <button type="button" className={`w-full text-left px-3 py-2 rounded-md transition-colors text-sm font-medium ${activeSection === 'groups' ? 'bg-ops-border/20 text-ops-cyan' : 'text-ops-muted hover:text-ops-text hover:bg-ops-border/10'}`} onClick={() => setActiveSection('groups')}>分组</button>
-            <button type="button" className={`w-full text-left px-3 py-2 rounded-md transition-colors text-sm font-medium ${activeSection === 'models' ? 'bg-ops-border/20 text-ops-cyan' : 'text-ops-muted hover:text-ops-text hover:bg-ops-border/10'}`} onClick={() => setActiveSection('models')}>模型</button>
-          </nav>
-          <div className="flex-1 p-6 overflow-y-auto bg-ops-panel/50 relative">
-            {error ? <div className="p-4 mb-6 rounded-md bg-red-500/10 border border-red-500/20 text-red-500 text-sm flex items-center justify-between">{error}<button type="button" className="px-3 py-1.5 rounded-md bg-ops-border/20 hover:bg-ops-border/30 transition-colors text-ops-text text-sm" onClick={() => void loadSettings()}>重试</button></div> : null}
-            {loading ? (
-              <div className="flex items-center justify-center h-40 text-ops-muted text-sm">加载中...</div>
-            ) : activeSection === 'groups' ? (
+             <button type="button" className={`w-full text-left px-3 py-2 rounded-md transition-colors text-sm font-medium ${activeSection === 'groups' ? 'bg-ops-border/20 text-ops-cyan' : 'text-ops-muted hover:text-ops-text hover:bg-ops-border/10'}`} onClick={() => setActiveSection('groups')}>分组</button>
+             <button type="button" className={`w-full text-left px-3 py-2 rounded-md transition-colors text-sm font-medium ${activeSection === 'models' ? 'bg-ops-border/20 text-ops-cyan' : 'text-ops-muted hover:text-ops-text hover:bg-ops-border/10'}`} onClick={() => setActiveSection('models')}>模型</button>
+             <button type="button" className={`w-full text-left px-3 py-2 rounded-md transition-colors text-sm font-medium ${activeSection === 'sshKeys' ? 'bg-ops-border/20 text-ops-cyan' : 'text-ops-muted hover:text-ops-text hover:bg-ops-border/10'}`} onClick={() => setActiveSection('sshKeys')}>SSH 密钥</button>
+           </nav>
+           <div className="flex-1 p-6 overflow-y-auto bg-ops-panel/50 relative">
+             {error ? <div className="p-4 mb-6 rounded-md bg-red-500/10 border border-red-500/20 text-red-500 text-sm flex items-center justify-between">{error}<button type="button" className="px-3 py-1.5 rounded-md bg-ops-border/20 hover:bg-ops-border/30 transition-colors text-ops-text text-sm" onClick={() => void loadSettings()}>重试</button></div> : null}
+             {loading ? (
+               <div className="flex items-center justify-center h-40 text-ops-muted text-sm">加载中...</div>
+             ) : activeSection === 'groups' ? (
               <GroupsSection
                 groups={groups}
                 groupForm={groupForm}
@@ -302,7 +402,7 @@ export function SettingsDialog({ initialGroups, selectedModel, onSelectedModelCh
                 onCancelForm={cancelGroupForm}
                 onSave={saveGroup}
               />
-            ) : (
+            ) : activeSection === 'models' ? (
               <ModelsSection
                 selectedModel={selectedModel}
                 modelConfigs={modelConfigs}
@@ -319,6 +419,20 @@ export function SettingsDialog({ initialGroups, selectedModel, onSelectedModelCh
                 onSave={saveModel}
                 onSetDefault={(config) => void setDefaultModel(config)}
                 onTest={() => void testModel()}
+              />
+            ) : (
+              <SSHKeysSection
+                sshKeys={sshKeys}
+                sshKeyForm={sshKeyForm}
+                showSSHKeyForm={showSSHKeyForm}
+                editingSSHKey={editingSSHKey}
+                saving={saving}
+                onStartCreate={startCreateSSHKey}
+                onStartEdit={startEditSSHKey}
+                onStartDelete={setDeletingSSHKey}
+                onFormChange={setSSHKeyForm}
+                onCancelForm={cancelSSHKeyForm}
+                onSave={saveSSHKey}
               />
             )}
           </div>
@@ -342,6 +456,16 @@ export function SettingsDialog({ initialGroups, selectedModel, onSelectedModelCh
             confirmDisabled={deletingModel.isDefault}
             onCancel={() => setDeletingModel(null)}
             onConfirm={() => void confirmDeleteModel()}
+          />
+        ) : null}
+        {deletingSSHKey ? (
+          <DeleteConfirmDialog
+            titleId="delete-ssh-key-title"
+            title="确认删除 SSH 密钥？"
+            message={deletingSSHKey.name}
+            saving={saving}
+            onCancel={() => setDeletingSSHKey(null)}
+            onConfirm={() => void confirmDeleteSSHKey()}
           />
         ) : null}
       </section>

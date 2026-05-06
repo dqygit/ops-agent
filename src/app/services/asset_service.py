@@ -7,11 +7,16 @@ from app.db.models import Asset, AssetGroup
 from app.db.repositories.assets import create_asset, create_asset_group, delete_asset_graph, delete_asset_group, get_asset_group, list_asset_groups, list_assets, update_asset_group
 from app.db.repositories.audit import create_audit_log
 from app.db.repositories.credentials import create_credential, get_credential_by_asset_id, update_credential
+from app.db.repositories.ssh_keys import get_ssh_key
 from app.services.credential_service import CredentialService
 from app.services.secret_key import get_ops_agent_secret_key
 
 
 class GroupNotFoundError(ValueError):
+    pass
+
+
+class SSHKeyNotFoundError(ValueError):
     pass
 
 
@@ -22,6 +27,11 @@ def _build_credential_service():
 def _ensure_group_exists(session, group_id):
     if group_id is not None and get_asset_group(session, group_id) is None:
         raise GroupNotFoundError("Group not found")
+
+
+def _ensure_ssh_key_exists(session, ssh_key_id):
+    if ssh_key_id is not None and get_ssh_key(session, ssh_key_id) is None:
+        raise SSHKeyNotFoundError("SSH key not found")
 
 
 def create_asset_group_record(session, payload):
@@ -53,6 +63,7 @@ def delete_asset_group_record(session, group_id):
 
 def create_asset_record(session, asset_data):
     _ensure_group_exists(session, asset_data.group_id)
+    _ensure_ssh_key_exists(session, asset_data.ssh_key_id)
     asset = create_asset(session, asset_data)
     asset_id = asset.id
     if asset_id is None:
@@ -87,6 +98,7 @@ def update_asset_record(session, asset_id, asset_data):
     if asset is None:
         return None
     _ensure_group_exists(session, asset_data.group_id)
+    _ensure_ssh_key_exists(session, asset_data.ssh_key_id)
 
     payload = asset_data.model_dump(exclude={"credential_secret"})
     payload["asset_type"] = asset_data.asset_type.value

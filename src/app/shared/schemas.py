@@ -7,6 +7,7 @@ class AssetCreate(BaseModel):
     name: str
     asset_type: AssetType
     group_id: int | None = None
+    ssh_key_id: int | None = None
     host: str = ""
     port: int = 22
     username: str = ""
@@ -27,6 +28,20 @@ class AssetCreate(BaseModel):
         if not self.auth_type:
             raise ValueError("auth_type is required for remote assets")
         return self
+
+
+class SSHKeyCreate(BaseModel):
+    name: str
+    public_key: str = ""
+    private_key: SecretStr
+    passphrase: SecretStr | None = None
+
+
+class SSHKeyUpdate(BaseModel):
+    name: str | None = None
+    public_key: str | None = None
+    private_key: SecretStr | None = None
+    passphrase: SecretStr | None = None
 
 
 class ModelConfig(BaseModel):

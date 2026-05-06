@@ -5,6 +5,7 @@ export type AssetPayload = {
   name: string
   asset_type: AssetType
   group_id?: number | null
+  ssh_key_id?: number | null
   host?: string
   port?: number
   username?: string
@@ -18,6 +19,7 @@ export type AssetPayload = {
 type AssetDto = {
   id: number
   group_id: number | null
+  ssh_key_id: number | null
   name: string
   asset_type: AssetType
   host: string
@@ -55,6 +57,7 @@ export function mapAsset(dto: AssetDto): Asset {
   return {
     id: dto.id,
     groupId: dto.group_id,
+    sshKeyId: dto.ssh_key_id,
     name: dto.name,
     assetType: dto.asset_type,
     host: dto.host,

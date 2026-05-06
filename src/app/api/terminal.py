@@ -2,11 +2,19 @@ from fastapi import APIRouter, Depends, HTTPException, Response, WebSocket
 from pydantic import BaseModel
 from sqlmodel import Session
 
+from app.core.connectors.server import connector_factory
+from app.db.repositories import terminal as terminal_repository
+from app.db.session import engine
 from app.db.session import get_session
 from app.services.asset_service import get_asset_record
 from app.services.terminal_service import TerminalService
 
 router = APIRouter()
+
+_terminal_service = TerminalService(
+    connector_factory=connector_factory,
+    persistence=terminal_repository.TerminalSessionRepository(engine),
+)
 
 
 class TerminalSessionRequest(BaseModel):
@@ -31,9 +39,7 @@ class TerminalContextResponse(BaseModel):
 
 
 def get_terminal_service() -> TerminalService:
-    from app.main import configured_terminal_service
-
-    return configured_terminal_service()
+    return _terminal_service
 
 
 @router.post("/api/terminal/sessions")

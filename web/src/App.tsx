@@ -1,4 +1,5 @@
 import { type FormEvent, useState } from 'react'
+import { Group as PanelGroup, Panel, Separator as PanelResizeHandle } from 'react-resizable-panels'
 import { AssetSidebar } from './components/assets/AssetSidebar'
 import { AssistantPanel } from './components/assistant/AssistantPanel'
 import { LoadingState } from './components/layout/LoadingState'
@@ -19,6 +20,7 @@ type AddAssetForm = {
   username: string
   authType: string
   credentialSecret: string
+  sshKeyId: string
   serialPort: string
   baudRate: string
   dataBits: string
@@ -35,6 +37,7 @@ const emptyAddAssetForm: AddAssetForm = {
   username: '',
   authType: 'password',
   credentialSecret: '',
+  sshKeyId: '',
   serialPort: '',
   baudRate: '9600',
   dataBits: '8',
@@ -84,6 +87,7 @@ export function App() {
     deleteAsset,
     replaceGroups,
     replaceModelOptions,
+    replaceSSHKeys,
     runAgent,
     approveRun,
     rejectRun,
@@ -114,6 +118,7 @@ export function App() {
         port: addAssetForm.mode === 'serial' ? Number(addAssetForm.baudRate) : Number(addAssetForm.port),
         username: addAssetForm.mode === 'serial' ? '' : addAssetForm.username.trim(),
         auth_type: addAssetForm.mode === 'ssh' ? addAssetForm.authType : addAssetForm.mode === 'telnet' ? 'password' : '',
+        ssh_key_id: addAssetForm.mode === 'ssh' && addAssetForm.authType === 'key' ? (addAssetForm.sshKeyId ? Number(addAssetForm.sshKeyId) : null) : null,
         credential_secret: addAssetForm.mode === 'serial' ? undefined : addAssetForm.credentialSecret.trim() || undefined,
         tags: buildConnectionTags(addAssetForm),
         vendor: '',
@@ -134,58 +139,78 @@ export function App() {
       <TopBar onOpenSettings={() => setActiveModal('settings')} />
 
       <main className="flex-1 flex overflow-hidden">
-        <AssetSidebar
-          assets={bootstrap.assets}
-          groups={bootstrap.groups}
-          selectedAssetId={selectedAsset?.id ?? 0}
-          onSelectAsset={setSelectedAssetId}
-          onUpdateAsset={updateAsset}
-          onDeleteAsset={deleteAsset}
-          onAddAsset={() => setActiveModal('add-asset')}
-        />
+        <PanelGroup orientation="horizontal" className="h-full w-full">
+          <Panel defaultSize={20} minSize={15}>
+            <AssetSidebar
+              assets={bootstrap.assets}
+              groups={bootstrap.groups}
+              selectedAssetId={selectedAsset?.id ?? 0}
+              onSelectAsset={setSelectedAssetId}
+              onUpdateAsset={updateAsset}
+              onDeleteAsset={deleteAsset}
+              onAddAsset={() => setActiveModal('add-asset')}
+            />
+          </Panel>
 
-        {selectedAsset ? (
-          <TerminalPanel
-            asset={selectedAsset}
-            tabs={terminalTabs.map((item) => item.asset)}
-            activeAssetId={activeTerminalAssetId}
-            output={terminalOutput}
-            onInput={sendTerminalInput}
-            onResize={resizeTerminal}
-            onSelectTab={setActiveTerminalAssetId}
-          />
-        ) : (
-          <section className="flex-1 flex items-center justify-center bg-ops-panel border-x border-ops-border/30 backdrop-blur-md">
-            <p className="text-ops-muted text-sm">暂无资产，请先添加资产。</p>
-          </section>
-        )}
+          <PanelResizeHandle className="w-1 bg-transparent group cursor-col-resize flex flex-col items-center justify-center relative">
+            <div className="absolute inset-y-0 -left-1 -right-1 z-10" />
+            <div className="w-px h-16 bg-ops-border/50 group-hover:bg-ops-cyan group-active:bg-ops-cyan transition-colors" />
+          </PanelResizeHandle>
 
-        {loadError ? (
-          <section className="flex-1 flex items-center justify-center bg-ops-panel border-x border-ops-border/30 backdrop-blur-md">
-            <p className="text-ops-red text-sm">{loadError}</p>
-          </section>
-        ) : null}
+          <Panel defaultSize={selectedAsset ? 50 : 80} minSize={30}>
+            {selectedAsset ? (
+              <TerminalPanel
+                asset={selectedAsset}
+                tabs={terminalTabs.map((item) => item.asset)}
+                activeAssetId={activeTerminalAssetId}
+                output={terminalOutput}
+                onInput={sendTerminalInput}
+                onResize={resizeTerminal}
+                onSelectTab={setActiveTerminalAssetId}
+              />
+            ) : (
+              <section className="h-full flex items-center justify-center bg-ops-panel border-x border-ops-border/30 backdrop-blur-md">
+                <p className="text-ops-muted text-sm">暂无资产，请先添加资产。</p>
+              </section>
+            )}
+            
+            {loadError ? (
+              <section className="h-full flex items-center justify-center bg-ops-panel border-x border-ops-border/30 backdrop-blur-md">
+                <p className="text-ops-red text-sm">{loadError}</p>
+              </section>
+            ) : null}
+          </Panel>
 
-        {selectedAsset ? (
-          <AssistantPanel
-            events={events}
-            models={bootstrap.modelOptions}
-            selectedModel={selectedModel}
-            prompt={prompt}
-            selectedAsset={selectedAsset}
-            onModelChange={setSelectedModel}
-            onPromptChange={setPrompt}
-            onRun={() => {
-              void runAgent()
-            }}
-            onApprove={() => {
-              void approveRun()
-            }}
-            onReject={() => {
-              void rejectRun()
-            }}
-          />
-        ) : null}
+          {selectedAsset && !loadError ? (
+            <>
+              <PanelResizeHandle className="w-1 bg-transparent group cursor-col-resize flex flex-col items-center justify-center relative">
+                <div className="absolute inset-y-0 -left-1 -right-1 z-10" />
+                <div className="w-px h-16 bg-ops-border/50 group-hover:bg-ops-cyan group-active:bg-ops-cyan transition-colors" />
+              </PanelResizeHandle>
+
+              <Panel defaultSize={30} minSize={20}>
+                <AssistantPanel
+                  events={events}
+                  models={bootstrap.modelOptions}
+                  selectedModel={selectedModel}
+                  prompt={prompt}
+                  selectedAsset={selectedAsset}
+                  onModelChange={setSelectedModel}
+                  onPromptChange={setPrompt}
+                  onRun={() => {
+                    void runAgent()
+                  }}
+                  onApprove={() => {
+                    void approveRun()
+                  }}
+                  onReject={() => {
+                    void rejectRun()
+                  }}
+                />
+              </Panel>
+            </>
+          ) : null}
+        </PanelGroup>
       </main>
 
       {activeModal === 'add-asset' ? (
@@ -236,10 +261,21 @@ export function App() {
                       <option value="password_and_key">密码 + 密钥</option>
                     </select>
                   </label>
+                  {addAssetForm.authType === 'key' ? (
+                    <label className="flex flex-col gap-1 text-sm text-ops-muted col-span-2 sm:col-span-1">
+                      SSH 密钥
+                      <select className="bg-ops-deep text-ops-text border border-ops-border rounded-md px-3 py-1.5 focus:outline-none focus:border-ops-green" value={addAssetForm.sshKeyId} onChange={(event) => updateAddAssetForm('sshKeyId', event.target.value)} required>
+                        <option value="">请选择密钥</option>
+                        {bootstrap.sshKeys.map((sshKey) => (
+                          <option key={sshKey.id} value={sshKey.id}>{sshKey.name}</option>
+                        ))}
+                      </select>
+                    </label>
+                  ) : null}
                   <label className="flex flex-col gap-1 text-sm text-ops-muted col-span-2">
-                    {addAssetForm.authType === 'key' ? '密钥内容' : addAssetForm.authType === 'password_and_key' ? '密码或密钥凭据' : '密码'}
+                    {addAssetForm.authType === 'key' ? '私钥口令（可选）' : addAssetForm.authType === 'password_and_key' ? '密码或密钥凭据' : '密码'}
                     {addAssetForm.authType === 'key' ? (
-                      <textarea className="bg-ops-deep text-ops-text border border-ops-border rounded-md px-3 py-1.5 focus:outline-none focus:border-ops-green font-mono" value={addAssetForm.credentialSecret} onChange={(event) => updateAddAssetForm('credentialSecret', event.target.value)} placeholder="粘贴私钥内容" rows={5} required />
+                      <input className="bg-ops-deep text-ops-text border border-ops-border rounded-md px-3 py-1.5 focus:outline-none focus:border-ops-green" type="password" value={addAssetForm.credentialSecret} onChange={(event) => updateAddAssetForm('credentialSecret', event.target.value)} placeholder="如密钥有口令可填写" />
                     ) : (
                       <input className="bg-ops-deep text-ops-text border border-ops-border rounded-md px-3 py-1.5 focus:outline-none focus:border-ops-green" type="password" value={addAssetForm.credentialSecret} onChange={(event) => updateAddAssetForm('credentialSecret', event.target.value)} placeholder={addAssetForm.authType === 'password_and_key' ? '输入密码或密钥口令' : '请输入登录密码'} required />
                     )}
@@ -316,10 +352,12 @@ export function App() {
       {activeModal === 'settings' ? (
         <SettingsDialog
           initialGroups={bootstrap.groups}
+          sshKeys={bootstrap.sshKeys}
           selectedModel={selectedModel}
           onSelectedModelChange={setSelectedModel}
           onGroupsChange={replaceGroups}
           onModelOptionsChange={replaceModelOptions}
+          onSSHKeysChange={replaceSSHKeys}
           onClose={() => setActiveModal(null)}
         />
       ) : null}

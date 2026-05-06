@@ -11,6 +11,7 @@ export type AssetGroup = {
 export type Asset = {
   id: number
   groupId: number | null
+  sshKeyId: number | null
   name: string
   assetType: AssetType
   host: string
@@ -36,6 +37,15 @@ export type ModelConfig = {
   description: string
   createdAt: string | null
   updatedAt: string | null
+}
+
+export type SSHKey = {
+  id: number
+  name: string
+  publicKey: string
+  hasPassphrase: boolean
+  createdAt: string
+  updatedAt: string
 }
 
 export type SessionRecord = {

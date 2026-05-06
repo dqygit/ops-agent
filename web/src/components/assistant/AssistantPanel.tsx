@@ -33,7 +33,7 @@ export function AssistantPanel({
   const hasApprovalRequest = events.some((event) => event.kind === 'approval')
 
   return (
-    <PanelCard className="w-[360px] border-l border-ops-border/20 flex flex-col shrink-0">
+    <PanelCard className="w-full h-full border-l border-ops-border/20 flex flex-col">
       <SectionHeader
         title="Agent"
         description="Agent reasoning, command suggestions, and execution output"

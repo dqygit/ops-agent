@@ -15,7 +15,7 @@ type TerminalPanelProps = {
 
 export function TerminalPanel({ asset, tabs, activeAssetId, output, onInput, onResize, onSelectTab }: TerminalPanelProps) {
   return (
-    <PanelCard fill>
+    <PanelCard className="h-full w-full">
       <TerminalHeader asset={asset} tabs={tabs} activeAssetId={activeAssetId} onSelectTab={onSelectTab} />
       <TerminalOutput sessionKey={String(activeAssetId)} output={output} onInput={onInput} onResize={onResize} />
     </PanelCard>

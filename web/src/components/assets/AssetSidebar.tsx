@@ -15,7 +15,7 @@ type AssetSidebarProps = {
 
 export function AssetSidebar({ assets, groups, selectedAssetId, onSelectAsset, onUpdateAsset, onDeleteAsset, onAddAsset }: AssetSidebarProps) {
   return (
-    <PanelCard className="w-[300px] flex flex-col border-r border-ops-border/20 bg-ops-panel shrink-0">
+    <PanelCard className="w-full h-full flex flex-col border-r border-ops-border/20 bg-ops-panel">
       <div className="flex items-center justify-between p-4 border-b border-ops-border/20">
         <div>
           <h2 className="text-sm font-medium text-ops-text">主机连接</h2>

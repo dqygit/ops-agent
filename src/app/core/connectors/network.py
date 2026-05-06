@@ -25,6 +25,20 @@ class NetworkConnector:
         assert connection is not None
         return connection
 
+    def read(self) -> str:
+        if self.connection is None:
+            return ""
+        output = cast(str, self.connection.read_channel())
+        return output
+
+    def write(self, data: str) -> None:
+        if self.connection is None:
+            return
+        self.connection.write_channel(data)
+
+    def resize(self, cols: int, rows: int) -> None:
+        return None
+
     def close(self) -> None:
         if self.connection is None:
             return

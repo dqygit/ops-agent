@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS asset_groups (
 CREATE TABLE IF NOT EXISTS assets (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     group_id INTEGER,
+    ssh_key_id INTEGER,
     name TEXT NOT NULL,
     asset_type TEXT NOT NULL CHECK (asset_type IN ('linux', 'local_terminal', 'huawei', 'network', 'cisco', 'juniper', 'h3c')),
     vendor TEXT NOT NULL DEFAULT '',
@@ -23,6 +24,18 @@ CREATE TABLE IF NOT EXISTS assets (
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (group_id) REFERENCES asset_groups(id) ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS ssh_keys (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    public_key TEXT NOT NULL DEFAULT '',
+    private_key_encryption_version TEXT NOT NULL,
+    encrypted_private_key TEXT NOT NULL,
+    passphrase_encryption_version TEXT,
+    encrypted_passphrase TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS credentials (

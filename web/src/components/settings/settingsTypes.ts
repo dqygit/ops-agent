@@ -1,7 +1,7 @@
 import type { FormEvent } from 'react'
-import type { AssetGroup, ModelConfig } from '../../types/ops'
+import type { AssetGroup, ModelConfig, SSHKey } from '../../types/ops'
 
-export type SettingsSection = 'groups' | 'models'
+export type SettingsSection = 'groups' | 'models' | 'sshKeys'
 
 export type GroupForm = {
   name: string
@@ -21,12 +21,21 @@ export type ModelForm = {
   description: string
 }
 
+export type SSHKeyForm = {
+  name: string
+  publicKey: string
+  privateKey: string
+  passphrase: string
+}
+
 export type SettingsDialogProps = {
   initialGroups: AssetGroup[]
   selectedModel: string
+  sshKeys: SSHKey[]
   onSelectedModelChange: (model: string) => void
   onGroupsChange: (groups: AssetGroup[]) => void
   onModelOptionsChange: (modelOptions: string[]) => void
+  onSSHKeysChange: (sshKeys: SSHKey[]) => void
   onClose: () => void
 }
 
@@ -59,4 +68,18 @@ export type ModelsSectionProps = {
   onSave: (event: FormEvent<HTMLFormElement>) => void
   onSetDefault: (config: ModelConfig) => void
   onTest: () => void
+}
+
+export type SSHKeysSectionProps = {
+  sshKeys: SSHKey[]
+  sshKeyForm: SSHKeyForm
+  showSSHKeyForm: boolean
+  editingSSHKey: SSHKey | null
+  saving: boolean
+  onStartCreate: () => void
+  onStartEdit: (sshKey: SSHKey) => void
+  onStartDelete: (sshKey: SSHKey) => void
+  onFormChange: (form: SSHKeyForm) => void
+  onCancelForm: () => void
+  onSave: (event: FormEvent<HTMLFormElement>) => void
 }
