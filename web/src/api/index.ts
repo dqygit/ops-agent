@@ -1,6 +1,6 @@
 export { createAsset, deleteAsset, getAssetContext, getAssets, mapAsset, updateAsset } from './assets'
 export type { AssetPayload } from './assets'
-export { approveAgent, getConsoleBootstrap, runAgent } from './console'
+export { approveAgent, getConsoleBootstrap, runAgent, streamApproveAgent, streamRunAgent } from './console'
 export { closeTerminalSession, createTerminalSession } from './terminal'
 export { createGroup, deleteGroup, getGroups, mapAssetGroup, updateGroup } from './groups'
 export type { AssetGroupDto, AssetGroupPayload } from './groups'

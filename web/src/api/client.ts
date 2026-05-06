@@ -26,6 +26,22 @@ async function getErrorMessage(response: Response) {
   return fallback
 }
 
+export async function requestEventStream(path: string, init?: RequestInit): Promise<Response> {
+  const response = await buildRequest(path, {
+    ...init,
+    headers: {
+      Accept: 'text/event-stream',
+      ...(init?.headers ?? {}),
+    },
+  })
+
+  if (!response.ok) {
+    throw new Error(await getErrorMessage(response))
+  }
+
+  return response
+}
+
 export async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await buildRequest(path, init)
 

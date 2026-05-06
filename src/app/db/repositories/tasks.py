@@ -55,6 +55,7 @@ def update_agent_task(
     *,
     status: str | None = None,
     final_summary: str | None = None,
+    terminal_session_id: int | None = None,
 ) -> AgentTask | None:
     row = session.get(AgentTask, task_id)
     if row is None:
@@ -63,6 +64,8 @@ def update_agent_task(
         row.status = status
     if final_summary is not None:
         row.final_summary = final_summary
+    if terminal_session_id is not None:
+        row.terminal_session_id = terminal_session_id
     row.updated_at = datetime.now(UTC)
     session.add(row)
     session.commit()
@@ -96,6 +99,12 @@ def update_task_step(
     session: Session,
     step_id: int,
     *,
+    title: str | None = None,
+    command: str | None = None,
+    reason: str | None = None,
+    working_directory: str | None = None,
+    expected_output: str | None = None,
+    risk_level: str | None = None,
     status: str | None = None,
     output: str | None = None,
     error_message: str | None = None,
@@ -106,6 +115,18 @@ def update_task_step(
     row = session.get(TaskStep, step_id)
     if row is None:
         return None
+    if title is not None:
+        row.title = title
+    if command is not None:
+        row.command = command
+    if reason is not None:
+        row.reason = reason
+    if working_directory is not None:
+        row.working_directory = working_directory
+    if expected_output is not None:
+        row.expected_output = expected_output
+    if risk_level is not None:
+        row.risk_level = risk_level
     if status is not None:
         row.status = status
     if output is not None:

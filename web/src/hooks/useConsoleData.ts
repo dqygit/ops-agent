@@ -9,11 +9,13 @@ import {
   getAssetContext,
   getConsoleBootstrap,
   runAgent as runAgentApi,
+  streamApproveAgent,
+  streamRunAgent,
   updateAsset as updateAssetApi,
 } from '../api'
 import type { AssetPayload } from '../api'
 import type { ConsoleBootstrap } from '../types/api'
-import type { Asset, AssetGroup, EventItem, SSHKey } from '../types/ops'
+import type { Asset, AssetGroup, EventItem, PlanStepStatus, SSHKey } from '../types/ops'
 
 const LOCAL_TERMINAL_ASSET_ID = 0
 
@@ -51,6 +53,66 @@ const emptyBootstrap: ConsoleBootstrap = {
   terminalOutput: '',
   initialEvents: [],
   sshKeys: [],
+}
+
+function normalizePlanEvents(rawEvents: EventItem[]): EventItem[] {
+  const latestPlanEventIndexByPlanId = new Map<string, number>()
+
+  rawEvents.forEach((event, index) => {
+    if (event.kind !== 'plan') {
+      return
+    }
+
+    const planId = event.planId ?? event.id
+    latestPlanEventIndexByPlanId.set(planId, index)
+  })
+
+  return rawEvents.map((event, index) => {
+    if (event.kind !== 'plan') {
+      return event
+    }
+
+    const normalizedSteps = event.steps.map((step, stepIndex, steps) => {
+      if (step.status) {
+        return step
+      }
+
+      const fallbackStatus: PlanStepStatus = stepIndex === steps.length - 1 ? 'running' : 'completed'
+      return {
+        ...step,
+        status: fallbackStatus,
+      }
+    })
+
+    const planId = event.planId ?? event.id
+    const latestIndex = latestPlanEventIndexByPlanId.get(planId) ?? index
+    return {
+      ...event,
+      planId,
+      title: event.title ?? 'Task Plan',
+      loading: event.loading ?? false,
+      version: event.version ?? latestIndex + 1,
+      isLatest: index === latestIndex,
+      updated: event.updated ?? index !== latestIndex,
+      steps: normalizedSteps,
+    }
+  })
+}
+
+function mergeStreamEvent(currentEvents: EventItem[], incomingEvent: EventItem): EventItem[] {
+  if (incomingEvent.kind !== 'delta') {
+    return normalizePlanEvents([...currentEvents, incomingEvent])
+  }
+  const index = currentEvents.findIndex((item) => item.kind === 'delta' && item.messageId === incomingEvent.messageId)
+  if (index < 0) {
+    return normalizePlanEvents([...currentEvents, incomingEvent])
+  }
+  const nextEvents = [...currentEvents]
+  const previous = nextEvents[index]
+  if (previous.kind === 'delta') {
+    nextEvents[index] = { ...previous, text: `${previous.text}${incomingEvent.text}` }
+  }
+  return normalizePlanEvents(nextEvents)
 }
 
 function buildTerminalWebSocketUrl(terminalSessionId: number) {
@@ -136,7 +198,7 @@ export function useConsoleData() {
         setBootstrap(data)
         setSelectedModel(data.modelOptions[0] ?? '')
         setPrompt(data.initialPrompt)
-        setEvents(data.initialEvents)
+        setEvents(normalizePlanEvents(data.initialEvents))
         const localTab: TerminalTab = {
           assetId: LOCAL_TERMINAL_ASSET_ID,
           asset: defaultLocalTerminalAsset,
@@ -335,24 +397,27 @@ export function useConsoleData() {
 
   const runAgent = async () => {
     try {
-      const nextEvents = await runAgentApi(
+      const stream = await streamRunAgent(
         prompt,
         events,
         selectedAsset?.id === LOCAL_TERMINAL_ASSET_ID ? undefined : selectedAsset?.id,
         selectedModel,
       )
-      setEvents(nextEvents)
-      const approvalEvent = nextEvents.find((event) => event.kind === 'approval')
-      setPendingApprovalRunId(approvalEvent?.kind === 'approval' ? approvalEvent.runId ?? null : null)
+      for await (const event of stream) {
+        setEvents((currentEvents) => mergeStreamEvent(currentEvents, event))
+        if (event.kind === 'approval') {
+          setPendingApprovalRunId(event.runId ?? null)
+        }
+      }
     } catch (error) {
-      setEvents((currentEvents) => [
+      setEvents((currentEvents) => normalizePlanEvents([
         ...currentEvents,
         {
           id: `error-${Date.now()}`,
           kind: 'error',
           text: error instanceof Error ? error.message : 'Failed to run agent.',
         },
-      ])
+      ]))
     }
   }
 
@@ -360,10 +425,14 @@ export function useConsoleData() {
     if (!pendingApprovalRunId) {
       return
     }
-    const nextEvents = await approveAgent(pendingApprovalRunId, approved)
-    setEvents((currentEvents) => [...currentEvents, ...nextEvents])
-    const approvalEvent = nextEvents.find((event) => event.kind === 'approval')
-    setPendingApprovalRunId(approvalEvent?.kind === 'approval' ? approvalEvent.runId ?? null : null)
+    const stream = await streamApproveAgent(pendingApprovalRunId, approved)
+    setPendingApprovalRunId(null)
+    for await (const event of stream) {
+      setEvents((currentEvents) => mergeStreamEvent(currentEvents, event))
+      if (event.kind === 'approval') {
+        setPendingApprovalRunId(event.runId ?? null)
+      }
+    }
   }
 
   return {

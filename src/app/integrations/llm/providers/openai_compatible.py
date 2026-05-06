@@ -2,7 +2,7 @@ import json
 from collections.abc import Iterator
 from typing import Any, cast
 
-from app.integrations.llm.base import LLMCompletionRequest, LLMCompletionResponse
+from app.integrations.llm.base import LLMCompletionChunk, LLMCompletionRequest, LLMCompletionResponse
 from app.integrations.prompt import build_summary_conversation
 from app.integrations.tool import LLMToolCall
 from app.shared.schemas import ModelConfig
@@ -31,6 +31,7 @@ class OpenAICompatibleLLMProvider:
                 [{"role": "system", "content": conversation.system_prompt}, *conversation.messages],
             ),
             stream=True,
+            response_format={"type": "json_object"},
         )
         for chunk in response:
             if not chunk.choices:
@@ -39,6 +40,34 @@ class OpenAICompatibleLLMProvider:
             text = getattr(delta, "content", None)
             if isinstance(text, str) and text:
                 yield text
+
+    def stream_complete(
+        self,
+        *,
+        config: ModelConfig,
+        request: LLMCompletionRequest,
+    ) -> Iterator[LLMCompletionChunk]:
+        response = self._get_client(config).chat.completions.create(
+            model=config.model_name,
+            temperature=request.temperature if request.temperature is not None else config.temperature,
+            max_tokens=request.max_tokens if request.max_tokens is not None else config.max_tokens,
+            messages=cast(Any, [self._serialize_message(message) for message in request.messages]),
+            tools=cast(Any, self._serialize_tools(request) or None),
+            tool_choice=cast(Any, self._serialize_tool_choice(request)),
+            stream=True,
+            response_format={"type": "json_object"},
+        )
+        finish_reason: str | None = None
+        for chunk in response:
+            if not chunk.choices:
+                continue
+            choice = chunk.choices[0]
+            finish_reason = getattr(choice, "finish_reason", finish_reason)
+            delta = getattr(choice, "delta", None)
+            text = getattr(delta, "content", None)
+            if isinstance(text, str) and text:
+                yield LLMCompletionChunk(delta=text)
+        yield LLMCompletionChunk(finish_reason=finish_reason)
 
     def complete(
         self,
@@ -54,6 +83,7 @@ class OpenAICompatibleLLMProvider:
             tools=cast(Any, self._serialize_tools(request) or None),
             tool_choice=cast(Any, self._serialize_tool_choice(request)),
             stream=False,
+            response_format={"type": "json_object"},
         )
         choice = response.choices[0] if getattr(response, "choices", None) else None
         message = getattr(choice, "message", None)

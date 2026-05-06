@@ -128,6 +128,22 @@ class TerminalService:
     def get_session(self, terminal_session_id: int):
         return self._sessions.get(terminal_session_id)
 
+    def send_input(self, terminal_session_id: int, data: str) -> None:
+        session_manager = self.get_session(terminal_session_id)
+        if session_manager is None:
+            raise ValueError("terminal session not found")
+        session_manager.write(data)
+        self._persistence.record_event(terminal_session_id, "input", data)
+
+    def read_recent_output(self, terminal_session_id: int) -> str:
+        session_manager = self.get_session(terminal_session_id)
+        if session_manager is None:
+            return ""
+        output = session_manager.read()
+        if output:
+            self._persistence.record_event(terminal_session_id, "terminal_output", output)
+        return output
+
     def attach_context(self, terminal_session_id: int, selection_label: str, selected_text: str):
         attachment = build_terminal_context(terminal_session_id, selection_label, selected_text)
         self._persistence.record_event(

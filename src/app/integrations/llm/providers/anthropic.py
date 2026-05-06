@@ -1,7 +1,9 @@
 from collections.abc import Iterator
 from typing import Any, cast
 
-from app.integrations.llm.base import LLMCompletionRequest, LLMCompletionResponse
+from anthropic.types import JSONOutputFormatParam
+
+from app.integrations.llm.base import LLMCompletionChunk, LLMCompletionRequest, LLMCompletionResponse
 from app.integrations.prompt import build_summary_conversation
 from app.integrations.tool import LLMToolCall
 from app.shared.schemas import ModelConfig
@@ -25,10 +27,32 @@ class AnthropicLLMProvider:
             max_tokens=config.max_tokens,
             system=conversation.system_prompt,
             messages=cast(Any, conversation.messages),
+            output_format=JSONOutputFormatParam,
         ) as stream:
             for chunk in stream.text_stream:
                 if isinstance(chunk, str) and chunk:
                     yield chunk
+
+    def stream_complete(
+        self,
+        *,
+        config: ModelConfig,
+        request: LLMCompletionRequest,
+    ) -> Iterator[LLMCompletionChunk]:
+        system_prompt = next((message.content for message in request.messages if message.role == "system"), "")
+        with self._get_client(config).messages.stream(
+            model=config.model_name,
+            max_tokens=request.max_tokens if request.max_tokens is not None else config.max_tokens,
+            temperature=request.temperature if request.temperature is not None else config.temperature,
+            system=system_prompt,
+            messages=cast(Any, self._serialize_messages(request)),
+            tools=cast(Any, self._serialize_tools(request) or None),
+            tool_choice=cast(Any, self._serialize_tool_choice(request)),
+        ) as stream:
+            for chunk in stream.text_stream:
+                if isinstance(chunk, str) and chunk:
+                    yield LLMCompletionChunk(delta=chunk)
+            yield LLMCompletionChunk(finish_reason=getattr(stream.get_final_message(), "stop_reason", None))
 
     def complete(
         self,

@@ -52,9 +52,4 @@ class CommandExecutionStatus(str, Enum):
     CANCELLED = "cancelled"
 
 
-class TaskType(str, Enum):
-    INTERFACE_STATUS = "interface_status"
-    ROUTING_TABLE = "routing_table"
-    NEIGHBOR_STATUS = "neighbor_status"
-    SYSTEM_RESOURCES = "system_resources"
-    NETWORK_HEALTH = "network_health"
+

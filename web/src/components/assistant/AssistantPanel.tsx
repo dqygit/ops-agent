@@ -1,7 +1,6 @@
 import { PanelCard } from '../layout/PanelCard'
 import { SectionHeader } from '../layout/SectionHeader'
 import type { Asset, EventItem } from '../../types/ops'
-import { AssistantActions } from './AssistantActions'
 import { ConversationView } from './ConversationView'
 import { PromptInput } from './PromptInput'
 
@@ -30,8 +29,6 @@ export function AssistantPanel({
   onApprove,
   onReject,
 }: AssistantPanelProps) {
-  const hasApprovalRequest = events.some((event) => event.kind === 'approval')
-
   return (
     <PanelCard className="w-full h-full border-l border-ops-border/20 flex flex-col">
       <SectionHeader
@@ -39,7 +36,7 @@ export function AssistantPanel({
         description="Agent reasoning, command suggestions, and execution output"
       />
 
-      <ConversationView events={events} />
+      <ConversationView events={events} onApprove={onApprove} onReject={onReject} />
 
       <PromptInput
         prompt={prompt}
@@ -50,8 +47,6 @@ export function AssistantPanel({
         onModelChange={onModelChange}
         onRun={onRun}
       />
-
-      {hasApprovalRequest && <AssistantActions onApprove={onApprove} onReject={onReject} />}
     </PanelCard>
   )
 }

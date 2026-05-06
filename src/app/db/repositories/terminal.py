@@ -84,6 +84,18 @@ def list_terminal_events_by_session_id(session: Session, terminal_session_id: in
     return list(reversed(rows[:limit]))
 
 
+def list_terminal_output_events_after(session: Session, terminal_session_id: int, after_event_id: int = 0) -> list[TerminalEvent]:
+    return list(
+        session.exec(
+            select(TerminalEvent)
+            .where(TerminalEvent.terminal_session_id == terminal_session_id)
+            .where(TerminalEvent.event_type == "terminal_output")
+            .where(cast(Any, TerminalEvent.id) > after_event_id)
+            .order_by(cast(Any, TerminalEvent.id))
+        ).all()
+    )
+
+
 class TerminalSessionRepository:
     def __init__(self, engine):
         self._engine = engine

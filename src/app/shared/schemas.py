@@ -65,7 +65,7 @@ class TerminalContextAttachment(BaseModel):
 
 class PlanStep(BaseModel):
     title: str
-    command: str
+    command: str = ""
     reason: str
     risk_level: str = "low"
     working_directory: str = ""

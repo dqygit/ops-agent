@@ -54,14 +54,32 @@ export type SessionRecord = {
   model: string
 }
 
+export type PlanStepStatus = 'pending' | 'running' | 'completed'
+
 export type PlanStep = {
+  id?: string
   title: string
-  command: string
+  command?: string
+  summary?: string
+  status?: PlanStepStatus
+}
+
+export type PlanEvent = {
+  id: string
+  kind: 'plan'
+  planId?: string
+  title?: string
+  loading?: boolean
+  version?: number
+  isLatest?: boolean
+  updated?: boolean
+  steps: PlanStep[]
 }
 
 export type EventItem =
   | { id: string; kind: 'status'; text: string }
-  | { id: string; kind: 'plan'; steps: PlanStep[] }
+  | { id: string; kind: 'delta'; text: string; messageId: string; stage?: string }
+  | PlanEvent
   | { id: string; kind: 'approval'; text: string; runId?: string }
   | { id: string; kind: 'output'; text: string }
   | { id: string; kind: 'final'; text: string }

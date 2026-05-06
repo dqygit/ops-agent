@@ -23,12 +23,19 @@ class LLMCompletionRequest:
     tool_choice: LLMToolChoice | None = None
     temperature: float | None = None
     max_tokens: int | None = None
+    json_mode: bool = True
 
 
 @dataclass(frozen=True)
 class LLMCompletionResponse:
     text: str = ""
     tool_calls: list[LLMToolCall] = field(default_factory=list)
+    finish_reason: str | None = None
+
+
+@dataclass(frozen=True)
+class LLMCompletionChunk:
+    delta: str = ""
     finish_reason: str | None = None
 
 
@@ -46,6 +53,13 @@ class SupportsSummarize(Protocol):
 
 @runtime_checkable
 class SupportsCompletion(Protocol):
+    def stream_complete(
+        self,
+        *,
+        config: ModelConfig,
+        request: LLMCompletionRequest,
+    ) -> Iterator[LLMCompletionChunk]: ...
+
     def complete(
         self,
         *,
