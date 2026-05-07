@@ -1,0 +1,38 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Ops Agent",
+  "version": "0.1.0",
+  "identifier": "com.opsagent.desktop",
+  "build": {
+    "frontendDist": "../dist",
+    "devUrl": "http://localhost:5173",
+    "beforeDevCommand": "pnpm dev",
+    "beforeBuildCommand": "pnpm build"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Ops Agent",
+        "width": 1440,
+        "height": 900,
+        "resizable": true
+      }
+    ]
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "resources": [
+      "../bin"
+    ]
+  },
+  "plugins": {
+    "updater": {
+      "active": true,
+      "pubkey": "${TAURI_UPDATER_PUBKEY}",
+      "endpoints": [
+        "https://github.com/${GITHUB_REPOSITORY}/releases/latest/download/latest.json"
+      ]
+    }
+  }
+}

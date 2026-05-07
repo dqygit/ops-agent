@@ -1,7 +1,21 @@
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? ''
+import { getDesktopApiBaseUrl } from '../desktop'
 
-function buildRequest(path: string, init?: RequestInit) {
-  return fetch(`${API_BASE_URL}${path}`, {
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? ''
+let runtimeApiBaseUrl: string | null = null
+let runtimeApiBaseUrlLoaded = false
+
+async function resolveApiBaseUrl() {
+  if (runtimeApiBaseUrlLoaded) {
+    return runtimeApiBaseUrl ?? API_BASE_URL
+  }
+  runtimeApiBaseUrlLoaded = true
+  runtimeApiBaseUrl = await getDesktopApiBaseUrl()
+  return runtimeApiBaseUrl ?? API_BASE_URL
+}
+
+async function buildRequest(path: string, init?: RequestInit) {
+  const baseUrl = await resolveApiBaseUrl()
+  return fetch(`${baseUrl}${path}`, {
     headers: {
       'Content-Type': 'application/json',
       ...(init?.headers ?? {}),

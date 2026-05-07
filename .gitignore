@@ -17,3 +17,12 @@ release/
 .ops-agent/
 .D
 .DS_Store
+web/src-tauri/target/
+web/src-tauri/gen/
+web/src-tauri/target/release/bundle/
+
+# Backend packaging artifacts
+ops-agent-backend.spec
+
+# Desktop bundle resources
+web/bin/
