@@ -80,10 +80,11 @@ export type EventItem =
   | { id: string; kind: 'status'; text: string }
   | { id: string; kind: 'delta'; text: string; messageId: string; stage?: string }
   | PlanEvent
-  | { id: string; kind: 'approval'; text: string; runId?: string }
+  | { id: string; kind: 'approval'; text: string; command: string; runId?: string }
   | { id: string; kind: 'output'; text: string }
   | { id: string; kind: 'final'; text: string }
   | { id: string; kind: 'error'; text: string }
+  | { id: string; kind: 'user'; text: string }
 
 export type AssetContext = {
   asset: Asset

@@ -36,24 +36,6 @@ class AssetView(BaseModel):
     description: str
 
 
-class AssistantSessionView(BaseModel):
-    id: int
-    asset_id: int
-    title: str
-    active_model: str
-    terminal_session_id: int | None = None
-    model_config_id: int | None = None
-    status: str = "active"
-
-
-class TerminalSessionSummaryView(BaseModel):
-    id: int
-    status: str
-    last_error: str
-    started_at: datetime
-    ended_at: datetime | None = None
-
-
 class TerminalEventSummaryView(BaseModel):
     id: int
     event_type: str
@@ -63,9 +45,7 @@ class TerminalEventSummaryView(BaseModel):
 
 class AssetContextView(BaseModel):
     asset: AssetView
-    terminal_session: TerminalSessionSummaryView | None = None
     recent_terminal_events: list[TerminalEventSummaryView]
-    assistant_sessions: list[AssistantSessionView]
 
 
 class ModelsView(BaseModel):
@@ -146,7 +126,7 @@ class AssistantMessageView(BaseModel):
 
 
 class ChatSessionView(BaseModel):
-    session_id: int
+    conversation_id: str
     asset_id: int
     model_name: str
     messages: list[AssistantMessageView]
@@ -163,7 +143,7 @@ class ChatRunRequest(BaseModel):
 
 class ChatRunResponse(BaseModel):
     run_id: str
-    session_id: int
+    conversation_id: str
     ui_events: list[dict]
 
 
@@ -197,7 +177,7 @@ class AutoApprovalRuleUpdate(BaseModel):
 
 class AutoApprovalRuleView(BaseModel):
     id: int
-    session_id: int
+    conversation_id: str
     name: str
     asset_type: str
     asset_tags: list[str]
@@ -230,7 +210,7 @@ class ApprovalRecordView(BaseModel):
     task_id: int
     step_id: int | None
     asset_id: int | None
-    terminal_session_id: int | None
+    terminal_id: str | None
     command: str
     working_directory: str
     risk_level: str
@@ -247,7 +227,7 @@ class CommandExecutionView(BaseModel):
     task_id: int
     step_id: int
     asset_id: int
-    terminal_session_id: int
+    terminal_id: str
     command: str
     status: str
     approval_id: int | None
@@ -280,11 +260,11 @@ class TaskStepRecordView(BaseModel):
 
 class TaskDetailView(BaseModel):
     id: int
-    session_id: int
+    conversation_id: str
     parent_task_id: int | None
     run_id: str
     asset_id: int
-    terminal_session_id: int | None
+    terminal_id: str | None
     user_input: str
     attached_terminal_context: str
     task_type: str
@@ -310,7 +290,7 @@ class ConsoleBootstrapView(BaseModel):
     historyByAsset: dict[int, list[ConsoleSessionRecordView]]
     modelOptions: list[str]
     sshKeys: list[SSHKeyView] = Field(default_factory=list)
-    terminalSessionId: int | None = None
+    terminalSessionId: str | None = None
     terminalSessionChannel: str | None = None
     terminalSessionError: str = ""
     initialPrompt: str = ""
@@ -322,6 +302,7 @@ class ConsoleRunRequest(BaseModel):
     prompt: str
     currentEvents: list[dict] = Field(default_factory=list)
     asset_id: int | None = None
+    terminal_id: str | None = None
     conversation_id: str = "console"
     model_name: str | None = None
     terminal_context: dict | None = None
@@ -344,7 +325,7 @@ class PendingApprovalStepView(BaseModel):
 class PendingApprovalView(BaseModel):
     task_id: int
     run_id: str
-    session_id: int
+    conversation_id: str
     status: str
     message: str
     latest_decision: str | None = None

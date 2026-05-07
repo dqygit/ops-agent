@@ -7,6 +7,8 @@ type AssetListProps = {
   groups: AssetGroup[]
   selectedAssetId: number
   onSelectAsset: (assetId: number) => void
+  onUpdateAsset?: (assetId: number, payload: any) => Promise<any>
+  onDeleteAsset?: (assetId: number) => Promise<void>
   onEditAsset?: (asset: Asset) => void
   onDeleteAssetConfirm?: (asset: Asset) => void
 }

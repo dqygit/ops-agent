@@ -3,25 +3,11 @@ from typing import Any, cast
 from sqlalchemy import desc
 from sqlmodel import Session, select
 
-from app.db.models import AgentTask, AssistantMessage, ModelUsage
+from app.db.models import AgentTask, ModelUsage
 
 
 def list_recent_tasks(session: Session) -> list[AgentTask]:
     return list(session.exec(select(AgentTask).order_by(desc(cast(Any, AgentTask.id)))).all())
-
-
-def list_session_messages(session: Session, session_id: int) -> list[AssistantMessage]:
-    return list(
-        session.exec(
-            select(AssistantMessage)
-            .where(AssistantMessage.session_id == session_id)
-            .order_by(cast(Any, AssistantMessage.id))
-        ).all()
-    )
-
-
-def serialize_session_messages(messages: list[AssistantMessage]) -> list[dict[str, str]]:
-    return [{"role": message.role, "content": message.content} for message in messages]
 
 
 def serialize_model_usages(usages: list[ModelUsage]) -> list[dict[str, object]]:

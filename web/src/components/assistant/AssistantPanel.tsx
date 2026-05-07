@@ -6,6 +6,7 @@ import { PromptInput } from './PromptInput'
 
 type AssistantPanelProps = {
   events: EventItem[]
+  pendingApprovalRunId: string | null
   models: string[]
   selectedModel: string
   prompt: string
@@ -19,6 +20,7 @@ type AssistantPanelProps = {
 
 export function AssistantPanel({
   events,
+  pendingApprovalRunId,
   models,
   selectedModel,
   prompt,
@@ -36,7 +38,7 @@ export function AssistantPanel({
         description="Agent reasoning, command suggestions, and execution output"
       />
 
-      <ConversationView events={events} onApprove={onApprove} onReject={onReject} />
+      <ConversationView events={events} pendingApprovalRunId={pendingApprovalRunId} onApprove={onApprove} onReject={onReject} />
 
       <PromptInput
         prompt={prompt}

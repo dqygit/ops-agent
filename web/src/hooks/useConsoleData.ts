@@ -6,7 +6,6 @@ import {
   createAsset,
   createTerminalSession,
   deleteAsset as deleteAssetApi,
-  getAssetContext,
   getConsoleBootstrap,
   runAgent as runAgentApi,
   streamApproveAgent,
@@ -22,7 +21,7 @@ const LOCAL_TERMINAL_ASSET_ID = 0
 type TerminalTab = {
   assetId: number
   asset: Asset
-  sessionId: number | null
+  sessionId: string | null
   output: string
 }
 
@@ -115,7 +114,7 @@ function mergeStreamEvent(currentEvents: EventItem[], incomingEvent: EventItem):
   return normalizePlanEvents(nextEvents)
 }
 
-function buildTerminalWebSocketUrl(terminalSessionId: number) {
+function buildTerminalWebSocketUrl(terminalSessionId: string) {
   const apiBaseUrl = import.meta.env.VITE_API_BASE_URL
 
   if (apiBaseUrl && apiBaseUrl.length > 0) {
@@ -137,13 +136,29 @@ export function useConsoleData() {
   const [terminalTabs, setTerminalTabs] = useState<TerminalTab[]>([{ assetId: LOCAL_TERMINAL_ASSET_ID, asset: defaultLocalTerminalAsset, sessionId: null, output: '' }])
   const [activeTerminalAssetId, setActiveTerminalAssetId] = useState<number>(LOCAL_TERMINAL_ASSET_ID)
   const [selectedModel, setSelectedModel] = useState<string>('')
-  const [prompt, setPrompt] = useState('')
-  const [events, setEvents] = useState<EventItem[]>([])
+  const [prompt, setPrompt] = useState(() => {
+    return localStorage.getItem('ops_agent_prompt') ?? ''
+  })
+  const [events, setEvents] = useState<EventItem[]>(() => {
+    try {
+      const saved = localStorage.getItem('ops_agent_events')
+      return saved ? JSON.parse(saved) : []
+    } catch {
+      return []
+    }
+  })
   const [pendingApprovalRunId, setPendingApprovalRunId] = useState<string | null>(null)
-  const [selectedAssetContext, setSelectedAssetContext] = useState<import('../types/ops').AssetContext | null>(null)
+
+  useEffect(() => {
+    localStorage.setItem('ops_agent_prompt', prompt)
+  }, [prompt])
+
+  useEffect(() => {
+    localStorage.setItem('ops_agent_events', JSON.stringify(events))
+  }, [events])
   const [loadError, setLoadError] = useState<string | null>(null)
   const terminalSocketsRef = useRef<Record<number, WebSocket | undefined>>({})
-  const terminalSessionIdsRef = useRef<Record<number, number | null>>({ [LOCAL_TERMINAL_ASSET_ID]: null })
+  const terminalSessionIdsRef = useRef<Record<number, string | null>>({ [LOCAL_TERMINAL_ASSET_ID]: null })
   const terminalTabsRef = useRef<TerminalTab[]>([{ assetId: LOCAL_TERMINAL_ASSET_ID, asset: defaultLocalTerminalAsset, sessionId: null, output: '' }])
   const terminalSocketRef = useRef<WebSocket | null>(null)
 
@@ -177,10 +192,10 @@ export function useConsoleData() {
       if (result.error) {
         throw new Error(result.error)
       }
-      if (result.terminal_session_id === null) {
+      if (result.terminal_id === null) {
         throw new Error('终端会话创建失败')
       }
-      syncTerminalTabs((currentTabs) => currentTabs.map((tabItem) => (tabItem.assetId === asset.id ? { ...tabItem, sessionId: result.terminal_session_id } : tabItem)))
+      syncTerminalTabs((currentTabs) => currentTabs.map((tabItem) => (tabItem.assetId === asset.id ? { ...tabItem, sessionId: result.terminal_id } : tabItem)))
     } catch (error) {
       // Don't remove the tab, let user see the error in the terminal area or a notification
       // But we should reset the active tab to local terminal if this was a fresh connection attempt
@@ -205,8 +220,12 @@ export function useConsoleData() {
         }
         setBootstrap(data)
         setSelectedModel(data.modelOptions[0] ?? '')
-        setPrompt(data.initialPrompt)
-        setEvents(normalizePlanEvents(data.initialEvents))
+        if (!localStorage.getItem('ops_agent_prompt') && data.initialPrompt) {
+          setPrompt(data.initialPrompt)
+        }
+        if (!localStorage.getItem('ops_agent_events') && data.initialEvents.length > 0) {
+          setEvents(normalizePlanEvents(data.initialEvents))
+        }
         const localTab: TerminalTab = {
           assetId: LOCAL_TERMINAL_ASSET_ID,
           asset: defaultLocalTerminalAsset,
@@ -344,7 +363,6 @@ export function useConsoleData() {
       return
     }
     void connectAssetTerminal(asset)
-    void getAssetContext(asset.id).then(setSelectedAssetContext).catch(() => undefined)
   }, [bootstrap.assets, connectAssetTerminal])
 
   const addAsset = async (payload: AssetPayload) => {
@@ -405,11 +423,20 @@ export function useConsoleData() {
   }
 
   const runAgent = async () => {
+    // Add user message event first
+    const userEvent: EventItem = {
+      id: `user-${Date.now()}`,
+      kind: 'user',
+      text: prompt,
+    }
+    setEvents((currentEvents) => normalizePlanEvents([...currentEvents, userEvent]))
+    
     try {
       const stream = await streamRunAgent(
         prompt,
         events,
         selectedAsset?.id === LOCAL_TERMINAL_ASSET_ID ? undefined : selectedAsset?.id,
+        activeTerminalTab?.sessionId,
         selectedModel,
       )
       for await (const event of stream) {
@@ -461,7 +488,6 @@ export function useConsoleData() {
     setPrompt,
     events,
     pendingApprovalRunId,
-    selectedAssetContext,
     history,
     setSelectedAssetId: selectAsset,
     addAsset,

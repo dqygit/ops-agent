@@ -2,9 +2,9 @@ from fastapi import APIRouter, Depends, HTTPException, Response, WebSocket
 from pydantic import BaseModel
 from sqlmodel import Session
 
+from app.api.assets import to_asset_view
+from app.api.schemas import AssetContextView
 from app.core.connectors.server import connector_factory
-from app.db.repositories import terminal as terminal_repository
-from app.db.session import engine
 from app.db.session import get_session
 from app.services.asset_service import get_asset_record
 from app.services.terminal_service import TerminalService
@@ -13,7 +13,6 @@ router = APIRouter()
 
 _terminal_service = TerminalService(
     connector_factory=connector_factory,
-    persistence=terminal_repository.TerminalSessionRepository(engine),
 )
 
 
@@ -22,7 +21,7 @@ class TerminalSessionRequest(BaseModel):
 
 
 class TerminalSessionResponse(BaseModel):
-    terminal_session_id: int | None
+    terminal_id: str | None
     channel: str | None
     error: str
 
@@ -33,7 +32,7 @@ class TerminalContextRequest(BaseModel):
 
 
 class TerminalContextResponse(BaseModel):
-    terminal_session_id: int
+    terminal_id: str
     selection_label: str
     selected_text: str
 
@@ -53,45 +52,60 @@ def open_terminal_session(
         raise HTTPException(status_code=404, detail="Asset not found")
     result = terminal_service.open_session(asset)
     return TerminalSessionResponse(
-        terminal_session_id=result.get("terminal_session_id"),
+        terminal_id=result.get("terminal_id"),
         channel=result.get("channel"),
         error=result.get("error", ""),
     )
 
 
-@router.post("/api/terminal/sessions/{terminal_session_id}/context")
+@router.get("/api/assets/{asset_id}/context")
+def get_asset_context(
+    asset_id: int,
+    session: Session = Depends(get_session),
+) -> AssetContextView:
+    asset = get_asset_record(session, asset_id)
+    if asset is None:
+        raise HTTPException(status_code=404, detail="Asset not found")
+    
+    return AssetContextView(
+        asset=to_asset_view(asset),
+        recent_terminal_events=[]
+    )
+
+
+@router.post("/api/terminal/sessions/{terminal_id}/context")
 def attach_terminal_context(
-    terminal_session_id: int,
+    terminal_id: str,
     payload: TerminalContextRequest,
     terminal_service: TerminalService = Depends(get_terminal_service),
 ) -> TerminalContextResponse:
     attachment = terminal_service.attach_context(
-        terminal_session_id,
+        terminal_id,
         payload.selection_label,
         payload.selected_text,
     )
     return TerminalContextResponse(
-        terminal_session_id=attachment.terminal_session_id,
+        terminal_id=attachment.terminal_id,
         selection_label=attachment.selection_label,
         selected_text=attachment.selected_text,
     )
 
 
-@router.websocket("/api/terminal/sessions/{terminal_session_id}/ws")
+@router.websocket("/api/terminal/sessions/{terminal_id}/ws")
 async def stream_terminal_session(
     websocket: WebSocket,
-    terminal_session_id: int,
+    terminal_id: str,
     terminal_service: TerminalService = Depends(get_terminal_service),
 ) -> None:
-    await terminal_service.stream_session(terminal_session_id, websocket)
+    await terminal_service.stream_session(terminal_id, websocket)
 
 
-@router.delete("/api/terminal/sessions/{terminal_session_id}", status_code=204)
+@router.delete("/api/terminal/sessions/{terminal_id}", status_code=204)
 def close_terminal_session(
-    terminal_session_id: int,
+    terminal_id: str,
     terminal_service: TerminalService = Depends(get_terminal_service),
 ) -> Response:
-    closed = terminal_service.close_session(terminal_session_id)
+    closed = terminal_service.close_session(terminal_id)
     if not closed:
         raise HTTPException(status_code=404, detail="Terminal session not found")
     return Response(status_code=204)

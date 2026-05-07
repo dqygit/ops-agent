@@ -1,5 +1,5 @@
 import json
-from collections.abc import Callable
+from collections.abc import Iterator
 
 from app.integrations.llm.base import LLMCompletionRequest, LLMMessage, SupportsCompletion
 from app.integrations.llm.factory import build_llm_provider
@@ -32,12 +32,13 @@ class ExecutorService:
         step: PlanStep,
         asset_summary: str,
         recent_output: str = "",
-        on_delta: Callable[[str], None] | None = None,
-    ) -> PlanStep:
-        provider = self._provider or build_llm_provider(config)
+    ) -> Iterator[str | PlanStep]:
         request = self._build_refine_request(step=step, asset_summary=asset_summary, recent_output=recent_output)
-        text = self._stream_response_text(config=config, request=request, on_delta=on_delta)
-        return self._build_plan_step(step, text)
+        text_parts: list[str] = []
+        for delta in self._stream_response_text(config=config, request=request):
+            text_parts.append(delta)
+            yield delta
+        yield self._build_plan_step(step, "".join(text_parts))
 
     def _build_refine_request(self, *, step: PlanStep, asset_summary: str, recent_output: str) -> LLMCompletionRequest:
         return LLMCompletionRequest(
@@ -89,33 +90,34 @@ class ExecutorService:
                     return {}
             return {}
 
-    def _stream_response_text(self, *, config: ModelConfig, request: LLMCompletionRequest, on_delta: Callable[[str], None] | None = None) -> str:
+    def _stream_response_text(self, *, config: ModelConfig, request: LLMCompletionRequest) -> Iterator[str]:
         provider = self._provider or build_llm_provider(config)
         marker = "<FINAL_JSON>"
-        text_parts: list[str] = []
         visible_buffer = ""
         marker_seen = False
         for chunk in getattr(provider, "stream_complete")(config=config, request=request):
             if not chunk.delta:
                 continue
-            text_parts.append(chunk.delta)
             if marker_seen:
+                yield chunk.delta
                 continue
             visible_buffer += chunk.delta
             marker_index = visible_buffer.find(marker)
             if marker_index >= 0:
                 prose = visible_buffer[:marker_index]
-                if prose and on_delta is not None:
-                    on_delta(prose)
-                visible_buffer = ""
+                if prose:
+                    yield prose
+                visible_buffer = visible_buffer[marker_index + len(marker):]
                 marker_seen = True
+                if visible_buffer:
+                    yield visible_buffer
+                    visible_buffer = ""
                 continue
             safe_length = max(0, len(visible_buffer) - len(marker))
             if safe_length > 0:
                 prose = visible_buffer[:safe_length]
-                if prose and on_delta is not None:
-                    on_delta(prose)
+                if prose:
+                    yield prose
                 visible_buffer = visible_buffer[safe_length:]
-        if not marker_seen and visible_buffer and on_delta is not None:
-            on_delta(visible_buffer)
-        return "".join(text_parts)
+        if not marker_seen and visible_buffer:
+            yield visible_buffer

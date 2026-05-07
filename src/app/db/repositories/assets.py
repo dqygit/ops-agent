@@ -4,7 +4,7 @@ from typing import Any, cast
 from sqlalchemy import desc
 from sqlmodel import Session, select
 
-from app.db.models import AgentTask, Asset, AssetGroup, AssistantMessage, AssistantSession, Approval, AutoApprovalMatch, AutoApprovalRule, CommandExecution, Credential, ModelUsage, TaskStep, TerminalEvent, TerminalSession
+from app.db.models import AgentTask, Asset, AssetGroup, Approval, AutoApprovalMatch, AutoApprovalRule, CommandExecution, Credential, ModelUsage, TaskStep
 from app.shared.schemas import AssetCreate
 
 
@@ -72,12 +72,8 @@ def delete_asset_graph(session: Session, asset_id: int) -> bool:
     if asset is None:
         return False
 
-    sessions = list(session.exec(select(AssistantSession).where(AssistantSession.asset_id == asset_id)).all())
-    session_ids = [row.id for row in sessions if row.id is not None]
     tasks = list(session.exec(select(AgentTask).where(AgentTask.asset_id == asset_id)).all())
     task_ids = [row.id for row in tasks if row.id is not None]
-    terminal_sessions = list(session.exec(select(TerminalSession).where(TerminalSession.asset_id == asset_id)).all())
-    terminal_session_ids = [row.id for row in terminal_sessions if row.id is not None]
 
     for task_id in task_ids:
         for row in session.exec(select(AutoApprovalMatch).where(AutoApprovalMatch.task_id == task_id)).all():
@@ -91,21 +87,7 @@ def delete_asset_graph(session: Session, asset_id: int) -> bool:
         for row in session.exec(select(TaskStep).where(TaskStep.task_id == task_id)).all():
             session.delete(row)
 
-    for session_id in session_ids:
-        for row in session.exec(select(AutoApprovalRule).where(AutoApprovalRule.session_id == session_id)).all():
-            session.delete(row)
-        for row in session.exec(select(AssistantMessage).where(AssistantMessage.session_id == session_id)).all():
-            session.delete(row)
-
-    for terminal_session_id in terminal_session_ids:
-        for row in session.exec(select(TerminalEvent).where(TerminalEvent.terminal_session_id == terminal_session_id)).all():
-            session.delete(row)
-
     for row in tasks:
-        session.delete(row)
-    for row in sessions:
-        session.delete(row)
-    for row in terminal_sessions:
         session.delete(row)
     for row in session.exec(select(Credential).where(Credential.asset_id == asset_id)).all():
         session.delete(row)

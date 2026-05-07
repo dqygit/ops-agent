@@ -69,56 +69,21 @@ CREATE UNIQUE INDEX IF NOT EXISTS ux_model_configs_single_default
 ON model_configs(is_default)
 WHERE is_default = 1;
 
-CREATE TABLE IF NOT EXISTS terminal_sessions (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    asset_id INTEGER NOT NULL,
-    started_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    ended_at TEXT,
-    status TEXT NOT NULL DEFAULT 'connected' CHECK (status IN ('connecting', 'connected', 'disconnected', 'failed')),
-    last_error TEXT NOT NULL DEFAULT '',
-    FOREIGN KEY (asset_id) REFERENCES assets(id) ON DELETE CASCADE
-);
-
-CREATE TABLE IF NOT EXISTS terminal_events (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    terminal_session_id INTEGER NOT NULL,
-    event_type TEXT NOT NULL CHECK (event_type IN ('connected', 'disconnected', 'error', 'context_attached', 'terminal_output', 'command_started', 'command_finished')),
-    event_data TEXT NOT NULL DEFAULT '',
-    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (terminal_session_id) REFERENCES terminal_sessions(id) ON DELETE CASCADE
-);
-
-CREATE TABLE IF NOT EXISTS assistant_sessions (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    asset_id INTEGER NOT NULL,
-    terminal_session_id INTEGER,
-    model_config_id INTEGER,
-    title TEXT NOT NULL,
-    active_model TEXT NOT NULL,
-    status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'completed', 'stopped')),
-    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (asset_id) REFERENCES assets(id) ON DELETE CASCADE,
-    FOREIGN KEY (terminal_session_id) REFERENCES terminal_sessions(id) ON DELETE SET NULL,
-    FOREIGN KEY (model_config_id) REFERENCES model_configs(id) ON DELETE SET NULL
-);
-
 CREATE TABLE IF NOT EXISTS assistant_messages (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    session_id INTEGER NOT NULL,
+    conversation_id TEXT NOT NULL,
     role TEXT NOT NULL CHECK (role IN ('user', 'assistant', 'system', 'tool')),
     content TEXT NOT NULL,
-    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (session_id) REFERENCES assistant_sessions(id) ON DELETE CASCADE
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS agent_tasks (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    session_id INTEGER NOT NULL,
+    conversation_id TEXT NOT NULL,
     parent_task_id INTEGER,
     run_id TEXT NOT NULL UNIQUE,
     asset_id INTEGER NOT NULL,
-    terminal_session_id INTEGER,
+    terminal_id TEXT,
     user_input TEXT NOT NULL,
     attached_terminal_context TEXT NOT NULL DEFAULT '',
     task_type TEXT NOT NULL,
@@ -127,10 +92,9 @@ CREATE TABLE IF NOT EXISTS agent_tasks (
     final_summary TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (session_id) REFERENCES assistant_sessions(id) ON DELETE CASCADE,
     FOREIGN KEY (parent_task_id) REFERENCES agent_tasks(id) ON DELETE CASCADE,
     FOREIGN KEY (asset_id) REFERENCES assets(id) ON DELETE CASCADE,
-    FOREIGN KEY (terminal_session_id) REFERENCES terminal_sessions(id) ON DELETE SET NULL
+    FOREIGN KEY (conversation_id) REFERENCES assistant_messages(conversation_id)
 );
 
 CREATE TABLE IF NOT EXISTS task_steps (
@@ -158,7 +122,7 @@ CREATE TABLE IF NOT EXISTS approvals (
     task_id INTEGER NOT NULL,
     step_id INTEGER,
     asset_id INTEGER NOT NULL,
-    terminal_session_id INTEGER,
+    terminal_id TEXT,
     command TEXT NOT NULL,
     working_directory TEXT NOT NULL DEFAULT '',
     risk_level TEXT NOT NULL CHECK (risk_level IN ('low', 'medium', 'high')),
@@ -170,8 +134,7 @@ CREATE TABLE IF NOT EXISTS approvals (
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (task_id) REFERENCES agent_tasks(id) ON DELETE CASCADE,
     FOREIGN KEY (step_id) REFERENCES task_steps(id) ON DELETE CASCADE,
-    FOREIGN KEY (asset_id) REFERENCES assets(id) ON DELETE CASCADE,
-    FOREIGN KEY (terminal_session_id) REFERENCES terminal_sessions(id) ON DELETE SET NULL
+    FOREIGN KEY (asset_id) REFERENCES assets(id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS command_executions (
@@ -180,7 +143,7 @@ CREATE TABLE IF NOT EXISTS command_executions (
     step_id INTEGER NOT NULL,
     approval_id INTEGER,
     asset_id INTEGER NOT NULL,
-    terminal_session_id INTEGER NOT NULL,
+    terminal_id TEXT NOT NULL,
     command TEXT NOT NULL,
     working_directory TEXT NOT NULL DEFAULT '',
     status TEXT NOT NULL CHECK (status IN ('queued', 'running', 'completed', 'failed', 'cancelled')),
@@ -193,13 +156,12 @@ CREATE TABLE IF NOT EXISTS command_executions (
     FOREIGN KEY (task_id) REFERENCES agent_tasks(id) ON DELETE CASCADE,
     FOREIGN KEY (step_id) REFERENCES task_steps(id) ON DELETE CASCADE,
     FOREIGN KEY (approval_id) REFERENCES approvals(id) ON DELETE SET NULL,
-    FOREIGN KEY (asset_id) REFERENCES assets(id) ON DELETE CASCADE,
-    FOREIGN KEY (terminal_session_id) REFERENCES terminal_sessions(id) ON DELETE CASCADE
+    FOREIGN KEY (asset_id) REFERENCES assets(id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS auto_approval_rules (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    session_id INTEGER NOT NULL,
+    conversation_id TEXT NOT NULL,
     name TEXT NOT NULL,
     asset_type TEXT NOT NULL DEFAULT '',
     asset_tags TEXT NOT NULL DEFAULT '',
@@ -210,8 +172,7 @@ CREATE TABLE IF NOT EXISTS auto_approval_rules (
     max_duration_seconds INTEGER NOT NULL DEFAULT 30 CHECK (max_duration_seconds > 0),
     enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (session_id) REFERENCES assistant_sessions(id) ON DELETE CASCADE
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS auto_approval_matches (
@@ -249,28 +210,24 @@ CREATE TABLE IF NOT EXISTS audit_logs (
     entity_type TEXT NOT NULL,
     entity_id INTEGER,
     asset_id INTEGER,
-    session_id INTEGER,
+    conversation_id TEXT,
     task_id INTEGER,
     details TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (asset_id) REFERENCES assets(id) ON DELETE SET NULL,
-    FOREIGN KEY (session_id) REFERENCES assistant_sessions(id) ON DELETE SET NULL,
     FOREIGN KEY (task_id) REFERENCES agent_tasks(id) ON DELETE SET NULL
 );
 
 CREATE INDEX IF NOT EXISTS ix_assets_type ON assets(asset_type);
 CREATE INDEX IF NOT EXISTS ix_assets_group_id ON assets(group_id);
-CREATE INDEX IF NOT EXISTS ix_terminal_sessions_asset_id ON terminal_sessions(asset_id);
-CREATE INDEX IF NOT EXISTS ix_terminal_events_session_id ON terminal_events(terminal_session_id);
-CREATE INDEX IF NOT EXISTS ix_assistant_sessions_asset_id ON assistant_sessions(asset_id);
-CREATE INDEX IF NOT EXISTS ix_assistant_messages_session_id ON assistant_messages(session_id);
-CREATE INDEX IF NOT EXISTS ix_agent_tasks_session_id ON agent_tasks(session_id);
+CREATE INDEX IF NOT EXISTS ix_assistant_messages_conversation_id ON assistant_messages(conversation_id);
+CREATE INDEX IF NOT EXISTS ix_agent_tasks_conversation_id ON agent_tasks(conversation_id);
 CREATE INDEX IF NOT EXISTS ix_agent_tasks_parent_task_id ON agent_tasks(parent_task_id);
 CREATE INDEX IF NOT EXISTS ix_task_steps_task_id ON task_steps(task_id);
 CREATE INDEX IF NOT EXISTS ix_approvals_task_id ON approvals(task_id);
 CREATE INDEX IF NOT EXISTS ix_approvals_step_id ON approvals(step_id);
 CREATE INDEX IF NOT EXISTS ix_command_executions_step_id ON command_executions(step_id);
-CREATE INDEX IF NOT EXISTS ix_auto_approval_rules_session_id ON auto_approval_rules(session_id);
+CREATE INDEX IF NOT EXISTS ix_auto_approval_rules_conversation_id ON auto_approval_rules(conversation_id);
 CREATE INDEX IF NOT EXISTS ix_model_usages_task_id ON model_usages(task_id);
 CREATE INDEX IF NOT EXISTS ix_audit_logs_asset_id ON audit_logs(asset_id);
 CREATE INDEX IF NOT EXISTS ix_audit_logs_created_at ON audit_logs(created_at);

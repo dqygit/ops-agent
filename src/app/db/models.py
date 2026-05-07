@@ -1,11 +1,11 @@
 from datetime import UTC, datetime
-from typing import ClassVar
+
 
 from sqlmodel import Field, SQLModel
 
 
 class AssetGroup(SQLModel, table=True):
-    __tablename__: ClassVar[str] = "asset_groups"
+    __tablename__ = "asset_groups"
     id: int | None = Field(default=None, primary_key=True)
     name: str
     description: str = ""
@@ -14,7 +14,7 @@ class AssetGroup(SQLModel, table=True):
 
 
 class Asset(SQLModel, table=True):
-    __tablename__: ClassVar[str] = "assets"
+    __tablename__ = "assets"
     id: int | None = Field(default=None, primary_key=True)
     group_id: int | None = None
     ssh_key_id: int | None = None
@@ -32,7 +32,7 @@ class Asset(SQLModel, table=True):
 
 
 class Credential(SQLModel, table=True):
-    __tablename__: ClassVar[str] = "credentials"
+    __tablename__ = "credentials"
     id: int | None = Field(default=None, primary_key=True)
     asset_id: int
     encryption_version: str
@@ -42,7 +42,7 @@ class Credential(SQLModel, table=True):
 
 
 class SSHKey(SQLModel, table=True):
-    __tablename__: ClassVar[str] = "ssh_keys"
+    __tablename__ = "ssh_keys"
     id: int | None = Field(default=None, primary_key=True)
     name: str
     public_key: str = ""
@@ -55,7 +55,7 @@ class SSHKey(SQLModel, table=True):
 
 
 class ModelConfigRecord(SQLModel, table=True):
-    __tablename__: ClassVar[str] = "model_configs"
+    __tablename__ = "model_configs"
     id: int | None = Field(default=None, primary_key=True)
     name: str
     provider: str
@@ -72,55 +72,14 @@ class ModelConfigRecord(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
-class TerminalSession(SQLModel, table=True):
-    __tablename__: ClassVar[str] = "terminal_sessions"
-    id: int | None = Field(default=None, primary_key=True)
-    asset_id: int
-    started_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
-    ended_at: datetime | None = None
-    status: str = "connected"
-    last_error: str = ""
-
-
-class TerminalEvent(SQLModel, table=True):
-    __tablename__: ClassVar[str] = "terminal_events"
-    id: int | None = Field(default=None, primary_key=True)
-    terminal_session_id: int
-    event_data: str = ""
-    event_type: str
-    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
-
-
-class AssistantSession(SQLModel, table=True):
-    __tablename__: ClassVar[str] = "assistant_sessions"
-    id: int | None = Field(default=None, primary_key=True)
-    asset_id: int
-    terminal_session_id: int | None = None
-    model_config_id: int | None = None
-    title: str
-    active_model: str
-    status: str = "active"
-    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
-
-
-class AssistantMessage(SQLModel, table=True):
-    __tablename__: ClassVar[str] = "assistant_messages"
-    id: int | None = Field(default=None, primary_key=True)
-    session_id: int
-    role: str
-    content: str
-    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
-
-
 class AgentTask(SQLModel, table=True):
-    __tablename__: ClassVar[str] = "agent_tasks"
+    __tablename__ = "agent_tasks"
     id: int | None = Field(default=None, primary_key=True)
-    session_id: int
+    conversation_id: str
     parent_task_id: int | None = None
     run_id: str = ""
     asset_id: int
-    terminal_session_id: int | None = None
+    terminal_id: str | None = None
     user_input: str
     attached_terminal_context: str = ""
     task_type: str
@@ -132,7 +91,7 @@ class AgentTask(SQLModel, table=True):
 
 
 class TaskStep(SQLModel, table=True):
-    __tablename__: ClassVar[str] = "task_steps"
+    __tablename__ = "task_steps"
     id: int | None = Field(default=None, primary_key=True)
     task_id: int
     step_order: int
@@ -151,12 +110,12 @@ class TaskStep(SQLModel, table=True):
 
 
 class Approval(SQLModel, table=True):
-    __tablename__: ClassVar[str] = "approvals"
+    __tablename__ = "approvals"
     id: int | None = Field(default=None, primary_key=True)
     task_id: int
     step_id: int | None = None
     asset_id: int | None = None
-    terminal_session_id: int | None = None
+    terminal_id: str | None = None
     command: str = ""
     working_directory: str = ""
     risk_level: str = "low"
@@ -169,12 +128,12 @@ class Approval(SQLModel, table=True):
 
 
 class CommandExecution(SQLModel, table=True):
-    __tablename__: ClassVar[str] = "command_executions"
+    __tablename__ = "command_executions"
     id: int | None = Field(default=None, primary_key=True)
     task_id: int
     step_id: int
     asset_id: int
-    terminal_session_id: int
+    terminal_id: str
     command: str
     status: str
     approval_id: int | None = None
@@ -188,9 +147,9 @@ class CommandExecution(SQLModel, table=True):
 
 
 class AutoApprovalRule(SQLModel, table=True):
-    __tablename__: ClassVar[str] = "auto_approval_rules"
+    __tablename__ = "auto_approval_rules"
     id: int | None = Field(default=None, primary_key=True)
-    session_id: int
+    conversation_id: str
     name: str
     asset_type: str = ""
     asset_tags: str = ""
@@ -205,7 +164,7 @@ class AutoApprovalRule(SQLModel, table=True):
 
 
 class AutoApprovalMatch(SQLModel, table=True):
-    __tablename__: ClassVar[str] = "auto_approval_matches"
+    __tablename__ = "auto_approval_matches"
     id: int | None = Field(default=None, primary_key=True)
     rule_id: int
     approval_id: int
@@ -216,7 +175,7 @@ class AutoApprovalMatch(SQLModel, table=True):
 
 
 class ModelUsage(SQLModel, table=True):
-    __tablename__: ClassVar[str] = "model_usages"
+    __tablename__ = "model_usages"
     id: int | None = Field(default=None, primary_key=True)
     task_id: int
     model_config_id: int | None = None
@@ -229,14 +188,14 @@ class ModelUsage(SQLModel, table=True):
 
 
 class AuditLog(SQLModel, table=True):
-    __tablename__: ClassVar[str] = "audit_logs"
+    __tablename__ = "audit_logs"
     id: int | None = Field(default=None, primary_key=True)
     action: str
     entity_type: str
     actor: str = ""
     entity_id: int | None = None
     asset_id: int | None = None
-    session_id: int | None = None
+    conversation_id: str | None = None
     task_id: int | None = None
     details: str = ""
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))

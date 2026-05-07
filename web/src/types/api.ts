@@ -5,7 +5,7 @@ export type ConsoleBootstrap = {
   groups: AssetGroup[]
   historyByAsset: Record<number, SessionRecord[]>
   modelOptions: string[]
-  terminalSessionId: number | null
+  terminalSessionId: string | null
   terminalSessionChannel: string | null
   terminalSessionError: string
   initialPrompt: string

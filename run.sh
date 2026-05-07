@@ -12,6 +12,17 @@ if [ -d ".venv" ]; then
     source .venv/bin/activate
 fi
 
+# Load .env variables for backend/frontend startup
+if [ -f ".env" ]; then
+    echo "Loading environment from .env..."
+    set -a
+    source .env
+    set +a
+fi
+
+echo "Stopping processes on ports 8000 and 5173..."
+lsof -ti:8000,5173 | xargs kill -9 2>/dev/null || true
+
 # Function to stop background processes on exit
 cleanup() {
     echo "Stopping servers..."

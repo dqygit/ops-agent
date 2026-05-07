@@ -28,23 +28,24 @@ class ModelService:
         return session_override or default_config
 
     def build_default_config(self) -> ModelConfig:
-        provider = os.environ.get("OPS_AGENT_MODEL_PROVIDER", ModelProvider.ANTHROPIC.value)
+        provider = os.environ.get("OPS_AGENT_PROVIDER", ModelProvider.ANTHROPIC.value)
         return ModelConfig(
             provider=ModelProvider(provider),
-            model_name=os.environ.get("OPS_AGENT_MODEL_NAME", "claude-opus-4-7"),
-            base_url=os.environ.get("ANTHROPIC_BASE_URL", "https://api.anthropic.com"),
-            api_key=SecretStr(os.environ.get("ANTHROPIC_API_KEY", "demo-key")),
-            timeout_seconds=int(os.environ.get("OPS_AGENT_MODEL_TIMEOUT_SECONDS", "30")),
-            temperature=float(os.environ.get("OPS_AGENT_MODEL_TEMPERATURE", "0.2")),
-            max_tokens=int(os.environ.get("OPS_AGENT_MODEL_MAX_TOKENS", "2560")),
+            model_name=os.environ.get("OPS_AGENT_MODEL", "claude-opus-4-7"),
+            base_url=os.environ.get("OPS_AGENT_BASE_URL", "https://api.anthropic.com"),
+            api_key=SecretStr(os.environ.get("OPS_AGENT_API_KEY", "demo-key")),
+            timeout_seconds=int(os.environ.get("OPS_AGENT_TIMEOUT_SECONDS", "30")),
+            temperature=float(os.environ.get("OPS_AGENT_TEMPERATURE", "0.2")),
+            max_tokens=int(os.environ.get("OPS_AGENT_MAX_TOKENS", "2560")),
         )
 
     def load_settings(self) -> ModelConfig:
         default_config = self.build_default_config()
         if not self._settings_path.exists():
             return default_config
+        
         payload = json.loads(self._settings_path.read_text(encoding="utf-8"))
-        return ModelConfig(
+        config = ModelConfig(
             provider=ModelProvider(payload.get("provider", default_config.provider.value)),
             model_name=payload.get("model_name", default_config.model_name),
             base_url=payload.get("base_url", default_config.base_url),
@@ -53,6 +54,22 @@ class ModelService:
             temperature=payload.get("temperature", default_config.temperature),
             max_tokens=payload.get("max_tokens", default_config.max_tokens),
         )
+
+        # Only override with environment variables if they are explicitly set
+        updates = {}
+        if os.environ.get("OPS_AGENT_PROVIDER"):
+            updates["provider"] = ModelProvider(os.environ["OPS_AGENT_PROVIDER"])
+        if os.environ.get("OPS_AGENT_MODEL"):
+            updates["model_name"] = os.environ["OPS_AGENT_MODEL"]
+        if os.environ.get("OPS_AGENT_BASE_URL"):
+            updates["base_url"] = os.environ["OPS_AGENT_BASE_URL"]
+        if os.environ.get("OPS_AGENT_API_KEY"):
+            updates["api_key"] = SecretStr(os.environ["OPS_AGENT_API_KEY"])
+            
+        if updates:
+            config = config.model_copy(update=updates)
+            
+        return config
 
     def save_settings(self, config: ModelConfig) -> ModelConfig:
         self._settings_path.parent.mkdir(parents=True, exist_ok=True)

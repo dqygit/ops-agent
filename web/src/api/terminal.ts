@@ -1,7 +1,7 @@
 import { requestJson, requestVoid } from './client'
 
 type TerminalSessionResponse = {
-  terminal_session_id: number | null
+  terminal_id: string | null
   channel: string | null
   error: string
 }
@@ -13,7 +13,7 @@ export async function createTerminalSession(assetId: number): Promise<TerminalSe
   })
 }
 
-export async function closeTerminalSession(terminalSessionId: number): Promise<void> {
+export async function closeTerminalSession(terminalSessionId: string): Promise<void> {
   return requestVoid(`/api/terminal/sessions/${terminalSessionId}`, {
     method: 'DELETE',
   })

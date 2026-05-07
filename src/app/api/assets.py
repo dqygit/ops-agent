@@ -1,8 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlmodel import Session
 
-from app.api.schemas import AssetContextView, AssetView, AssistantSessionView, TerminalEventSummaryView, TerminalSessionSummaryView
-from app.db.repositories.terminal import list_terminal_events_by_session_id, list_terminal_sessions_by_asset_id
+from app.api.schemas import AssetView
 from app.db.session import get_session
 from app.services.asset_service import GroupNotFoundError, SSHKeyNotFoundError, create_asset_record, delete_asset_record, get_asset_record, list_asset_records, update_asset_record
 from app.shared.schemas import AssetCreate

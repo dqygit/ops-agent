@@ -12,23 +12,23 @@ from app.shared.schemas import PlanStep
 def create_agent_task(
     session: Session,
     *,
-    session_id: int,
+    conversation_id: str,
     run_id: str,
     asset_id: int,
+    terminal_id: str | None,
     user_input: str,
     attached_terminal_context: str,
     task_type: str,
     risk_level: str,
     status: str,
     parent_task_id: int | None = None,
-    terminal_session_id: int | None = None,
 ) -> AgentTask:
     row = AgentTask(
-        session_id=session_id,
+        conversation_id=conversation_id,
         parent_task_id=parent_task_id,
         run_id=run_id,
         asset_id=asset_id,
-        terminal_session_id=terminal_session_id,
+        terminal_id=terminal_id,
         user_input=user_input,
         attached_terminal_context=attached_terminal_context,
         task_type=task_type,
@@ -55,7 +55,7 @@ def update_agent_task(
     *,
     status: str | None = None,
     final_summary: str | None = None,
-    terminal_session_id: int | None = None,
+    terminal_id: str | None = None,
 ) -> AgentTask | None:
     row = session.get(AgentTask, task_id)
     if row is None:
@@ -64,8 +64,8 @@ def update_agent_task(
         row.status = status
     if final_summary is not None:
         row.final_summary = final_summary
-    if terminal_session_id is not None:
-        row.terminal_session_id = terminal_session_id
+    if terminal_id is not None:
+        row.terminal_id = terminal_id
     row.updated_at = datetime.now(UTC)
     session.add(row)
     session.commit()
@@ -154,7 +154,7 @@ def create_approval(
     comment: str = "",
     step_id: int | None = None,
     asset_id: int | None = None,
-    terminal_session_id: int | None = None,
+    terminal_id: str | None = None,
     command: str = "",
     working_directory: str = "",
     risk_level: str = "low",
@@ -165,7 +165,7 @@ def create_approval(
         task_id=task_id,
         step_id=step_id,
         asset_id=asset_id,
-        terminal_session_id=terminal_session_id,
+        terminal_id=terminal_id,
         command=command,
         working_directory=working_directory,
         risk_level=risk_level,
@@ -209,13 +209,6 @@ def list_task_steps_by_task_id(session: Session, task_id: int) -> list[TaskStep]
     )
 
 
-def get_pending_agent_task_by_session_id(session: Session, session_id: int) -> AgentTask | None:
-    return session.exec(
-        select(AgentTask)
-        .where(AgentTask.session_id == session_id)
-        .where(AgentTask.status == TaskStatus.PENDING_APPROVAL.value)
-        .order_by(desc(cast(Any, AgentTask.updated_at)), desc(cast(Any, AgentTask.id)))
-    ).first()
 
 
 def create_model_usage(
@@ -293,11 +286,10 @@ def create_auto_approval_rule(session: Session, **payload: Any) -> AutoApprovalR
     return row
 
 
-def list_auto_approval_rules_by_session_id(session: Session, session_id: int) -> list[AutoApprovalRule]:
+def list_auto_approval_rules(session: Session) -> list[AutoApprovalRule]:
     return list(
         session.exec(
             select(AutoApprovalRule)
-            .where(AutoApprovalRule.session_id == session_id)
             .order_by(cast(Any, AutoApprovalRule.id))
         ).all()
     )

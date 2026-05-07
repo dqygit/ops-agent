@@ -1,5 +1,5 @@
 import json
-from collections.abc import Callable, Iterator
+from collections.abc import Iterator
 from dataclasses import dataclass
 
 from app.integrations.llm.base import LLMCompletionRequest, LLMMessage, SupportsCompletion
@@ -32,12 +32,13 @@ class PlannerService:
         user_input: str,
         asset_summary: str,
         recent_output: str = "",
-        on_delta: Callable[[str], None] | None = None,
-    ) -> list[PlanStep]:
-        provider = self._provider or build_llm_provider(config)
+    ) -> Iterator[str | list[PlanStep]]:
         request = self._build_plan_request(user_input=user_input, asset_summary=asset_summary, recent_output=recent_output)
-        text = self._stream_response_text(config=config, request=request, on_delta=on_delta)
-        return self._parse_plan_steps(text)
+        text_parts: list[str] = []
+        for delta in self._stream_response_text(config=config, request=request):
+            text_parts.append(delta)
+            yield delta
+        yield self._parse_plan_steps("".join(text_parts))
 
     def review_step_result(
         self,
@@ -59,9 +60,9 @@ class PlannerService:
             ),
         )
         payload = self._safe_load_json(response.text)
-        decision = str(payload.get("decision") or ("complete" if not remaining_steps else "continue")).lower()
-        if decision not in {"continue", "complete"}:
-            decision = "complete" if not remaining_steps else "continue"
+        decision = str(payload.get("decision") or ("complete" if not remaining_steps else "advance")).lower()
+        if decision not in {"retry", "advance", "complete"}:
+            decision = "complete" if not remaining_steps else "advance"
         summary = str(payload.get("summary") or "")
         return PlannerReviewResult(decision=decision, summary=summary)
 
@@ -73,22 +74,23 @@ class PlannerService:
         current_step: PlanStep,
         command_output: str,
         remaining_steps: list[PlanStep],
-        on_delta: Callable[[str], None] | None = None,
-    ) -> PlannerReviewResult:
-        provider = self._provider or build_llm_provider(config)
+    ) -> Iterator[str | PlannerReviewResult]:
         request = self._build_review_request(
             user_input=user_input,
             current_step=current_step,
             command_output=command_output,
             remaining_steps=remaining_steps,
         )
-        text = self._stream_response_text(config=config, request=request, on_delta=on_delta)
-        payload = self._safe_load_json(text)
-        decision = str(payload.get("decision") or ("complete" if not remaining_steps else "continue")).lower()
-        if decision not in {"continue", "complete"}:
-            decision = "complete" if not remaining_steps else "continue"
+        text_parts: list[str] = []
+        for delta in self._stream_response_text(config=config, request=request):
+            text_parts.append(delta)
+            yield delta
+        payload = self._safe_load_json("".join(text_parts))
+        decision = str(payload.get("decision") or ("complete" if not remaining_steps else "advance")).lower()
+        if decision not in {"retry", "advance", "complete"}:
+            decision = "complete" if not remaining_steps else "advance"
         summary = str(payload.get("summary") or "")
-        return PlannerReviewResult(decision=decision, summary=summary)
+        yield PlannerReviewResult(decision=decision, summary=summary)
 
     def _build_plan_request(self, *, user_input: str, asset_summary: str, recent_output: str) -> LLMCompletionRequest:
         return LLMCompletionRequest(
@@ -128,7 +130,10 @@ class PlannerService:
                     role="system",
                     content=(
                         "你是 Ops Planner。先用自然语言简短说明你如何判断当前结果，再输出标记 <FINAL_JSON>，"
-                        '最后输出 JSON：{"decision":"continue|complete","summary":str}。'
+                        '最后输出 JSON：{"decision":"retry|advance|complete","summary":str}。'
+                        "当当前步骤执行结果有问题需要重新生成命令并再次审批时用 retry；"
+                        "当前步骤通过且应继续下一个步骤时用 advance；"
+                        "全部步骤完成时用 complete。"
                     ),
                 ),
                 LLMMessage(
@@ -142,6 +147,62 @@ class PlannerService:
                 ),
             ],
             temperature=0.1,
+        )
+
+    def summarize_task_result(
+        self,
+        *,
+        config: ModelConfig,
+        user_input: str,
+        completed_steps: list[PlanStep],
+        execution_history: list[dict[str, str]],
+    ) -> str:
+        provider = self._provider or build_llm_provider(config)
+        response = provider.complete(
+            config=config,
+            request=self._build_summary_request(
+                user_input=user_input,
+                completed_steps=completed_steps,
+                execution_history=execution_history,
+            ),
+        )
+        return response.text.strip()
+
+    def _build_summary_request(
+        self,
+        *,
+        user_input: str,
+        completed_steps: list[PlanStep],
+        execution_history: list[dict[str, str]],
+    ) -> LLMCompletionRequest:
+        steps_text = "\n".join(
+            f"- {index + 1}. {step.title} | command={step.command} | expected={step.expected_output}"
+            for index, step in enumerate(completed_steps)
+        ) or "- 无"
+        history_text = "\n".join(
+            f"- step={item.get('step','')} | command={item.get('command','')} | output={item.get('output','')[:500]}"
+            for item in execution_history
+        ) or "- 无"
+        return LLMCompletionRequest(
+            messages=[
+                LLMMessage(
+                    role="system",
+                    content=(
+                        "你是 Ops 总结助手。请基于任务目标和执行历史，输出简洁中文总结。"
+                        "必须包含：任务是否完成、关键执行动作、关键结果、风险或后续建议。"
+                        "只输出自然语言，不要 JSON。"
+                    ),
+                ),
+                LLMMessage(
+                    role="user",
+                    content=(
+                        f"用户任务:\n{user_input}\n\n"
+                        f"已完成步骤:\n{steps_text}\n\n"
+                        f"执行历史:\n{history_text}"
+                    ),
+                ),
+            ],
+            temperature=0.2,
         )
 
     def _parse_plan_steps(self, text: str) -> list[PlanStep]:
@@ -192,33 +253,34 @@ class PlannerService:
                     return {}
             return {}
 
-    def _stream_response_text(self, *, config: ModelConfig, request: LLMCompletionRequest, on_delta: Callable[[str], None] | None = None) -> str:
+    def _stream_response_text(self, *, config: ModelConfig, request: LLMCompletionRequest) -> Iterator[str]:
         provider = self._provider or build_llm_provider(config)
         marker = "<FINAL_JSON>"
-        text_parts: list[str] = []
         visible_buffer = ""
         marker_seen = False
         for chunk in getattr(provider, "stream_complete")(config=config, request=request):
             if not chunk.delta:
                 continue
-            text_parts.append(chunk.delta)
             if marker_seen:
+                yield chunk.delta
                 continue
             visible_buffer += chunk.delta
             marker_index = visible_buffer.find(marker)
             if marker_index >= 0:
                 prose = visible_buffer[:marker_index]
-                if prose and on_delta is not None:
-                    on_delta(prose)
-                visible_buffer = ""
+                if prose:
+                    yield prose
+                visible_buffer = visible_buffer[marker_index + len(marker):]
                 marker_seen = True
+                if visible_buffer:
+                    yield visible_buffer
+                    visible_buffer = ""
                 continue
             safe_length = max(0, len(visible_buffer) - len(marker))
             if safe_length > 0:
                 prose = visible_buffer[:safe_length]
-                if prose and on_delta is not None:
-                    on_delta(prose)
+                if prose:
+                    yield prose
                 visible_buffer = visible_buffer[safe_length:]
-        if not marker_seen and visible_buffer and on_delta is not None:
-            on_delta(visible_buffer)
-        return "".join(text_parts)
+        if not marker_seen and visible_buffer:
+            yield visible_buffer

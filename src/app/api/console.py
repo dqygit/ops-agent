@@ -8,7 +8,7 @@ from sqlmodel import Session
 from app.api.assets import to_asset_view
 from app.api.groups import to_asset_group_view
 from app.api.ssh_keys import to_ssh_key_view
-from app.api.schemas import ConsoleApprovalRequest, ConsoleBootstrapView, ConsoleRunRequest, ConsoleSessionRecordView
+from app.api.schemas import ConsoleApprovalRequest, ConsoleBootstrapView, ConsoleRunRequest
 from app.core.engine.task_orchestrator import OrchestratorDependencies, TaskOrchestrator
 from app.services.ssh_key_service import list_ssh_key_records
 from app.api.terminal import get_terminal_service
@@ -56,6 +56,8 @@ def get_console_bootstrap(
     default_record = get_default_model_config(session)
     default_config = model_service.from_record(default_record) if default_record is not None else model_service.load_settings()
     model_options = [record.model_name for record in list_model_configs(session)] or model_service.list_available_models(default_config.provider, session)
+    if default_config.model_name and default_config.model_name not in model_options:
+        model_options = [default_config.model_name, *model_options]
     local_terminal_asset = next((asset for asset in assets if asset.asset_type == AssetType.LOCAL_TERMINAL.value), None)
     if local_terminal_asset is None:
         local_terminal_asset = SimpleNamespace(
@@ -72,14 +74,13 @@ def get_console_bootstrap(
             group_id=None,
             ssh_key_id=None,
         )
-    terminal_session_result = {"terminal_session_id": None, "channel": None, "error": ""}
     terminal_session_result = terminal_service.open_session(local_terminal_asset)
     return ConsoleBootstrapView(
         assets=[to_asset_view(asset) for asset in assets],
         groups=[to_asset_group_view(group) for group in list_asset_group_records(session)],
         historyByAsset={},
         modelOptions=model_options,
-        terminalSessionId=terminal_session_result.get("terminal_session_id"),
+        terminalSessionId=terminal_session_result.get("terminal_id"),
         terminalSessionChannel=terminal_session_result.get("channel"),
         terminalSessionError=terminal_session_result.get("error", ""),
         initialPrompt="",
@@ -102,11 +103,22 @@ async def run_console_agent(
         asset_id = local_terminal_asset.id if local_terminal_asset is not None and local_terminal_asset.id is not None else 0
     if asset_id is None:
         raise HTTPException(status_code=400, detail="Asset id is required")
-    try:
-        stream = orchestrator.stream_run(session=session, prompt=payload.prompt, asset_id=asset_id, model_name=payload.model_name)
-        return StreamingResponse((_sse_event(event) for event in stream), media_type="text/event-stream")
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    stream = orchestrator.stream_run(
+        session=session,
+        prompt=payload.prompt,
+        asset_id=asset_id,
+        terminal_id=payload.terminal_id,
+        model_name=payload.model_name
+    )
+
+    def event_stream():
+        try:
+            for event in stream:
+                yield _sse_event(event)
+        except Exception as exc:
+            yield _sse_event({"id": "error-run", "kind": "error", "text": str(exc), "recoverable": True})
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 
 @router.post("/api/console/approval")
@@ -116,8 +128,13 @@ async def approve_console_agent(
     orchestrator: TaskOrchestrator = Depends(get_task_orchestrator),
 ):
     payload = await _parse_request_model(request, ConsoleApprovalRequest)
-    try:
-        stream = orchestrator.stream_approve(session=session, run_id=payload.run_id, approved=payload.approved)
-        return StreamingResponse((_sse_event(event) for event in stream), media_type="text/event-stream")
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    stream = orchestrator.stream_approve(session=session, run_id=payload.run_id, approved=payload.approved)
+
+    def event_stream():
+        try:
+            for event in stream:
+                yield _sse_event(event)
+        except Exception as exc:
+            yield _sse_event({"id": "error-approve", "kind": "error", "text": str(exc), "recoverable": True})
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")

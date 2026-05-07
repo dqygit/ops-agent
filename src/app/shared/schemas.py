@@ -58,7 +58,7 @@ class ModelConfig(BaseModel):
 
 
 class TerminalContextAttachment(BaseModel):
-    terminal_session_id: int
+    terminal_id: str
     selection_label: str
     selected_text: str
 
@@ -83,7 +83,7 @@ class AgentTaskSummary(BaseModel):
 class ApprovalView(BaseModel):
     task_id: int
     run_id: str
-    session_id: int
+    conversation_id: str
     status: str
     message: str
     steps: list[PlanStep]

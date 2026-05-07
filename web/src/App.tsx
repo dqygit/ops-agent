@@ -84,6 +84,7 @@ export function App() {
     prompt,
     setPrompt,
     events,
+    pendingApprovalRunId,
     setSelectedAssetId,
     addAsset,
     updateAsset,
@@ -231,6 +232,7 @@ export function App() {
               <Panel defaultSize={30} minSize={20}>
                 <AssistantPanel
                   events={events}
+                  pendingApprovalRunId={pendingApprovalRunId}
                   models={bootstrap.modelOptions}
                   selectedModel={selectedModel}
                   prompt={prompt}
