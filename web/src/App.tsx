@@ -7,8 +7,9 @@ import { TopBar } from './components/layout/TopBar'
 import { SettingsDialog } from './components/settings/SettingsDialog'
 import { TerminalPanel } from './components/terminal/TerminalPanel'
 import { useConsoleData } from './hooks/useConsoleData'
+import type { Asset } from './types/ops'
 
-type ActiveModal = 'add-asset' | 'settings' | null
+type ActiveModal = 'add-asset' | 'edit-asset' | 'delete-asset' | 'settings' | null
 
 type ConnectionMode = 'ssh' | 'serial' | 'telnet'
 
@@ -67,8 +68,10 @@ function getAssetTypeByMode(mode: ConnectionMode): 'linux' | 'network' {
 
 export function App() {
   const [activeModal, setActiveModal] = useState<ActiveModal>(null)
+  const [targetAsset, setTargetAsset] = useState<Asset | null>(null)
   const [addAssetForm, setAddAssetForm] = useState<AddAssetForm>(emptyAddAssetForm)
   const [addAssetError, setAddAssetError] = useState<string | null>(null)
+  
   const {
     bootstrap,
     terminalOutput,
@@ -100,17 +103,46 @@ export function App() {
     setAddAssetForm((currentForm) => ({ ...currentForm, [field]: value }))
   }
 
-  const closeAddAssetModal = () => {
+  const closeModal = () => {
     setAddAssetForm(emptyAddAssetForm)
     setAddAssetError(null)
+    setTargetAsset(null)
     setActiveModal(null)
   }
 
-  const handleAddAssetSubmit = async (event: FormEvent<HTMLFormElement>) => {
+  const openEditAssetModal = (asset: Asset) => {
+    setTargetAsset(asset)
+    const mode = asset.tags.includes('connection:serial') ? 'serial' : asset.tags.includes('connection:telnet') ? 'telnet' : 'ssh'
+    
+    setAddAssetForm({
+      mode,
+      name: asset.name,
+      host: asset.host,
+      port: String(asset.port),
+      username: asset.username,
+      authType: asset.authType || 'password',
+      credentialSecret: '',
+      sshKeyId: asset.sshKeyId ? String(asset.sshKeyId) : '',
+      serialPort: mode === 'serial' ? asset.host : '',
+      baudRate: mode === 'serial' ? String(asset.port) : '9600',
+      dataBits: asset.tags.find((t) => t.startsWith('data-bits:'))?.split(':')[1] || '8',
+      parity: asset.tags.find((t) => t.startsWith('parity:'))?.split(':')[1] || 'none',
+      stopBits: asset.tags.find((t) => t.startsWith('stop-bits:'))?.split(':')[1] || '1',
+      groupId: asset.groupId ? String(asset.groupId) : '',
+    })
+    setActiveModal('edit-asset')
+  }
+
+  const openDeleteAssetModal = (asset: Asset) => {
+    setTargetAsset(asset)
+    setActiveModal('delete-asset')
+  }
+
+  const handleAssetSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     setAddAssetError(null)
     try {
-      await addAsset({
+      const payload = {
         name: addAssetForm.name,
         asset_type: getAssetTypeByMode(addAssetForm.mode),
         group_id: addAssetForm.groupId ? Number(addAssetForm.groupId) : null,
@@ -121,12 +153,18 @@ export function App() {
         ssh_key_id: addAssetForm.mode === 'ssh' && addAssetForm.authType === 'key' ? (addAssetForm.sshKeyId ? Number(addAssetForm.sshKeyId) : null) : null,
         credential_secret: addAssetForm.mode === 'serial' ? undefined : addAssetForm.credentialSecret.trim() || undefined,
         tags: buildConnectionTags(addAssetForm),
-        vendor: '',
-        description: '',
-      })
-      closeAddAssetModal()
+        vendor: targetAsset?.vendor || '',
+        description: targetAsset?.description || '',
+      }
+
+      if (activeModal === 'edit-asset' && targetAsset) {
+        await updateAsset(targetAsset.id, payload)
+      } else {
+        await addAsset(payload)
+      }
+      closeModal()
     } catch (error) {
-      setAddAssetError(error instanceof Error ? error.message : '添加资产失败')
+      setAddAssetError(error instanceof Error ? error.message : '保存资产失败')
     }
   }
 
@@ -149,6 +187,8 @@ export function App() {
               onUpdateAsset={updateAsset}
               onDeleteAsset={deleteAsset}
               onAddAsset={() => setActiveModal('add-asset')}
+              onEditAsset={openEditAssetModal}
+              onDeleteAssetConfirm={openDeleteAssetModal}
             />
           </Panel>
 
@@ -176,7 +216,7 @@ export function App() {
             
             {loadError ? (
               <section className="h-full flex items-center justify-center bg-ops-panel border-x border-ops-border/30 backdrop-blur-md">
-                <p className="text-ops-red text-sm">{loadError}</p>
+                <p className="text-ops-danger text-sm">{loadError}</p>
               </section>
             ) : null}
           </Panel>
@@ -213,14 +253,16 @@ export function App() {
         </PanelGroup>
       </main>
 
-      {activeModal === 'add-asset' ? (
+      {(activeModal === 'add-asset' || activeModal === 'edit-asset') ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" role="presentation">
-          <form className="w-[500px] max-w-[90vw] max-h-[90vh] overflow-y-auto bg-ops-strong border border-ops-border/50 rounded-xl p-6 shadow-2xl flex flex-col gap-4" role="dialog" aria-modal="true" aria-labelledby="add-asset-title" onSubmit={handleAddAssetSubmit}>
-            <h3 id="add-asset-title" className="text-lg font-medium text-ops-text pb-2 border-b border-ops-border/30">添加资产</h3>
+          <form className="w-[500px] max-w-[90vw] max-h-[90vh] overflow-y-auto bg-ops-strong border border-ops-border/50 rounded-xl p-6 shadow-2xl flex flex-col gap-4" role="dialog" aria-modal="true" aria-labelledby="add-asset-title" onSubmit={handleAssetSubmit}>
+            <h3 id="add-asset-title" className="text-lg font-medium text-ops-text pb-2 border-b border-ops-border/30">
+              {activeModal === 'edit-asset' ? '编辑资产' : '添加资产'}
+            </h3>
             <div className="grid grid-cols-2 gap-4">
               <label className="flex flex-col gap-1 text-sm text-ops-muted col-span-2 sm:col-span-1">
                 类型
-                <select className="bg-ops-deep text-ops-text border border-ops-border rounded-md px-3 py-1.5 focus:outline-none focus:border-ops-green" value={addAssetForm.mode} onChange={(event) => updateAddAssetForm('mode', event.target.value)}>
+                <select className="field-control" value={addAssetForm.mode} onChange={(event) => updateAddAssetForm('mode', event.target.value as ConnectionMode)}>
                   <option value="ssh">SSH</option>
                   <option value="serial">Serial</option>
                   <option value="telnet">Telnet</option>
@@ -228,11 +270,11 @@ export function App() {
               </label>
               <label className="flex flex-col gap-1 text-sm text-ops-muted col-span-2 sm:col-span-1">
                 名称
-                <input className="bg-ops-deep text-ops-text border border-ops-border rounded-md px-3 py-1.5 focus:outline-none focus:border-ops-green" value={addAssetForm.name} onChange={(event) => updateAddAssetForm('name', event.target.value)} placeholder={addAssetForm.mode === 'serial' ? '串口设备' : addAssetForm.mode === 'telnet' ? 'telnet-switch-01' : 'backup-linux-03'} required />
+                <input className="field-control" value={addAssetForm.name} onChange={(event) => updateAddAssetForm('name', event.target.value)} placeholder={addAssetForm.mode === 'serial' ? '串口设备' : addAssetForm.mode === 'telnet' ? 'telnet-switch-01' : 'backup-linux-03'} required />
               </label>
               <label className="flex flex-col gap-1 text-sm text-ops-muted col-span-2 sm:col-span-1">
                 分组
-                <select className="bg-ops-deep text-ops-text border border-ops-border rounded-md px-3 py-1.5 focus:outline-none focus:border-ops-green" value={addAssetForm.groupId} onChange={(event) => updateAddAssetForm('groupId', event.target.value)}>
+                <select className="field-control" value={addAssetForm.groupId} onChange={(event) => updateAddAssetForm('groupId', event.target.value)}>
                   <option value="">未分组</option>
                   {bootstrap.groups.map((group) => (
                     <option key={group.id} value={group.id}>{group.name}</option>
@@ -243,19 +285,19 @@ export function App() {
                 <>
                   <label className="flex flex-col gap-1 text-sm text-ops-muted col-span-2 sm:col-span-1">
                     地址
-                    <input className="bg-ops-deep text-ops-text border border-ops-border rounded-md px-3 py-1.5 focus:outline-none focus:border-ops-green" value={addAssetForm.host} onChange={(event) => updateAddAssetForm('host', event.target.value)} placeholder="10.10.3.19" required />
+                    <input className="field-control" value={addAssetForm.host} onChange={(event) => updateAddAssetForm('host', event.target.value)} placeholder="10.10.3.19" required />
                   </label>
                   <label className="flex flex-col gap-1 text-sm text-ops-muted col-span-2 sm:col-span-1">
                     端口
-                    <input className="bg-ops-deep text-ops-text border border-ops-border rounded-md px-3 py-1.5 focus:outline-none focus:border-ops-green" type="number" min="1" max="65535" value={addAssetForm.port} onChange={(event) => updateAddAssetForm('port', event.target.value)} placeholder="22" required />
+                    <input className="field-control" type="number" min="1" max="65535" value={addAssetForm.port} onChange={(event) => updateAddAssetForm('port', event.target.value)} placeholder="22" required />
                   </label>
                   <label className="flex flex-col gap-1 text-sm text-ops-muted col-span-2 sm:col-span-1">
                     用户名
-                    <input className="bg-ops-deep text-ops-text border border-ops-border rounded-md px-3 py-1.5 focus:outline-none focus:border-ops-green" value={addAssetForm.username} onChange={(event) => updateAddAssetForm('username', event.target.value)} placeholder="ops" required />
+                    <input className="field-control" value={addAssetForm.username} onChange={(event) => updateAddAssetForm('username', event.target.value)} placeholder="ops" required />
                   </label>
                   <label className="flex flex-col gap-1 text-sm text-ops-muted col-span-2 sm:col-span-1">
                     认证方式
-                    <select className="bg-ops-deep text-ops-text border border-ops-border rounded-md px-3 py-1.5 focus:outline-none focus:border-ops-green" value={addAssetForm.authType} onChange={(event) => updateAddAssetForm('authType', event.target.value)}>
+                    <select className="field-control" value={addAssetForm.authType} onChange={(event) => updateAddAssetForm('authType', event.target.value)}>
                       <option value="password">密码</option>
                       <option value="key">密钥</option>
                       <option value="password_and_key">密码 + 密钥</option>
@@ -264,7 +306,7 @@ export function App() {
                   {addAssetForm.authType === 'key' ? (
                     <label className="flex flex-col gap-1 text-sm text-ops-muted col-span-2 sm:col-span-1">
                       SSH 密钥
-                      <select className="bg-ops-deep text-ops-text border border-ops-border rounded-md px-3 py-1.5 focus:outline-none focus:border-ops-green" value={addAssetForm.sshKeyId} onChange={(event) => updateAddAssetForm('sshKeyId', event.target.value)} required>
+                      <select className="field-control" value={addAssetForm.sshKeyId} onChange={(event) => updateAddAssetForm('sshKeyId', event.target.value)} required>
                         <option value="">请选择密钥</option>
                         {bootstrap.sshKeys.map((sshKey) => (
                           <option key={sshKey.id} value={sshKey.id}>{sshKey.name}</option>
@@ -275,44 +317,44 @@ export function App() {
                   <label className="flex flex-col gap-1 text-sm text-ops-muted col-span-2">
                     {addAssetForm.authType === 'key' ? '私钥口令（可选）' : addAssetForm.authType === 'password_and_key' ? '密码或密钥凭据' : '密码'}
                     {addAssetForm.authType === 'key' ? (
-                      <input className="bg-ops-deep text-ops-text border border-ops-border rounded-md px-3 py-1.5 focus:outline-none focus:border-ops-green" type="password" value={addAssetForm.credentialSecret} onChange={(event) => updateAddAssetForm('credentialSecret', event.target.value)} placeholder="如密钥有口令可填写" />
+                      <input className="field-control" type="password" value={addAssetForm.credentialSecret} onChange={(event) => updateAddAssetForm('credentialSecret', event.target.value)} placeholder="如密钥有口令可填写" />
                     ) : (
-                      <input className="bg-ops-deep text-ops-text border border-ops-border rounded-md px-3 py-1.5 focus:outline-none focus:border-ops-green" type="password" value={addAssetForm.credentialSecret} onChange={(event) => updateAddAssetForm('credentialSecret', event.target.value)} placeholder={addAssetForm.authType === 'password_and_key' ? '输入密码或密钥口令' : '请输入登录密码'} required />
+                      <input className="field-control" type="password" value={addAssetForm.credentialSecret} onChange={(event) => updateAddAssetForm('credentialSecret', event.target.value)} placeholder={addAssetForm.authType === 'password_and_key' ? '输入密码或密钥口令' : '请输入登录密码'} required={activeModal !== 'edit-asset'} />
                     )}
                   </label>
                 </>
               ) : null}
               {addAssetForm.mode === 'telnet' ? (
                 <>
-                  <label>
+                  <label className="flex flex-col gap-1 text-sm text-ops-muted col-span-2 sm:col-span-1">
                     地址
                     <input className="field-control" value={addAssetForm.host} onChange={(event) => updateAddAssetForm('host', event.target.value)} placeholder="10.10.3.20" required />
                   </label>
-                  <label>
+                  <label className="flex flex-col gap-1 text-sm text-ops-muted col-span-2 sm:col-span-1">
                     端口
                     <input className="field-control" type="number" min="1" max="65535" value={addAssetForm.port} onChange={(event) => updateAddAssetForm('port', event.target.value)} placeholder="23" required />
                   </label>
-                  <label>
+                  <label className="flex flex-col gap-1 text-sm text-ops-muted col-span-2 sm:col-span-1">
                     用户名
                     <input className="field-control" value={addAssetForm.username} onChange={(event) => updateAddAssetForm('username', event.target.value)} placeholder="可选" />
                   </label>
-                  <label>
+                  <label className="flex flex-col gap-1 text-sm text-ops-muted col-span-2">
                     登录密码
-                    <input className="field-control" type="password" value={addAssetForm.credentialSecret} onChange={(event) => updateAddAssetForm('credentialSecret', event.target.value)} placeholder="请输入 Telnet 密码" required />
+                    <input className="field-control" type="password" value={addAssetForm.credentialSecret} onChange={(event) => updateAddAssetForm('credentialSecret', event.target.value)} placeholder="请输入 Telnet 密码" required={activeModal !== 'edit-asset'} />
                   </label>
                 </>
               ) : null}
               {addAssetForm.mode === 'serial' ? (
                 <>
-                  <label>
+                  <label className="flex flex-col gap-1 text-sm text-ops-muted col-span-2 sm:col-span-1">
                     串口设备
                     <input className="field-control" value={addAssetForm.serialPort} onChange={(event) => updateAddAssetForm('serialPort', event.target.value)} placeholder="COM3 / /dev/ttyUSB0" required />
                   </label>
-                  <label>
+                  <label className="flex flex-col gap-1 text-sm text-ops-muted col-span-2 sm:col-span-1">
                     波特率
                     <input className="field-control" type="number" value={addAssetForm.baudRate} onChange={(event) => updateAddAssetForm('baudRate', event.target.value)} placeholder="9600" required />
                   </label>
-                  <label>
+                  <label className="flex flex-col gap-1 text-sm text-ops-muted col-span-2 sm:col-span-1">
                     数据位
                     <select className="field-control" value={addAssetForm.dataBits} onChange={(event) => updateAddAssetForm('dataBits', event.target.value)}>
                       <option value="5">5</option>
@@ -321,7 +363,7 @@ export function App() {
                       <option value="8">8</option>
                     </select>
                   </label>
-                  <label>
+                  <label className="flex flex-col gap-1 text-sm text-ops-muted col-span-2 sm:col-span-1">
                     校验位
                     <select className="field-control" value={addAssetForm.parity} onChange={(event) => updateAddAssetForm('parity', event.target.value)}>
                       <option value="none">None</option>
@@ -329,7 +371,7 @@ export function App() {
                       <option value="even">Even</option>
                     </select>
                   </label>
-                  <label>
+                  <label className="flex flex-col gap-1 text-sm text-ops-muted col-span-2 sm:col-span-1">
                     停止位
                     <select className="field-control" value={addAssetForm.stopBits} onChange={(event) => updateAddAssetForm('stopBits', event.target.value)}>
                       <option value="1">1</option>
@@ -342,10 +384,39 @@ export function App() {
             </div>
             {addAssetError ? <div className="settings-error">{addAssetError}</div> : null}
             <div className="modal-actions">
-              <button type="button" className="button" onClick={closeAddAssetModal}>取消</button>
+              <button type="button" className="button" onClick={closeModal}>取消</button>
               <button type="submit" className="button button-primary">保存</button>
             </div>
           </form>
+        </div>
+      ) : null}
+
+      {activeModal === 'delete-asset' && targetAsset ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" role="presentation">
+          <div className="w-[400px] max-w-[90vw] bg-ops-strong border border-ops-border/50 rounded-xl p-6 shadow-2xl flex flex-col gap-4" role="dialog" aria-modal="true">
+            <h3 className="text-lg font-medium text-ops-danger">确认删除资产？</h3>
+            <p className="text-sm text-ops-text">
+              确定要删除 <span className="font-bold text-ops-cyan">{targetAsset.name}</span> 吗？此操作不可撤销。
+            </p>
+            <div className="modal-actions mt-4">
+              <button type="button" className="button" onClick={closeModal}>取消</button>
+              <button
+                type="button"
+                className="button button-danger"
+                onClick={async () => {
+                  try {
+                    await deleteAsset(targetAsset.id)
+                    closeModal()
+                  } catch (error) {
+                    setAddAssetError(error instanceof Error ? error.message : '删除失败')
+                  }
+                }}
+              >
+                删除
+              </button>
+            </div>
+            {addAssetError ? <p className="settings-error mt-2">{addAssetError}</p> : null}
+          </div>
         </div>
       ) : null}
 

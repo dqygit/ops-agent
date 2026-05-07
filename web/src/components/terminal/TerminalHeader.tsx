@@ -18,7 +18,11 @@ export function TerminalHeader({ asset, tabs, activeAssetId, onSelectTab }: Term
             <button
               key={tabAsset.id}
               type="button"
-              className={`px-4 py-2 text-sm max-w-[200px] truncate rounded-t-lg transition-colors border-t border-x ${isActive ? 'bg-ops-panel text-ops-text border-ops-border/20' : 'bg-transparent text-ops-muted border-transparent hover:bg-ops-panel/50'}`}
+              className={`px-4 py-1.5 text-xs max-w-[160px] truncate rounded-t-md transition-all border-t border-x ${
+                isActive
+                  ? 'bg-ops-panel text-ops-cyan border-ops-border/30 font-medium'
+                  : 'bg-transparent text-ops-muted border-transparent hover:bg-ops-border/10'
+              }`}
               onClick={() => onSelectTab(tabAsset.id)}
             >
               {label}

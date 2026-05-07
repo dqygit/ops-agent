@@ -182,8 +182,16 @@ export function useConsoleData() {
       }
       syncTerminalTabs((currentTabs) => currentTabs.map((tabItem) => (tabItem.assetId === asset.id ? { ...tabItem, sessionId: result.terminal_session_id } : tabItem)))
     } catch (error) {
-      syncTerminalTabs((currentTabs) => currentTabs.filter((tabItem) => tabItem.assetId !== asset.id))
-      setLoadError(error instanceof Error ? error.message : '连接资产终端失败')
+      // Don't remove the tab, let user see the error in the terminal area or a notification
+      // But we should reset the active tab to local terminal if this was a fresh connection attempt
+      const errorMessage = error instanceof Error ? error.message : '连接资产终端失败'
+      setLoadError(errorMessage)
+
+      syncTerminalTabs((currentTabs) =>
+        currentTabs.map((tabItem) =>
+          tabItem.assetId === asset.id ? { ...tabItem, output: `\r\n\x1b[31m[错误] ${errorMessage}\x1b[0m\r\n` } : tabItem
+        )
+      )
     }
   }, [syncTerminalTabs])
 
@@ -326,6 +334,7 @@ export function useConsoleData() {
   const history = selectedAsset ? bootstrap.historyByAsset[selectedAsset.id] ?? [] : []
 
   const selectAsset = useCallback((assetId: number) => {
+    setLoadError(null)
     if (assetId === LOCAL_TERMINAL_ASSET_ID) {
       setActiveTerminalAssetId(LOCAL_TERMINAL_ASSET_ID)
       return

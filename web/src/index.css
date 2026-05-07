@@ -8,6 +8,52 @@
   }
 }
 
+@layer components {
+  .field-control {
+    @apply bg-ops-deep text-ops-text border border-ops-border rounded-md px-3 py-1.5 focus:outline-none focus:border-ops-cyan transition-colors placeholder:text-ops-muted/50;
+  }
+
+  .button {
+    @apply inline-flex items-center justify-center px-4 py-2 text-sm font-medium rounded-md transition-colors focus:outline-none text-ops-text bg-ops-border/10 hover:bg-ops-border/20 border border-transparent disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .button-primary {
+    @apply bg-ops-cyan text-ops-bg hover:bg-ops-cyan/90;
+  }
+
+  .button-danger {
+    @apply bg-ops-danger text-white hover:bg-ops-danger/90;
+  }
+
+  .modal-actions {
+    @apply flex items-center justify-between gap-3 mt-2;
+  }
+
+  .settings-error {
+    @apply text-ops-danger text-xs mt-1;
+  }
+
+  .chat-bubble {
+    @apply relative p-3 rounded-2xl text-sm shadow-sm transition-all duration-200 border;
+  }
+
+  .chat-bubble-assistant {
+    @apply bg-ops-panel border-ops-border/20 text-ops-text self-start rounded-tl-none mr-12;
+  }
+
+  .chat-bubble-agent {
+    @apply bg-ops-cyan/10 border-ops-cyan/30 text-ops-text self-start rounded-tl-none mr-12;
+  }
+
+  .chat-bubble-status {
+    @apply bg-ops-deep/40 border-ops-border/10 text-ops-muted text-xs py-1 px-3 self-center rounded-full italic;
+  }
+
+  .chat-bubble-error {
+    @apply bg-ops-danger/10 border-ops-danger/30 text-ops-danger self-center max-w-[90%];
+  }
+}
+
 /* Scrollbar styling */
 ::-webkit-scrollbar {
   width: 6px;

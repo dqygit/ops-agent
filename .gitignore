@@ -15,3 +15,5 @@ release/
 .env
 .roo/
 .ops-agent/
+.D
+.DS_Store

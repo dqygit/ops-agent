@@ -11,9 +11,11 @@ type AssetSidebarProps = {
   onUpdateAsset: (assetId: number, payload: AssetPayload) => Promise<Asset>
   onDeleteAsset: (assetId: number) => Promise<void>
   onAddAsset: () => void
+  onEditAsset?: (asset: Asset) => void
+  onDeleteAssetConfirm?: (asset: Asset) => void
 }
 
-export function AssetSidebar({ assets, groups, selectedAssetId, onSelectAsset, onUpdateAsset, onDeleteAsset, onAddAsset }: AssetSidebarProps) {
+export function AssetSidebar({ assets, groups, selectedAssetId, onSelectAsset, onUpdateAsset, onDeleteAsset, onAddAsset, onEditAsset, onDeleteAssetConfirm }: AssetSidebarProps) {
   return (
     <PanelCard className="w-full h-full flex flex-col border-r border-ops-border/20 bg-ops-panel">
       <div className="flex items-center justify-between p-4 border-b border-ops-border/20">
@@ -26,7 +28,16 @@ export function AssetSidebar({ assets, groups, selectedAssetId, onSelectAsset, o
       </div>
 
       <div className="flex-1 overflow-y-auto overflow-x-hidden">
-        <AssetList assets={assets} groups={groups} selectedAssetId={selectedAssetId} onSelectAsset={onSelectAsset} onUpdateAsset={onUpdateAsset} onDeleteAsset={onDeleteAsset} />
+        <AssetList
+          assets={assets}
+          groups={groups}
+          selectedAssetId={selectedAssetId}
+          onSelectAsset={onSelectAsset}
+          onUpdateAsset={onUpdateAsset}
+          onDeleteAsset={onDeleteAsset}
+          onEditAsset={onEditAsset}
+          onDeleteAssetConfirm={onDeleteAssetConfirm}
+        />
       </div>
     </PanelCard>
   )

@@ -33,11 +33,34 @@ export function PromptInput({
         className="w-full bg-transparent text-ops-text p-3 min-h-[80px] resize-none focus:outline-none placeholder:text-ops-muted/50 text-sm"
         value={prompt}
         onChange={(event) => onPromptChange(event.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault()
+            if (prompt.trim()) {
+              onRun()
+            } else {
+              alert('请输入内容')
+            }
+          }
+        }}
         placeholder="到任意主机执行命令查询、排查错误和任务处理等任何事情"
       />
       <div className="flex items-center justify-between px-2 pb-2">
         <ModelSelector models={models} selectedModel={selectedModel} onModelChange={onModelChange} />
-        <button className="w-8 h-8 rounded shrink-0 flex items-center justify-center bg-ops-cyan text-ops-bg hover:bg-ops-cyan/90 transition-colors shadow-lg" type="button" onClick={onRun} aria-label="Run Agent">
+        <button
+          className={`w-8 h-8 rounded shrink-0 flex items-center justify-center transition-colors shadow-lg ${
+            prompt.trim() ? 'bg-ops-cyan text-ops-bg hover:bg-ops-cyan/90' : 'bg-ops-muted/20 text-ops-muted cursor-not-allowed'
+          }`}
+          type="button"
+          onClick={() => {
+            if (prompt.trim()) {
+              onRun()
+            } else {
+              alert('请输入内容')
+            }
+          }}
+          aria-label="Run Agent"
+        >
           <svg aria-hidden="true" viewBox="0 0 24 24" focusable="false" className="w-4 h-4 fill-current"><path d="M5 3.8 20.2 12 5 20.2v-6.1L13.4 12 5 9.9z" /></svg>
         </button>
       </div>

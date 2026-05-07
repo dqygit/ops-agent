@@ -25,6 +25,7 @@ export function TerminalOutput({ sessionKey, output, onInput, onResize }: Termin
   const terminalRef = useRef<Terminal | null>(null)
   const fitAddonRef = useRef<FitAddon | null>(null)
   const writtenLengthRef = useRef(0)
+  const currentSessionKeyRef = useRef(sessionKey)
   const replayingRef = useRef(false)
   const onInputRef = useRef(onInput)
   const onResizeRef = useRef(onResize)
@@ -49,6 +50,7 @@ export function TerminalOutput({ sessionKey, output, onInput, onResize }: Termin
     onInputRef.current(data)
   }
 
+  // Initialize terminal
   useEffect(() => {
     if (terminalHostRef.current === null) {
       return
@@ -56,22 +58,27 @@ export function TerminalOutput({ sessionKey, output, onInput, onResize }: Termin
 
     const terminal = new Terminal({
       cursorBlink: true,
-      fontFamily: 'Consolas, "Courier New", monospace',
-      fontSize: 14,
+      fontFamily: 'Cascadia Code, JetBrains Mono, Consolas, monospace',
+      fontSize: 13,
       convertEol: true,
       theme: {
-        background: '#060c0e',
-        foreground: '#e5e7eb',
+        background: '#081012',
+        foreground: '#dce9e6',
+        cursor: '#67d8ff',
+        selectionBackground: 'rgba(103, 216, 255, 0.3)',
       },
     })
     const fitAddon = new FitAddon()
     terminal.loadAddon(fitAddon)
     terminal.open(terminalHostRef.current)
+    
     const helperTextarea = terminalHostRef.current.querySelector('textarea') as HTMLTextAreaElement | null
+    
     requestAnimationFrame(() => {
       fitAddon.fit()
       onResizeRef.current(terminal.cols, terminal.rows)
     })
+
     terminal.onData((data) => emitInput(data))
 
     const handleNativeKeyDown = (event: KeyboardEvent) => {
@@ -124,6 +131,7 @@ export function TerminalOutput({ sessionKey, output, onInput, onResize }: Termin
     }
   }, [])
 
+  // Handle session change and output updates
   useEffect(() => {
     const terminal = terminalRef.current
     const fitAddon = fitAddonRef.current
@@ -131,51 +139,47 @@ export function TerminalOutput({ sessionKey, output, onInput, onResize }: Termin
       return
     }
 
+    // If session has changed, clear and reset
+    if (currentSessionKeyRef.current !== sessionKey) {
+      terminal.clear()
+      terminal.reset()
+      writtenLengthRef.current = 0
+      currentSessionKeyRef.current = sessionKey
+      
+      if (output.length > 0) {
+        replayingRef.current = true
+        terminal.write(stripReplayControlSequences(output))
+        writtenLengthRef.current = output.length
+        queueMicrotask(() => {
+          replayingRef.current = false
+        })
+      }
+      
+      requestAnimationFrame(() => {
+        fitAddon.fit()
+      })
+      return
+    }
+
+    // If output is shorter than what we've written, the buffer was probably reset on the server
     if (output.length < writtenLengthRef.current) {
       terminal.clear()
       writtenLengthRef.current = 0
     }
 
+    // Incremental write
     const nextChunk = output.slice(writtenLengthRef.current)
     if (nextChunk.length > 0) {
-      replayingRef.current = true
       terminal.write(nextChunk)
       writtenLengthRef.current = output.length
-      queueMicrotask(() => {
-        replayingRef.current = false
-      })
-    }
-    fitAddon.fit()
-  }, [output])
-
-  useEffect(() => {
-    const terminal = terminalRef.current
-    const fitAddon = fitAddonRef.current
-    if (terminal === null || fitAddon === null) {
-      return
-    }
-
-    terminal.clear()
-    writtenLengthRef.current = 0
-
-    if (output.length > 0) {
-      replayingRef.current = true
-      terminal.write(stripReplayControlSequences(output))
-      writtenLengthRef.current = output.length
-      queueMicrotask(() => {
-        replayingRef.current = false
-      })
-    }
-
-    requestAnimationFrame(() => {
       fitAddon.fit()
-    })
-  }, [sessionKey])
+    }
+  }, [sessionKey, output])
 
   return (
     <div
       ref={containerRef}
-      className="flex-1 w-full bg-ops-deep p-2 relative overflow-hidden focus:outline-none"
+      className="flex-1 w-full bg-ops-bg p-2 relative overflow-hidden focus:outline-none"
       aria-label="Terminal output"
       onMouseDown={() => {
         terminalRef.current?.focus()

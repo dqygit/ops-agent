@@ -32,7 +32,7 @@ export function GroupsSection({
             描述
             <textarea className="bg-ops-panel text-ops-text border border-ops-border/30 rounded px-3 py-2 outline-none focus:border-ops-cyan transition-colors" value={groupForm.description} onChange={(event) => onFormChange({ ...groupForm, description: event.target.value })} rows={3} />
           </label>
-          <div className="flex items-center justify-end gap-3 mt-2">
+          <div className="flex items-center justify-between gap-3 mt-2">
             <button type="button" className="px-4 py-2 text-sm rounded-md hover:bg-ops-border/20 text-ops-muted transition-colors" onClick={onCancelForm}>取消</button>
             <button type="submit" className="px-4 py-2 text-sm rounded-md bg-ops-cyan text-ops-bg hover:bg-ops-cyan/90 transition-colors font-medium disabled:opacity-50" disabled={saving}>{saving ? '保存中...' : '保存'}</button>
           </div>

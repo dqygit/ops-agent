@@ -73,10 +73,12 @@ export function ModelsSection({
             <textarea className="bg-ops-panel text-ops-text border border-ops-border/30 rounded px-3 py-2 outline-none focus:border-ops-cyan transition-colors" value={modelForm.description} onChange={(event) => onFormChange({ ...modelForm, description: event.target.value })} rows={3} />
           </label>
           {testResult ? <div className="col-span-2 p-3 text-sm text-ops-text bg-ops-panel border border-ops-border/20 rounded font-mono break-all">{testResult}</div> : null}
-          <div className="flex items-center justify-end gap-3 mt-4 pt-4 border-t border-ops-border/20 col-span-2">
+          <div className="flex items-center justify-between gap-3 mt-4 pt-4 border-t border-ops-border/20 col-span-2">
             <button type="button" className="px-4 py-2 text-sm rounded-md border border-ops-border/30 text-ops-text hover:bg-ops-border/20 transition-colors disabled:opacity-50" onClick={onTest} disabled={saving || !modelForm.apiKey.trim()} title={editingModel && !modelForm.apiKey.trim() ? '请输入新的 API Key 后再测试连接' : undefined}>测试连接</button>
-            <button type="button" className="px-4 py-2 text-sm rounded-md hover:bg-ops-border/20 text-ops-muted transition-colors" onClick={onCancelForm}>取消</button>
-            <button type="submit" className="px-4 py-2 text-sm rounded-md bg-ops-cyan text-ops-bg hover:bg-ops-cyan/90 transition-colors font-medium disabled:opacity-50" disabled={saving}>{saving ? '保存中...' : '保存'}</button>
+            <div className="flex items-center gap-3">
+              <button type="button" className="px-4 py-2 text-sm rounded-md hover:bg-ops-border/20 text-ops-muted transition-colors" onClick={onCancelForm}>取消</button>
+              <button type="submit" className="px-4 py-2 text-sm rounded-md bg-ops-cyan text-ops-bg hover:bg-ops-cyan/90 transition-colors font-medium disabled:opacity-50" disabled={saving}>{saving ? '保存中...' : '保存'}</button>
+            </div>
           </div>
         </form>
       ) : null}

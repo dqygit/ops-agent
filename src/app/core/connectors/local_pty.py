@@ -115,9 +115,14 @@ class LocalPtyConnector:
         import pty
 
         shell = os.environ.get("SHELL") or "/bin/sh"
+        env = os.environ.copy()
+        # Disable some shell extensions that might cause issues in PTY
+        env["ZSH_AUTOSUGGEST_MANUAL_REBIND"] = "1"
+        env["TERM"] = "xterm-256color"
+
         self._pid, self._fd = pty.fork()
         if self._pid == 0:
-            os.execvp(shell, [shell])
+            os.execvpe(shell, [shell], env)
         self._resize_posix(self.cols, self.rows)
         return "local terminal connected"
 
