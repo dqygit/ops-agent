@@ -8,7 +8,7 @@ type PromptInputProps = {
   selectedAsset: Asset
   onPromptChange: (prompt: string) => void
   onModelChange: (model: string) => void
-  onRun: () => Promise<void>
+  onRun: (prompt: string) => Promise<void>
 }
 
 export function PromptInput({
@@ -21,12 +21,20 @@ export function PromptInput({
   onRun,
 }: PromptInputProps) {
   const submitPrompt = async () => {
-    if (!prompt.trim()) {
+    const currentPrompt = prompt
+
+    if (!currentPrompt.trim()) {
       return
     }
 
-    await onRun()
     onPromptChange('')
+
+    try {
+      await onRun(currentPrompt)
+    }
+    catch {
+      onPromptChange(currentPrompt)
+    }
   }
 
   return (

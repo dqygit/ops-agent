@@ -59,9 +59,10 @@ function stripJsonBlocks(text: string) {
 
 type OutputBlockProps = {
   text: string
+  label?: string
 }
 
-function OutputBlock({ text }: OutputBlockProps) {
+function OutputBlock({ text, label = '命令输出' }: OutputBlockProps) {
   const [isExpanded, setIsExpanded] = useState(false)
   const cleanText = stripAnsi(text)
   const lines = cleanText.split('\n')
@@ -69,8 +70,8 @@ function OutputBlock({ text }: OutputBlockProps) {
 
   return (
     <div className="flex w-full flex-col gap-1 overflow-hidden">
-      <div className="flex items-center justify-between rounded-t border-x border-t border-ops-border/10 bg-black/40 px-2 py-1">
-        <span className="text-[10px] font-bold uppercase tracking-widest text-ops-muted">命令输出</span>
+        <div className="flex items-center justify-between rounded-t border-x border-t border-ops-border/10 bg-black/40 px-2 py-1">
+        <span className="text-[10px] font-bold uppercase tracking-widest text-ops-muted">{label}</span>
         {shouldTruncate ? (
           <button
             type="button"
@@ -90,6 +91,40 @@ function OutputBlock({ text }: OutputBlockProps) {
         {!isExpanded && shouldTruncate ? <div className="pointer-events-none absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-black/80 to-transparent" /> : null}
       </pre>
     </div>
+  )
+}
+
+type CommandExecutionCardProps = {
+  startEvent: Extract<EventItem, { kind: 'command_start' }>
+  chunkEvents: Extract<EventItem, { kind: 'command_chunk' }>[]
+  endEvent?: Extract<EventItem, { kind: 'command_end' }>
+}
+
+function CommandExecutionCard({ startEvent, chunkEvents, endEvent }: CommandExecutionCardProps) {
+  const outputText = chunkEvents.map((event) => event.text).join('')
+  const exitCode = endEvent?.exitCode
+  const statusLabel = endEvent
+    ? exitCode === null || exitCode === 0
+      ? '已完成'
+      : `失败（退出码 ${exitCode}）`
+    : '执行中'
+
+  return (
+    <article className="rounded-lg border border-ops-border/40 bg-gradient-to-br from-[#0a1014] to-[#0e161c] p-4 shadow-sm">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div>
+          <div className="text-[10px] font-bold uppercase tracking-wider text-ops-cyan/90">命令执行</div>
+          <div className="mt-1 text-sm font-semibold text-ops-text">{startEvent.title?.trim() || '终端命令'}</div>
+        </div>
+        <div className={`rounded px-2 py-1 text-[10px] font-bold ${endEvent ? (exitCode === null || exitCode === 0 ? 'bg-ops-green/15 text-ops-green' : 'bg-ops-danger/15 text-ops-red') : 'bg-ops-cyan/15 text-ops-cyan'}`}>
+          {statusLabel}
+        </div>
+      </div>
+      <code className="mb-3 block rounded-md border border-ops-border/20 bg-black/40 px-3 py-2 text-xs text-ops-text/90">
+        {startEvent.command}
+      </code>
+      {outputText ? <OutputBlock text={outputText} label="流式输出" /> : null}
+    </article>
   )
 }
 
@@ -210,6 +245,10 @@ function EventCard({ event, isLastEvent, pendingApprovalRunId, onApprove, onReje
     return <OutputBlock text={event.text} />
   }
 
+  if (event.kind === 'command_start' || event.kind === 'command_chunk' || event.kind === 'command_end' || event.kind === 'terminal_status') {
+    return null
+  }
+
   if (event.kind === 'user') {
     return (
       <article className="ml-8 rounded-md border border-ops-green/35 bg-ops-green/8 p-3">
@@ -277,6 +316,49 @@ export function ConversationView({ events, pendingApprovalRunId, onApprove, onRe
   // 过滤掉所有 plan 事件,只保留其他事件
   const nonPlanEvents = events.filter(e => e.kind !== 'plan')
 
+  const renderedEvents: Array<
+    | { type: 'event'; event: EventItem }
+    | {
+        type: 'command'
+        startEvent: Extract<EventItem, { kind: 'command_start' }>
+        chunkEvents: Extract<EventItem, { kind: 'command_chunk' }>[],
+        endEvent?: Extract<EventItem, { kind: 'command_end' }>
+      }
+  > = []
+
+  const commandGroupMap = new Map<string, { index: number; startEvent: Extract<EventItem, { kind: 'command_start' }>; chunkEvents: Extract<EventItem, { kind: 'command_chunk' }>[]; endEvent?: Extract<EventItem, { kind: 'command_end' }> }>()
+
+  nonPlanEvents.forEach((event) => {
+    if (event.kind === 'command_start') {
+      const group = { startEvent: event, chunkEvents: [] as Extract<EventItem, { kind: 'command_chunk' }>[], endEvent: undefined as Extract<EventItem, { kind: 'command_end' }> | undefined }
+      renderedEvents.push({ type: 'command', ...group })
+      commandGroupMap.set(event.commandId, { index: renderedEvents.length - 1, ...group })
+      return
+    }
+
+    if (event.kind === 'command_chunk') {
+      const group = commandGroupMap.get(event.commandId)
+      if (group) {
+        group.chunkEvents.push(event)
+      }
+      return
+    }
+
+    if (event.kind === 'command_end') {
+      const group = commandGroupMap.get(event.commandId)
+      if (group) {
+        group.endEvent = event
+      }
+      return
+    }
+
+    if (event.kind === 'terminal_status') {
+      return
+    }
+
+    renderedEvents.push({ type: 'event', event })
+  })
+
   useEffect(() => {
     const el = scrollContainerRef.current
     if (!el) {
@@ -324,16 +406,25 @@ export function ConversationView({ events, pendingApprovalRunId, onApprove, onRe
       
       {/* 滚动区域 */}
       <div ref={scrollContainerRef} className="flex flex-1 flex-col gap-3 overflow-y-auto px-4 py-4">
-        {nonPlanEvents.map((event) => (
-          <EventCard
-            key={event.id}
-            event={event}
-            isLastEvent={events[events.length - 1].id === event.id}
-            pendingApprovalRunId={pendingApprovalRunId}
-            onApprove={onApprove}
-            onReject={onReject}
-          />
-        ))}
+        {renderedEvents.map((entry, index) =>
+          entry.type === 'command' ? (
+            <CommandExecutionCard
+              key={entry.startEvent.commandId}
+              startEvent={entry.startEvent}
+              chunkEvents={entry.chunkEvents}
+              endEvent={entry.endEvent}
+            />
+          ) : (
+            <EventCard
+              key={entry.event.id}
+              event={entry.event}
+              isLastEvent={index === renderedEvents.length - 1}
+              pendingApprovalRunId={pendingApprovalRunId}
+              onApprove={onApprove}
+              onReject={onReject}
+            />
+          )
+        )}
       </div>
     </div>
   )

@@ -228,8 +228,8 @@ export function App() {
                 onDeleteConversation={(conversationId) => {
                   void deleteConversation(conversationId)
                 }}
-                onRun={() => {
-                  return runAgent()
+                onRun={(nextPrompt) => {
+                  return runAgent(nextPrompt)
                 }}
                 onApprove={() => {
                   void approveRun()

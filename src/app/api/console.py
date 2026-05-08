@@ -75,16 +75,21 @@ def get_console_bootstrap(
             ssh_key_id=None,
         )
     terminal_session_result = terminal_service.open_session(local_terminal_asset, reuse_existing=True)
+    terminal_session_id = terminal_session_result.get("terminal_id")
+    terminal_output = ""
+    if terminal_session_id:
+        terminal_output = terminal_service.read_buffered_output(terminal_session_id)
+
     return ConsoleBootstrapView(
         assets=[to_asset_view(asset) for asset in assets],
         groups=[to_asset_group_view(group) for group in list_asset_group_records(session)],
         historyByAsset={},
         modelOptions=model_options,
-        terminalSessionId=terminal_session_result.get("terminal_id"),
+        terminalSessionId=terminal_session_id,
         terminalSessionChannel=terminal_session_result.get("channel"),
         terminalSessionError=terminal_session_result.get("error", ""),
         initialPrompt="",
-        terminalOutput="",
+        terminalOutput=terminal_output,
         initialEvents=[],
         sshKeys=[to_ssh_key_view(record) for record in list_ssh_key_records(session)],
     )
@@ -108,7 +113,8 @@ async def run_console_agent(
         prompt=payload.prompt,
         asset_id=asset_id,
         terminal_id=payload.terminal_id,
-        model_name=payload.model_name
+        model_name=payload.model_name,
+        conversation_id=payload.conversation_id,
     )
 
     def event_stream():

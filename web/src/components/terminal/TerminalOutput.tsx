@@ -29,12 +29,16 @@ export function TerminalOutput({ sessionKey, output, onInput, onResize }: Termin
   const replayingRef = useRef(false)
   const onInputRef = useRef(onInput)
   const onResizeRef = useRef(onResize)
+  const outputRef = useRef(output)
+  const sessionKeyRef = useRef(sessionKey)
   const lastSentInputRef = useRef<{ value: string; timestamp: number } | null>(null)
 
   useEffect(() => {
     onInputRef.current = onInput
     onResizeRef.current = onResize
-  }, [onInput, onResize])
+    outputRef.current = output
+    sessionKeyRef.current = sessionKey
+  }, [onInput, onResize, output, sessionKey])
 
   const emitInput = (data: string) => {
     if (replayingRef.current || /^\u001b\[(I|O|\?1;2c)$/.test(data)) {
@@ -77,6 +81,15 @@ export function TerminalOutput({ sessionKey, output, onInput, onResize }: Termin
     requestAnimationFrame(() => {
       fitAddon.fit()
       onResizeRef.current(terminal.cols, terminal.rows)
+
+      if (outputRef.current.length > 0) {
+        replayingRef.current = true
+        terminal.write(stripReplayControlSequences(outputRef.current))
+        writtenLengthRef.current = outputRef.current.length
+        queueMicrotask(() => {
+          replayingRef.current = false
+        })
+      }
     })
 
     terminal.onData((data) => emitInput(data))

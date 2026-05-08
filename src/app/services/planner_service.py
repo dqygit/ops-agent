@@ -17,11 +17,26 @@ class PlannerService:
     def __init__(self, provider: SupportsCompletion | None = None):
         self._provider = provider
 
-    def build_plan(self, *, config: ModelConfig, user_input: str, asset_summary: str, recent_output: str = "") -> list[PlanStep]:
+    def build_plan(
+        self,
+        *,
+        config: ModelConfig,
+        user_input: str,
+        asset_summary: str,
+        recent_output: str = "",
+        shell_type: str = "unknown",
+        os_type: str = "unknown",
+    ) -> list[PlanStep]:
         provider = self._provider or build_llm_provider(config)
         response = provider.complete(
             config=config,
-            request=self._build_plan_request(user_input=user_input, asset_summary=asset_summary, recent_output=recent_output),
+            request=self._build_plan_request(
+                user_input=user_input,
+                asset_summary=asset_summary,
+                recent_output=recent_output,
+                shell_type=shell_type,
+                os_type=os_type,
+            ),
         )
         return self._parse_plan_steps(response.text)
 
@@ -32,8 +47,16 @@ class PlannerService:
         user_input: str,
         asset_summary: str,
         recent_output: str = "",
+        shell_type: str = "unknown",
+        os_type: str = "unknown",
     ) -> Iterator[str | list[PlanStep]]:
-        request = self._build_plan_request(user_input=user_input, asset_summary=asset_summary, recent_output=recent_output)
+        request = self._build_plan_request(
+            user_input=user_input,
+            asset_summary=asset_summary,
+            recent_output=recent_output,
+            shell_type=shell_type,
+            os_type=os_type,
+        )
         text_parts: list[str] = []
         for delta in self._stream_response_text(config=config, request=request):
             text_parts.append(delta)
@@ -92,7 +115,15 @@ class PlannerService:
         summary = str(payload.get("summary") or "")
         yield PlannerReviewResult(decision=decision, summary=summary)
 
-    def _build_plan_request(self, *, user_input: str, asset_summary: str, recent_output: str) -> LLMCompletionRequest:
+    def _build_plan_request(
+        self,
+        *,
+        user_input: str,
+        asset_summary: str,
+        recent_output: str,
+        shell_type: str,
+        os_type: str,
+    ) -> LLMCompletionRequest:
         return LLMCompletionRequest(
             messages=[
                 LLMMessage(
@@ -113,6 +144,7 @@ class PlannerService:
                     role="user",
                     content=(
                         f"资产上下文:\n{asset_summary or 'unknown'}\n\n"
+                        f"执行环境:\nshell_type={shell_type or 'unknown'}\nos_type={os_type or 'unknown'}\n\n"
                         f"最近终端输出:\n{recent_output or 'none'}\n\n"
                         f"用户任务:\n{user_input}"
                     ),

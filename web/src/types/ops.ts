@@ -76,12 +76,54 @@ export type PlanEvent = {
   steps: PlanStep[]
 }
 
+export type TerminalStreamKind = 'echo' | 'stdout' | 'stderr' | 'status'
+
+export type CommandStartEvent = {
+  id: string
+  kind: 'command_start'
+  commandId: string
+  terminalId?: string | null
+  command: string
+  title?: string
+}
+
+export type CommandChunkEvent = {
+  id: string
+  kind: 'command_chunk'
+  commandId: string
+  terminalId?: string | null
+  stream: TerminalStreamKind
+  text: string
+  sequence?: number
+}
+
+export type CommandEndEvent = {
+  id: string
+  kind: 'command_end'
+  commandId: string
+  terminalId?: string | null
+  exitCode: number | null
+  summary?: string
+}
+
+export type TerminalStatusEvent = {
+  id: string
+  kind: 'terminal_status'
+  terminalId?: string | null
+  status: string
+  message?: string
+}
+
 export type EventItem =
   | { id: string; kind: 'status'; text: string }
   | { id: string; kind: 'delta'; text: string; messageId: string; stage?: string }
   | PlanEvent
   | { id: string; kind: 'approval'; text: string; command: string; runId?: string }
   | { id: string; kind: 'output'; text: string }
+  | CommandStartEvent
+  | CommandChunkEvent
+  | CommandEndEvent
+  | TerminalStatusEvent
   | { id: string; kind: 'final'; text: string }
   | { id: string; kind: 'error'; text: string }
   | { id: string; kind: 'user'; text: string }

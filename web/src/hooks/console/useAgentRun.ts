@@ -51,7 +51,7 @@ export function useAgentRun({
 }: UseAgentRunProps) {
   const [pendingApprovalRunId, setPendingApprovalRunId] = useState<string | null>(null)
 
-  const runAgent = useCallback(async () => {
+  const runAgent = useCallback(async (runPrompt: string) => {
     setLoadError(null)
 
     let conversationId = activeConversationId
@@ -68,7 +68,7 @@ export function useAgentRun({
       const userEvent: EventItem = {
         id: `user-${Date.now()}`,
         kind: 'user',
-        text: prompt,
+        text: runPrompt,
       }
 
       const persisted = await appendConversationEvents(conversationId, [userEvent])
@@ -80,11 +80,12 @@ export function useAgentRun({
       }
 
       const stream = await streamRunAgent(
-        prompt,
+        runPrompt,
         persistedEvents,
         selectedAsset?.id === LOCAL_TERMINAL_ASSET_ID ? undefined : selectedAsset?.id,
         activeTerminalTab?.sessionId ?? null,
-        selectedModel
+        selectedModel,
+        conversationId,
       )
 
       const deltaBuffer = new Map<string, string>()

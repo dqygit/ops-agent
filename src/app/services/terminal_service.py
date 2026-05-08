@@ -1,5 +1,8 @@
 from collections import deque
+from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
 from functools import partial
+import re
 from typing import Any, Awaitable, Callable, TypeVar, cast
 
 import anyio
@@ -16,15 +19,57 @@ run_sync = cast(RunSyncCallable[Any], getattr(anyio.to_thread, "run_sync"))
 
 import uuid
 
+
+@dataclass
+class OutputFilterState:
+    command_id: str
+    start_marker: str
+    end_marker: str
+    done_marker_prefix: str
+    suppressing_input_echo: bool = True
+    pending: str = ""
+    exit_code: int | None = None
+
+
+@dataclass
+class TerminalSessionRuntime:
+    session_manager: TerminalSessionManager
+    state: str = "created"
+    connection_ids: set[str] = field(default_factory=set)
+    last_detached_at: datetime | None = None
+
+
+ANSI_PATTERN = re.compile(r"[][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]")
+
+
 class TerminalService:
+    SESSION_TTL = timedelta(minutes=15)
+
     def __init__(self, connector_factory, persistence=None):
         self._connector_factory = connector_factory
-        self._sessions = {}
+        self._sessions: dict[str, TerminalSessionRuntime] = {}
         self._session_keys: dict[str, str] = {}
         self._output_buffers: dict[str, deque[tuple[int, str]]] = {}
         self._output_sequences: dict[str, int] = {}
+        self._output_filters: dict[str, dict[str, OutputFilterState]] = {}
+        self._active_filter_ids: dict[str, str | None] = {}
+        self._filter_queues: dict[str, deque[str]] = {}
+        self._command_event_buffers: dict[str, deque[tuple[int, dict[str, Any]]]] = {}
+        self._command_event_sequences: dict[str, int] = {}
+
+    def _expire_detached_sessions(self) -> None:
+        now = datetime.now(UTC)
+        expired_ids: list[str] = []
+        for terminal_id, runtime in self._sessions.items():
+            if runtime.state != "detached" or runtime.last_detached_at is None:
+                continue
+            if now - runtime.last_detached_at >= self.SESSION_TTL:
+                expired_ids.append(terminal_id)
+        for terminal_id in expired_ids:
+            self.close_session(terminal_id)
 
     def open_session(self, asset, *, reuse_existing: bool = False):
+        self._expire_detached_sessions()
         session_key = self._build_session_key(asset)
         if reuse_existing:
             terminal_id = self.find_session_id(session_key)
@@ -43,25 +88,39 @@ class TerminalService:
             elif connector is not None:
                 connector.close()
             return {"terminal_id": None, "channel": None, "error": str(exc)}
-        self._sessions[terminal_id] = session_manager
+        self._sessions[terminal_id] = TerminalSessionRuntime(session_manager=session_manager, state="created")
         self._session_keys[terminal_id] = session_key
-        self._output_buffers[terminal_id] = deque(maxlen=2000)
+        self._output_buffers[terminal_id] = deque(maxlen=4000)
         self._output_sequences[terminal_id] = 0
+        self._output_filters[terminal_id] = {}
+        self._active_filter_ids[terminal_id] = None
+        self._filter_queues[terminal_id] = deque()
+        self._command_event_buffers[terminal_id] = deque(maxlen=8000)
+        self._command_event_sequences[terminal_id] = 0
         return {"terminal_id": terminal_id, "channel": "terminal connected", "error": ""}
 
     async def stream_session(self, terminal_id: str, websocket) -> None:
-        session_manager = self.get_session(terminal_id)
-        if session_manager is None:
+        self._expire_detached_sessions()
+        runtime = self._sessions.get(terminal_id)
+        if runtime is None:
             await websocket.close(code=1008)
             return
         await websocket.accept()
+        connection_id = str(uuid.uuid4())
+        runtime.connection_ids.add(connection_id)
+        runtime.state = "attached"
+        runtime.last_detached_at = None
+
+        buffered_output = self.read_buffered_output(terminal_id)
+        if buffered_output:
+            await websocket.send_json({"type": "output", "data": buffered_output})
+
         closed = anyio.Event()
-        close_requested = anyio.Event()
         send_lock = anyio.Lock()
         try:
             async with anyio.create_task_group() as task_group:
-                task_group.start_soon(self._receive_websocket_input, terminal_id, session_manager, websocket, closed, close_requested, send_lock)
-                task_group.start_soon(self._send_terminal_output, terminal_id, session_manager, websocket, closed, send_lock)
+                task_group.start_soon(self._receive_websocket_input, terminal_id, runtime, websocket, closed, send_lock)
+                task_group.start_soon(self._send_terminal_output, terminal_id, runtime, websocket, closed, send_lock)
         except WebSocketDisconnect:
             pass
         except Exception as exc:
@@ -70,16 +129,18 @@ class TerminalService:
             except Exception:
                 pass
         finally:
-            if close_requested.is_set():
-                await run_sync(self.close_session, terminal_id)
+            runtime.connection_ids.discard(connection_id)
+            if not runtime.connection_ids and terminal_id in self._sessions:
+                runtime.state = "detached"
+                runtime.last_detached_at = datetime.now(UTC)
 
-    async def _receive_websocket_input(self, terminal_id: str, session_manager, websocket, closed, close_requested, send_lock) -> None:
+    async def _receive_websocket_input(self, terminal_id: str, runtime: TerminalSessionRuntime, websocket, closed, send_lock) -> None:
         try:
             while True:
                 message = await websocket.receive_json()
                 message_type = message.get("type")
                 if message_type == "input":
-                    await run_sync(session_manager.write, message.get("data", ""))
+                    await run_sync(runtime.session_manager.write, message.get("data", ""))
                 elif message_type == "resize":
                     try:
                         cols = int(message.get("cols", 80))
@@ -88,49 +149,55 @@ class TerminalService:
                         async with send_lock:
                             await websocket.send_json({"type": "error", "message": "invalid terminal size"})
                         continue
-                    await run_sync(session_manager.resize, cols, rows)
-                elif message_type == "close":
-                    close_requested.set()
+                    await run_sync(runtime.session_manager.resize, cols, rows)
+                elif message_type == "ping":
                     async with send_lock:
-                        await websocket.send_json({"type": "closed"})
-                    return
+                        await websocket.send_json({"type": "pong"})
         except WebSocketDisconnect:
             return
         finally:
             closed.set()
 
-    async def _send_terminal_output(self, terminal_id: str, session_manager, websocket, closed, send_lock) -> None:
+    async def _send_terminal_output(self, terminal_id: str, runtime: TerminalSessionRuntime, websocket, closed, send_lock) -> None:
         while True:
-            output = await run_sync(session_manager.read)
+            output = await run_sync(runtime.session_manager.read)
             if output:
-                await run_sync(self._append_output, terminal_id, output)
+                filtered_output = await run_sync(self._append_output, terminal_id, output)
                 try:
-                    async with send_lock:
-                        await websocket.send_json({"type": "output", "data": output})
+                    if filtered_output:
+                        async with send_lock:
+                            await websocket.send_json({"type": "output", "data": filtered_output})
                 except WebSocketDisconnect:
                     closed.set()
                     return
             if closed.is_set():
-                final_output = await run_sync(session_manager.read)
+                final_output = await run_sync(runtime.session_manager.read)
                 if final_output:
-                    await run_sync(self._append_output, terminal_id, final_output)
-                    async with send_lock:
-                        await websocket.send_json({"type": "output", "data": final_output})
+                    filtered_output = await run_sync(self._append_output, terminal_id, final_output)
+                    if filtered_output:
+                        async with send_lock:
+                            await websocket.send_json({"type": "output", "data": filtered_output})
                 return
             await anyio.sleep(0.02)
 
     def close_session(self, terminal_id: str) -> bool:
-        session_manager = self._sessions.pop(terminal_id, None)
-        if session_manager is None:
+        runtime = self._sessions.pop(terminal_id, None)
+        if runtime is None:
             return False
         self._session_keys.pop(terminal_id, None)
         self._output_buffers.pop(terminal_id, None)
         self._output_sequences.pop(terminal_id, None)
-        session_manager.close()
+        self._output_filters.pop(terminal_id, None)
+        self._active_filter_ids.pop(terminal_id, None)
+        self._filter_queues.pop(terminal_id, None)
+        self._command_event_buffers.pop(terminal_id, None)
+        self._command_event_sequences.pop(terminal_id, None)
+        runtime.session_manager.close()
         return True
 
     def get_session(self, terminal_id: str):
-        return self._sessions.get(terminal_id)
+        runtime = self._sessions.get(terminal_id)
+        return runtime.session_manager if runtime is not None else None
 
     def find_session_id(self, session_key: str) -> str | None:
         for terminal_id, current_key in self._session_keys.items():
@@ -138,11 +205,38 @@ class TerminalService:
                 return terminal_id
         return None
 
-    def send_input(self, terminal_id: str, data: str) -> None:
-        session_manager = self.get_session(terminal_id)
-        if session_manager is None:
+    def send_input(self, terminal_id: str, data: str, *, output_markers: dict[str, str] | None = None) -> str | None:
+        runtime = self._sessions.get(terminal_id)
+        if runtime is None:
             raise ValueError("terminal session not found")
-        session_manager.write(data)
+        command_id: str | None = None
+        if output_markers is not None:
+            command_id = str(uuid.uuid4())
+            state = OutputFilterState(
+                command_id=command_id,
+                start_marker=output_markers["start_marker"],
+                end_marker=output_markers["end_marker"],
+                done_marker_prefix=output_markers["done_marker_prefix"],
+            )
+            filters = self._output_filters.setdefault(terminal_id, {})
+            filters[command_id] = state
+            queue = self._filter_queues.setdefault(terminal_id, deque())
+            queue.append(command_id)
+            if self._active_filter_ids.get(terminal_id) is None:
+                self._active_filter_ids[terminal_id] = queue[0]
+            self._append_command_event(
+                terminal_id,
+                {
+                    "id": f"command-start-{command_id}",
+                    "kind": "command_start",
+                    "commandId": command_id,
+                    "terminalId": terminal_id,
+                    "command": data.strip(),
+                },
+            )
+        normalized = data if data.endswith("\n") else f"{data}\n"
+        runtime.session_manager.write(normalized)
+        return command_id
 
     def get_shell_kind(self, terminal_id: str) -> str:
         session_manager = self.get_session(terminal_id)
@@ -178,12 +272,138 @@ class TerminalService:
                 latest_cursor = sequence
         return latest_cursor, "".join(output_parts)
 
-    def _append_output(self, terminal_id: str, output: str) -> None:
+    def get_command_event_cursor(self, terminal_id: str) -> int:
+        return self._command_event_sequences.get(terminal_id, 0)
+
+    def read_command_events_since(self, terminal_id: str, cursor: int) -> tuple[int, list[dict[str, Any]]]:
+        if terminal_id not in self._sessions:
+            return cursor, []
+        events = self._command_event_buffers.get(terminal_id)
+        if not events:
+            return self._command_event_sequences.get(terminal_id, cursor), []
+        latest_cursor = cursor
+        payloads: list[dict[str, Any]] = []
+        for sequence, event in events:
+            if sequence > cursor:
+                payloads.append(event)
+                latest_cursor = sequence
+        return latest_cursor, payloads
+
+    def _append_output(self, terminal_id: str, output: str) -> str:
         if not output:
-            return
+            return ""
+        filtered_output = self._filter_output(terminal_id, output)
+        if not filtered_output:
+            return ""
         sequence = self._output_sequences.get(terminal_id, 0) + 1
         self._output_sequences[terminal_id] = sequence
-        self._output_buffers.setdefault(terminal_id, deque(maxlen=2000)).append((sequence, output))
+        self._output_buffers.setdefault(terminal_id, deque(maxlen=4000)).append((sequence, filtered_output))
+        return filtered_output
+
+    def _append_command_event(self, terminal_id: str, event: dict[str, Any]) -> None:
+        sequence = self._command_event_sequences.get(terminal_id, 0) + 1
+        self._command_event_sequences[terminal_id] = sequence
+        payload = {**event, "sequence": sequence}
+        self._command_event_buffers.setdefault(terminal_id, deque(maxlen=8000)).append((sequence, payload))
+
+    def _normalize_output_text(self, output: str) -> str:
+        normalized = ANSI_PATTERN.sub("", output).replace("\r\n", "\n").replace("\r", "")
+        return normalized
+
+    def _advance_filter_queue(self, terminal_id: str, completed_command_id: str) -> None:
+        filters = self._output_filters.get(terminal_id, {})
+        filters.pop(completed_command_id, None)
+        queue = self._filter_queues.get(terminal_id)
+        if queue is None:
+            self._active_filter_ids[terminal_id] = None
+            return
+        while queue and queue[0] == completed_command_id:
+            queue.popleft()
+        if queue:
+            self._active_filter_ids[terminal_id] = queue[0]
+        else:
+            self._active_filter_ids[terminal_id] = None
+
+    def _filter_output(self, terminal_id: str, output: str) -> str:
+        normalized_output = self._normalize_output_text(output)
+        active_command_id = self._active_filter_ids.get(terminal_id)
+        if active_command_id is None:
+            return normalized_output
+        state = self._output_filters.get(terminal_id, {}).get(active_command_id)
+        if state is None:
+            self._active_filter_ids[terminal_id] = None
+            return normalized_output
+
+        state.pending += normalized_output
+        filtered_parts: list[str] = []
+
+        while True:
+            newline_index = state.pending.find("\n")
+            if newline_index < 0:
+                break
+
+            line = state.pending[: newline_index + 1]
+            state.pending = state.pending[newline_index + 1 :]
+            normalized_line = line
+
+            if state.suppressing_input_echo:
+                if state.start_marker in normalized_line:
+                    state.suppressing_input_echo = False
+                continue
+
+            if state.start_marker in normalized_line:
+                continue
+
+            if state.end_marker in normalized_line:
+                trailing = state.pending
+                if trailing.strip():
+                    self._append_command_event(
+                        terminal_id,
+                        {
+                            "id": f"command-chunk-{state.command_id}-{uuid.uuid4()}",
+                            "kind": "command_chunk",
+                            "commandId": state.command_id,
+                            "terminalId": terminal_id,
+                            "stream": "stdout",
+                            "text": trailing,
+                        },
+                    )
+                    filtered_parts.append(trailing)
+                state.pending = ""
+                self._append_command_event(
+                    terminal_id,
+                    {
+                        "id": f"command-end-{state.command_id}",
+                        "kind": "command_end",
+                        "commandId": state.command_id,
+                        "terminalId": terminal_id,
+                        "exitCode": state.exit_code,
+                    },
+                )
+                self._advance_filter_queue(terminal_id, state.command_id)
+                continue
+
+            if state.done_marker_prefix in normalized_line:
+                try:
+                    state.exit_code = int(normalized_line.split(state.done_marker_prefix, 1)[1].strip())
+                except ValueError:
+                    state.exit_code = None
+                continue
+
+            self._append_command_event(
+                terminal_id,
+                {
+                    "id": f"command-chunk-{state.command_id}-{uuid.uuid4()}",
+                    "kind": "command_chunk",
+                    "commandId": state.command_id,
+                    "terminalId": terminal_id,
+                    "stream": "stdout",
+                    "text": line,
+                },
+            )
+            filtered_parts.append(line)
+
+        return "".join(filtered_parts)
 
     def attach_context(self, terminal_id: str, selection_label: str, selected_text: str):
         attachment = build_terminal_context(terminal_id, selection_label, selected_text)

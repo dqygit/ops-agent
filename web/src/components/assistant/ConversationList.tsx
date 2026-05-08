@@ -36,10 +36,6 @@ function getEventKindLabel(kind: string | null) {
 export function ConversationList({ items, activeConversationId, onSelect, onDelete }: ConversationListProps) {
   return (
     <div className="flex h-full flex-col bg-[#070b09]" aria-label="会话列表">
-      <div className="border-b border-ops-border/10 px-4 py-3">
-        <div className="text-[11px] font-semibold uppercase tracking-[0.24em] text-ops-muted/90">会话历史</div>
-        <div className="mt-1 text-xs text-ops-text/80">{items.length} 个会话</div>
-      </div>
 
       <div className="flex-1 overflow-y-auto p-2.5">
         {items.length > 0 ? (
@@ -61,16 +57,16 @@ export function ConversationList({ items, activeConversationId, onSelect, onDele
                     {isActive ? <span className="absolute inset-y-3 left-0 w-0.5 rounded-full bg-ops-cyan shadow-[0_0_12px_rgba(34,211,238,0.7)]" aria-hidden="true" /> : null}
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0 flex-1">
+
                         <div className="truncate text-sm font-medium tracking-[0.01em] text-ops-text">{item.title}</div>
                         <div className="mt-1 flex items-center gap-2 text-[11px] text-ops-muted">
                           <span>{formatUpdatedTime(item.updatedAt)}</span>
                           <span className="text-ops-border/60">•</span>
                           <span>{item.eventCount} 条事件</span>
                         </div>
+                        
                       </div>
-                      <div className="flex items-center gap-2">
-                        {isActive ? <span className="text-[10px] uppercase tracking-[0.12em] text-ops-green">当前</span> : null}
-                      </div>
+                    
                     </div>
                     <div className="mt-2 flex items-center justify-between gap-2">
                       <div className="inline-flex rounded-lg border border-ops-border/10 bg-black/15 px-2 py-1 text-[10px] uppercase tracking-[0.12em] text-ops-text/65">

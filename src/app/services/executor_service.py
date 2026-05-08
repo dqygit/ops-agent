@@ -17,11 +17,19 @@ class ExecutorService:
         step: PlanStep,
         asset_summary: str,
         recent_output: str = "",
+        shell_type: str = "unknown",
+        os_type: str = "unknown",
     ) -> PlanStep:
         provider = self._provider or build_llm_provider(config)
         response = provider.complete(
             config=config,
-            request=self._build_refine_request(step=step, asset_summary=asset_summary, recent_output=recent_output),
+            request=self._build_refine_request(
+                step=step,
+                asset_summary=asset_summary,
+                recent_output=recent_output,
+                shell_type=shell_type,
+                os_type=os_type,
+            ),
         )
         return self._build_plan_step(step, response.text)
 
@@ -32,15 +40,31 @@ class ExecutorService:
         step: PlanStep,
         asset_summary: str,
         recent_output: str = "",
+        shell_type: str = "unknown",
+        os_type: str = "unknown",
     ) -> Iterator[str | PlanStep]:
-        request = self._build_refine_request(step=step, asset_summary=asset_summary, recent_output=recent_output)
+        request = self._build_refine_request(
+            step=step,
+            asset_summary=asset_summary,
+            recent_output=recent_output,
+            shell_type=shell_type,
+            os_type=os_type,
+        )
         text_parts: list[str] = []
         for delta in self._stream_response_text(config=config, request=request):
             text_parts.append(delta)
             yield delta
         yield self._build_plan_step(step, "".join(text_parts))
 
-    def _build_refine_request(self, *, step: PlanStep, asset_summary: str, recent_output: str) -> LLMCompletionRequest:
+    def _build_refine_request(
+        self,
+        *,
+        step: PlanStep,
+        asset_summary: str,
+        recent_output: str,
+        shell_type: str,
+        os_type: str,
+    ) -> LLMCompletionRequest:
         return LLMCompletionRequest(
             messages=[
                 LLMMessage(
@@ -58,6 +82,7 @@ class ExecutorService:
                     role="user",
                     content=(
                         f"资产上下文:\n{asset_summary or 'unknown'}\n\n"
+                        f"执行环境:\nshell_type={shell_type or 'unknown'}\nos_type={os_type or 'unknown'}\n\n"
                         f"最近终端输出:\n{recent_output or 'none'}\n\n"
                         f"当前步骤:\n标题:{step.title}\n命令:{step.command}\n原因:{step.reason}"
                     ),

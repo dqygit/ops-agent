@@ -45,6 +45,22 @@ def get_agent_task_by_run_id(session: Session, run_id: str) -> AgentTask | None:
     return session.exec(select(AgentTask).where(AgentTask.run_id == run_id)).first()
 
 
+def get_latest_recoverable_task_by_conversation_id(session: Session, conversation_id: str) -> AgentTask | None:
+    recoverable_statuses = [
+        TaskStatus.PENDING_APPROVAL.value,
+        TaskStatus.RUNNING.value,
+        TaskStatus.APPROVED.value,
+        TaskStatus.REJECTED.value,
+        TaskStatus.DRAFT.value,
+    ]
+    return session.exec(
+        select(AgentTask)
+        .where(AgentTask.conversation_id == conversation_id)
+        .where(cast(Any, AgentTask.status).in_(recoverable_statuses))
+        .order_by(desc(cast(Any, AgentTask.updated_at)), desc(cast(Any, AgentTask.id)))
+    ).first()
+
+
 def get_agent_task_by_id(session: Session, task_id: int) -> AgentTask | None:
     return session.get(AgentTask, task_id)
 

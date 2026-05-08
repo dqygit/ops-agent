@@ -53,6 +53,9 @@ export function useTerminalSessions({
     },
   ])
   const terminalSocketRef = useRef<WebSocket | null>(null)
+  const firstOutputHandledRef = useRef<Record<number, boolean>>({
+    [LOCAL_TERMINAL_ASSET_ID]: false,
+  })
 
   const syncTerminalTabs = useCallback(
     (updater: (currentTabs: TerminalTab[]) => TerminalTab[]) => {
@@ -106,6 +109,7 @@ export function useTerminalSessions({
         ...currentTabs,
         { assetId: asset.id, asset, sessionId: null, output: '' },
       ])
+      firstOutputHandledRef.current[asset.id] = false
 
       try {
         const result = await createTerminalSession(asset.id)
@@ -220,6 +224,15 @@ export function useTerminalSessions({
 
       const socket = new WebSocket(buildTerminalWebSocketUrl(tabItem.sessionId))
       currentSockets[tabItem.assetId] = socket
+      if (tabItem.assetId === activeTerminalAssetId) {
+        terminalSocketRef.current = socket
+      }
+
+      socket.addEventListener('open', () => {
+        if (tabItem.assetId === activeTerminalAssetId) {
+          terminalSocketRef.current = socket
+        }
+      })
 
       socket.addEventListener('message', (event) => {
         try {
@@ -230,12 +243,26 @@ export function useTerminalSessions({
           }
 
           if (payload.type === 'output') {
+            const incomingOutput = payload.data ?? ''
             syncTerminalTabs((currentTabs) =>
-              currentTabs.map((item) =>
-                item.assetId === tabItem.assetId
-                  ? { ...item, output: `${item.output}${payload.data ?? ''}` }
-                  : item
-              )
+              currentTabs.map((item) => {
+                if (item.assetId !== tabItem.assetId) {
+                  return item
+                }
+
+                const firstHandled = firstOutputHandledRef.current[tabItem.assetId] ?? false
+                if (!firstHandled) {
+                  firstOutputHandledRef.current[tabItem.assetId] = true
+                  if (incomingOutput.length > 0 && item.output.endsWith(incomingOutput)) {
+                    return item
+                  }
+                  if (incomingOutput.length > 0 && incomingOutput.endsWith(item.output)) {
+                    return { ...item, output: incomingOutput }
+                  }
+                }
+
+                return { ...item, output: `${item.output}${incomingOutput}` }
+              })
             )
             return
           }
@@ -256,6 +283,15 @@ export function useTerminalSessions({
 
       socket.addEventListener('error', () => {
         setLoadError('Terminal websocket connection failed.')
+      })
+
+      socket.addEventListener('close', () => {
+        if (terminalSocketsRef.current[tabItem.assetId] === socket) {
+          delete terminalSocketsRef.current[tabItem.assetId]
+        }
+        if (tabItem.assetId === activeTerminalAssetId && terminalSocketRef.current === socket) {
+          terminalSocketRef.current = null
+        }
       })
     }
 
@@ -279,6 +315,7 @@ export function useTerminalSessions({
         void closeTerminalSessionApi(sessionId).catch(() => undefined)
       }
       delete terminalSessionIdsRef.current[assetId]
+      delete firstOutputHandledRef.current[assetId]
     }
   }, [activeTerminalAssetId, syncTerminalTabs, terminalTabs, setLoadError])
 

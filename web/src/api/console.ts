@@ -18,10 +18,10 @@ export async function getConsoleBootstrap(): Promise<ConsoleBootstrap> {
   }
 }
 
-export async function runAgent(prompt: string, currentEvents: EventItem[], assetId?: number, terminalId?: string | null, modelName?: string): Promise<EventItem[]> {
+export async function runAgent(prompt: string, currentEvents: EventItem[], assetId?: number, terminalId?: string | null, modelName?: string, conversationId?: string): Promise<EventItem[]> {
   return requestJson<EventItem[]>('/api/console/run', {
     method: 'POST',
-    body: JSON.stringify({ prompt, currentEvents, asset_id: assetId, terminal_id: terminalId, model_name: modelName }),
+    body: JSON.stringify({ prompt, currentEvents, asset_id: assetId, terminal_id: terminalId, model_name: modelName, conversation_id: conversationId }),
   })
 }
 
@@ -71,10 +71,10 @@ async function* readEventStream(response: Response): AsyncGenerator<EventItem, v
   }
 }
 
-export async function streamRunAgent(prompt: string, currentEvents: EventItem[], assetId?: number, terminalId?: string | null, modelName?: string): Promise<AsyncGenerator<EventItem, void, void>> {
+export async function streamRunAgent(prompt: string, currentEvents: EventItem[], assetId?: number, terminalId?: string | null, modelName?: string, conversationId?: string): Promise<AsyncGenerator<EventItem, void, void>> {
   const response = await requestEventStream('/api/console/run', {
     method: 'POST',
-    body: JSON.stringify({ prompt, currentEvents, asset_id: assetId, terminal_id: terminalId, model_name: modelName }),
+    body: JSON.stringify({ prompt, currentEvents, asset_id: assetId, terminal_id: terminalId, model_name: modelName, conversation_id: conversationId }),
   })
   return readEventStream(response)
 }
