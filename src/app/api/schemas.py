@@ -313,6 +313,38 @@ class ConsoleApprovalRequest(BaseModel):
     approved: bool
 
 
+class ConversationSummaryView(BaseModel):
+    id: str
+    title: str
+    selected_model: str | None = None
+    created_at: datetime
+    updated_at: datetime
+    event_count: int
+    last_event_kind: str | None = None
+
+
+class ConversationDetailView(BaseModel):
+    id: str
+    title: str
+    selected_model: str | None = None
+    created_at: datetime
+    updated_at: datetime
+    events: list[dict] = Field(default_factory=list)
+
+
+class ConversationCreateRequest(BaseModel):
+    selected_model: str | None = None
+
+
+class ConversationCreateResponse(BaseModel):
+    conversation: ConversationSummaryView
+    events: list[dict] = Field(default_factory=list)
+
+
+class ConversationAppendEventsRequest(BaseModel):
+    events: list[dict] = Field(default_factory=list)
+
+
 class PendingApprovalStepView(BaseModel):
     title: str
     command: str

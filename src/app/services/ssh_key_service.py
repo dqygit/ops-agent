@@ -31,12 +31,15 @@ def get_ssh_key_record(session, ssh_key_id: int):
 
 
 def update_ssh_key_record(session, ssh_key_id: int, payload):
-    updates = payload.model_dump(exclude_unset=True, exclude={"private_key", "passphrase"})
+    updates = payload.model_dump(exclude_unset=True, exclude={"private_key", "passphrase", "clear_passphrase"})
     credential_service = _build_credential_service()
     if payload.private_key is not None:
         updates["private_key_encryption_version"] = CredentialService.encryption_version
         updates["encrypted_private_key"] = credential_service.encrypt_secret(payload.private_key.get_secret_value())
-    if payload.passphrase is not None:
+    if payload.clear_passphrase:
+        updates["passphrase_encryption_version"] = None
+        updates["encrypted_passphrase"] = None
+    elif payload.passphrase is not None:
         updates["passphrase_encryption_version"] = CredentialService.encryption_version
         updates["encrypted_passphrase"] = credential_service.encrypt_secret(payload.passphrase.get_secret_value())
     return update_ssh_key(session, ssh_key_id, **updates)

@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="docs/banner.svg" alt="Ops Agent — 面向运维场景的 AI 助手控制台" width="100%" />
+# Ops Agent — 面向运维场景的 AI 助手控制台"
 
 [功能特性](#-功能特性) · [快速开始](#-快速开始) · [开发指南](#-开发指南) · [构建发布](#-构建与发布) · [文档](#-文档)
 

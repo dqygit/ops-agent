@@ -74,7 +74,7 @@ def get_console_bootstrap(
             group_id=None,
             ssh_key_id=None,
         )
-    terminal_session_result = terminal_service.open_session(local_terminal_asset)
+    terminal_session_result = terminal_service.open_session(local_terminal_asset, reuse_existing=True)
     return ConsoleBootstrapView(
         assets=[to_asset_view(asset) for asset in assets],
         groups=[to_asset_group_view(group) for group in list_asset_group_records(session)],

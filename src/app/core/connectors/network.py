@@ -6,6 +6,7 @@ from netmiko import ConnectHandler
 class NetworkConnector:
     def __init__(self, device_params: dict[str, Any]):
         self.device_params = device_params
+        self.shell_kind = "network"
         self.connection: Any | None = None
 
     def connect(self) -> None:

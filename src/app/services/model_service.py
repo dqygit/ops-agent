@@ -5,6 +5,8 @@ from pathlib import Path
 from pydantic import SecretStr
 from sqlmodel import Session
 
+from app.integrations.llm.base import LLMCompletionRequest, LLMMessage
+
 from app.db.models import ModelConfigRecord
 from app.db.repositories.models import list_model_names_by_provider
 from app.services.credential_service import CredentialService
@@ -19,20 +21,78 @@ class ModelService:
         self._provider_client = provider_client
         self._settings_path = settings_path or shared_config.SETTINGS_PATH
 
+    def generate_conversation_title(self, prompt: str, model_name: str | None = None) -> str | None:
+        prompt_text = prompt.strip()
+        if not prompt_text:
+            return None
+
+        try:
+            config = self.load_settings()
+            if model_name:
+                config = config.model_copy(update={"model_name": model_name})
+            if self._provider_client is not None:
+                provider = self._provider_client
+            else:
+                from app.integrations.llm.factory import build_llm_provider
+                provider = build_llm_provider(config)
+            response = provider.complete(
+                config=config,
+                request=LLMCompletionRequest(
+                    messages=[
+                        LLMMessage(
+                            role="system",
+                            content=(
+                                "你是一个会话标题生成助手。请根据用户的首条消息生成一个简短的中文标题。"
+                                "要求：不超过12个字，直接输出标题内容，不要加引号或句号。"
+                            ),
+                        ),
+                        LLMMessage(role="user", content=prompt_text),
+                    ],
+                    temperature=0.2,
+                    max_tokens=32,
+                    json_mode=False,
+                ),
+            )
+        except Exception:
+            return None
+
+        title = response.text.strip()
+        if not title:
+            return None
+        title = title.splitlines()[0].strip().strip('"').strip("'").strip()
+        if not title:
+            return None
+        return title[:24]
+
     def validate(self, config: ModelConfig) -> bool:
-        if self._provider_client is None:
+        if self._provider_client is not None:
+            provider = self._provider_client
+        else:
+            from app.integrations.llm.factory import build_llm_provider
+            provider = build_llm_provider(config)
+        try:
+            provider.complete(
+                config=config,
+                request=LLMCompletionRequest(
+                    messages=[LLMMessage(role="user", content="Respond with OK.")],
+                    temperature=0,
+                    max_tokens=16,
+                    json_mode=False,
+                ),
+            )
             return True
-        return self._provider_client.check_connection(config)
+        except Exception:
+            return False
 
     def get_active_model(self, default_config: ModelConfig, session_override: ModelConfig | None) -> ModelConfig:
         return session_override or default_config
 
     def build_default_config(self) -> ModelConfig:
-        provider = os.environ.get("OPS_AGENT_PROVIDER", ModelProvider.ANTHROPIC.value)
+        provider = os.environ.get("OPS_AGENT_PROVIDER", ModelProvider.OPENAI_COMPATIBLE.value)
         return ModelConfig(
             provider=ModelProvider(provider),
-            model_name=os.environ.get("OPS_AGENT_MODEL", "claude-opus-4-7"),
-            base_url=os.environ.get("OPS_AGENT_BASE_URL", "https://api.anthropic.com"),
+            model_name=os.environ.get("OPS_AGENT_MODEL", "claude-sonnet-4-5-20250929"),
+            base_url=os.environ.get("OPS_AGENT_BASE_URL", "http://localhost:38888/v1"),
             api_key=SecretStr(os.environ.get("OPS_AGENT_API_KEY", "demo-key")),
             timeout_seconds=int(os.environ.get("OPS_AGENT_TIMEOUT_SECONDS", "30")),
             temperature=float(os.environ.get("OPS_AGENT_TEMPERATURE", "0.2")),

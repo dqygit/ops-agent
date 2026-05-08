@@ -2,6 +2,7 @@ from io import StringIO
 
 from app.core.connectors.network import NetworkConnector
 from app.core.connectors.local_pty import LocalPtyConnector
+from app.core.connectors.serial import SerialConnector
 
 
 class ServerConnector:
@@ -20,6 +21,7 @@ class ServerConnector:
         self.password = password
         self.private_key = private_key
         self.passphrase = passphrase
+        self.shell_kind = "posix"
         self.client = None
         self.channel = None
 
@@ -119,6 +121,32 @@ def connector_factory(asset):
 
     if asset_type == "local_terminal":
         return LocalPtyConnector()
+
+    if asset_type == "serial":
+        serial_tags = {
+            key: value
+            for tag in getattr(asset, "tags", [])
+            if ":" in tag
+            for key, value in [tag.split(":", 1)]
+        }
+        parity_mapping = {
+            "none": "N",
+            "odd": "O",
+            "even": "E",
+        }
+        try:
+            bytesize = int(serial_tags.get("data-bits", "8"))
+            stopbits = float(serial_tags.get("stop-bits", "1"))
+        except ValueError as exc:
+            raise ValueError("Invalid serial tag configuration") from exc
+        parity = parity_mapping.get(serial_tags.get("parity", "none"), "N")
+        return SerialConnector(
+            device=getattr(asset, "host"),
+            baudrate=int(getattr(asset, "port") or 9600),
+            bytesize=bytesize,
+            parity=parity,
+            stopbits=stopbits,
+        )
 
     password = None
     private_key = None

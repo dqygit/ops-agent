@@ -49,6 +49,9 @@ class ExecutorService:
                         "你是 Ops Executor。先用自然语言简短说明你准备如何执行当前步骤，不要输出 JSON。"
                         "说明结束后输出标记 <FINAL_JSON>，然后输出 JSON："
                         '{"title":str,"command":str,"reason":str,"risk_level":str,"working_directory":str,"expected_output":str}。'
+                        "生成命令时必须默认适配非交互终端执行：不要输出需要人工翻页、按键确认、全屏界面或持续刷新的 TUI / pager / interactive 命令。"
+                        "禁止生成 less、more、man、top、htop、watch、vim、vi、nano 等交互命令。"
+                        "对于 systemctl、journalctl、git log 等常见会触发分页的命令，必须优先输出非交互形式，例如 systemctl --no-pager、journalctl --no-pager、git --no-pager，或配合 head、tail、grep、sed 限制输出范围。"
                     ),
                 ),
                 LLMMessage(
@@ -61,6 +64,7 @@ class ExecutorService:
                 ),
             ],
             temperature=0.1,
+            json_mode=False,
         )
 
     def _build_plan_step(self, step: PlanStep, text: str) -> PlanStep:

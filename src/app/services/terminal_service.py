@@ -20,10 +20,16 @@ class TerminalService:
     def __init__(self, connector_factory, persistence=None):
         self._connector_factory = connector_factory
         self._sessions = {}
+        self._session_keys: dict[str, str] = {}
         self._output_buffers: dict[str, deque[tuple[int, str]]] = {}
         self._output_sequences: dict[str, int] = {}
 
-    def open_session(self, asset):
+    def open_session(self, asset, *, reuse_existing: bool = False):
+        session_key = self._build_session_key(asset)
+        if reuse_existing:
+            terminal_id = self.find_session_id(session_key)
+            if terminal_id is not None:
+                return {"terminal_id": terminal_id, "channel": "terminal connected", "error": ""}
         terminal_id = str(uuid.uuid4())
         connector = None
         session_manager = None
@@ -38,6 +44,7 @@ class TerminalService:
                 connector.close()
             return {"terminal_id": None, "channel": None, "error": str(exc)}
         self._sessions[terminal_id] = session_manager
+        self._session_keys[terminal_id] = session_key
         self._output_buffers[terminal_id] = deque(maxlen=2000)
         self._output_sequences[terminal_id] = 0
         return {"terminal_id": terminal_id, "channel": "terminal connected", "error": ""}
@@ -49,10 +56,11 @@ class TerminalService:
             return
         await websocket.accept()
         closed = anyio.Event()
+        close_requested = anyio.Event()
         send_lock = anyio.Lock()
         try:
             async with anyio.create_task_group() as task_group:
-                task_group.start_soon(self._receive_websocket_input, terminal_id, session_manager, websocket, closed, send_lock)
+                task_group.start_soon(self._receive_websocket_input, terminal_id, session_manager, websocket, closed, close_requested, send_lock)
                 task_group.start_soon(self._send_terminal_output, terminal_id, session_manager, websocket, closed, send_lock)
         except WebSocketDisconnect:
             pass
@@ -62,9 +70,10 @@ class TerminalService:
             except Exception:
                 pass
         finally:
-            await run_sync(self.close_session, terminal_id)
+            if close_requested.is_set():
+                await run_sync(self.close_session, terminal_id)
 
-    async def _receive_websocket_input(self, terminal_id: str, session_manager, websocket, closed, send_lock) -> None:
+    async def _receive_websocket_input(self, terminal_id: str, session_manager, websocket, closed, close_requested, send_lock) -> None:
         try:
             while True:
                 message = await websocket.receive_json()
@@ -81,6 +90,7 @@ class TerminalService:
                         continue
                     await run_sync(session_manager.resize, cols, rows)
                 elif message_type == "close":
+                    close_requested.set()
                     async with send_lock:
                         await websocket.send_json({"type": "closed"})
                     return
@@ -113,6 +123,7 @@ class TerminalService:
         session_manager = self._sessions.pop(terminal_id, None)
         if session_manager is None:
             return False
+        self._session_keys.pop(terminal_id, None)
         self._output_buffers.pop(terminal_id, None)
         self._output_sequences.pop(terminal_id, None)
         session_manager.close()
@@ -121,20 +132,34 @@ class TerminalService:
     def get_session(self, terminal_id: str):
         return self._sessions.get(terminal_id)
 
+    def find_session_id(self, session_key: str) -> str | None:
+        for terminal_id, current_key in self._session_keys.items():
+            if current_key == session_key and terminal_id in self._sessions:
+                return terminal_id
+        return None
+
     def send_input(self, terminal_id: str, data: str) -> None:
         session_manager = self.get_session(terminal_id)
         if session_manager is None:
             raise ValueError("terminal session not found")
         session_manager.write(data)
 
-    def read_recent_output(self, terminal_id: str) -> str:
+    def get_shell_kind(self, terminal_id: str) -> str:
         session_manager = self.get_session(terminal_id)
         if session_manager is None:
+            raise ValueError("terminal session not found")
+        return session_manager.shell_kind()
+
+    def read_recent_output(self, terminal_id: str) -> str:
+        return self.read_buffered_output(terminal_id)
+
+    def read_buffered_output(self, terminal_id: str) -> str:
+        if terminal_id not in self._sessions:
             return ""
-        output = session_manager.read()
-        if output:
-            self._append_output(terminal_id, output)
-        return output
+        chunks = self._output_buffers.get(terminal_id)
+        if not chunks:
+            return ""
+        return "".join(chunk for _, chunk in chunks)
 
     def get_output_cursor(self, terminal_id: str) -> int:
         return self._output_sequences.get(terminal_id, 0)
@@ -163,3 +188,16 @@ class TerminalService:
     def attach_context(self, terminal_id: str, selection_label: str, selected_text: str):
         attachment = build_terminal_context(terminal_id, selection_label, selected_text)
         return attachment
+
+    def _build_session_key(self, asset) -> str:
+        asset_id = getattr(asset, "id", None)
+        if asset_id is not None:
+            return f"asset:{asset_id}"
+        return ":".join(
+            [
+                str(getattr(asset, "asset_type", "")),
+                str(getattr(asset, "host", "")),
+                str(getattr(asset, "port", "")),
+                str(getattr(asset, "username", "")),
+            ]
+        )

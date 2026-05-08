@@ -25,6 +25,9 @@ class TerminalSessionManager:
     def write(self, data: str) -> None:
         self._connector.write(data)
 
+    def shell_kind(self) -> str:
+        return getattr(self._connector, "shell_kind", "posix")
+
     def resize(self, cols: int, rows: int) -> None:
         self._connector.resize(cols, rows)
 

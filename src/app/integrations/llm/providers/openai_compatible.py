@@ -48,14 +48,7 @@ class OpenAICompatibleLLMProvider:
         request: LLMCompletionRequest,
     ) -> Iterator[LLMCompletionChunk]:
         response = self._get_client(config).chat.completions.create(
-            model=config.model_name,
-            temperature=request.temperature if request.temperature is not None else config.temperature,
-            max_tokens=request.max_tokens if request.max_tokens is not None else config.max_tokens,
-            messages=cast(Any, [self._serialize_message(message) for message in request.messages]),
-            tools=cast(Any, self._serialize_tools(request) or None),
-            tool_choice=cast(Any, self._serialize_tool_choice(request)),
-            stream=True,
-            response_format={"type": "json_object"},
+            **self._build_completion_params(config=config, request=request, stream=True)
         )
         finish_reason: str | None = None
         for chunk in response:
@@ -76,14 +69,7 @@ class OpenAICompatibleLLMProvider:
         request: LLMCompletionRequest,
     ) -> LLMCompletionResponse:
         response = self._get_client(config).chat.completions.create(
-            model=config.model_name,
-            temperature=request.temperature if request.temperature is not None else config.temperature,
-            max_tokens=request.max_tokens if request.max_tokens is not None else config.max_tokens,
-            messages=cast(Any, [self._serialize_message(message) for message in request.messages]),
-            tools=cast(Any, self._serialize_tools(request) or None),
-            tool_choice=cast(Any, self._serialize_tool_choice(request)),
-            stream=False,
-            response_format={"type": "json_object"},
+            **self._build_completion_params(config=config, request=request, stream=False)
         )
         choice = response.choices[0] if getattr(response, "choices", None) else None
         message = getattr(choice, "message", None)
@@ -91,6 +77,20 @@ class OpenAICompatibleLLMProvider:
         tool_calls = self._parse_tool_calls(getattr(message, "tool_calls", None))
         finish_reason = getattr(choice, "finish_reason", None)
         return LLMCompletionResponse(text=text, tool_calls=tool_calls, finish_reason=finish_reason)
+
+    def _build_completion_params(self, *, config: ModelConfig, request: LLMCompletionRequest, stream: bool) -> dict[str, Any]:
+        params: dict[str, Any] = {
+            "model": config.model_name,
+            "temperature": request.temperature if request.temperature is not None else config.temperature,
+            "max_tokens": request.max_tokens if request.max_tokens is not None else config.max_tokens,
+            "messages": cast(Any, [self._serialize_message(message) for message in request.messages]),
+            "tools": cast(Any, self._serialize_tools(request) or None),
+            "tool_choice": cast(Any, self._serialize_tool_choice(request)),
+            "stream": stream,
+        }
+        if request.json_mode:
+            params["response_format"] = {"type": "json_object"}
+        return params
 
     def _get_client(self, config: ModelConfig):
         if self._client is not None:

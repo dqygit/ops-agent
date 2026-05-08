@@ -1,6 +1,7 @@
 import uuid
 from collections.abc import Iterator
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from time import sleep, time
 from types import SimpleNamespace
 
@@ -28,12 +29,22 @@ from app.shared.enums import ApprovalDecision, CommandExecutionStatus, TaskStatu
 from app.shared.schemas import PlanStep
 
 
+COMMAND_SENTINEL = "__OPS_AGENT_COMMAND_DONE__"
+
+
 @dataclass
 class OrchestratorDependencies:
     planner: PlannerService
     executor: ExecutorService
     model_service: ModelService
     terminal_service: TerminalService
+
+
+@dataclass
+class CommandRunResult:
+    output: str
+    exit_code: int | None
+    completed: bool
 
 
 class TaskOrchestrator:
@@ -54,6 +65,11 @@ class TaskOrchestrator:
                 username="",
             )
 
+        small_talk_response = self._build_small_talk_response(prompt)
+        if small_talk_response is not None:
+            yield {"id": f"final-{uuid.uuid4()}", "kind": "final", "text": small_talk_response}
+            return
+
         model_config = self._resolve_model_config(session, model_name)
         conversation_id = f"conversation-{uuid.uuid4()}"
         
@@ -61,7 +77,7 @@ class TaskOrchestrator:
             f"asset={getattr(asset, 'name', '')}, type={getattr(asset, 'asset_type', '')}, "
             f"host={getattr(asset, 'host', '')}, user={getattr(asset, 'username', '')}"
         )
-        recent_output = self._deps.terminal_service.read_recent_output(terminal_id) if terminal_id else ""
+        recent_output = self._deps.terminal_service.read_buffered_output(terminal_id) if terminal_id else ""
         run_id = str(uuid.uuid4())
         plan_stream_id = f"task-{run_id}"
 
@@ -224,16 +240,45 @@ class TaskOrchestrator:
 
         output_cursor = self._deps.terminal_service.get_output_cursor(active_terminal_id) if active_terminal_id else 0
         if active_terminal_id is not None:
-            self._deps.terminal_service.send_input(active_terminal_id, f"{current_step.command}\n")
-            output = self._collect_command_output(
+            shell_kind = self._deps.terminal_service.get_shell_kind(active_terminal_id)
+            command_input = self._build_terminal_input(
+                shell_kind=shell_kind,
+                working_directory=current_step.working_directory,
+                command=current_step.command,
+            )
+            self._deps.terminal_service.send_input(active_terminal_id, command_input)
+            command_result = self._collect_command_output(
                 terminal_id=active_terminal_id,
                 after_cursor=output_cursor,
             )
         else:
-            output = ""
+            command_result = CommandRunResult(output="", exit_code=None, completed=False)
 
-        update_task_step(session, current_step_id, status="completed", output=output)
-        update_command_execution(session, execution_id, status=CommandExecutionStatus.COMPLETED.value, output=output)
+        step_status = "completed"
+        execution_status = CommandExecutionStatus.COMPLETED.value
+        if not command_result.completed:
+            step_status = "failed"
+            execution_status = CommandExecutionStatus.FAILED.value
+        elif command_result.exit_code not in {None, 0}:
+            step_status = "failed"
+            execution_status = CommandExecutionStatus.FAILED.value
+
+        update_task_step(
+            session,
+            current_step_id,
+            status=step_status,
+            output=command_result.output,
+            exit_code=command_result.exit_code,
+            finished_at=datetime.now(UTC),
+        )
+        update_command_execution(
+            session,
+            execution_id,
+            status=execution_status,
+            output=command_result.output,
+            exit_code=command_result.exit_code,
+            finished_at=datetime.now(UTC),
+        )
 
         current_index = next((index for index, step in enumerate(task_steps) if step.id == current_step.id), 0)
         remaining_rows = task_steps[current_index + 1 :]
@@ -262,7 +307,7 @@ class TaskOrchestrator:
                 working_directory=current_step.working_directory,
                 expected_output=current_step.expected_output,
             ),
-            command_output=output,
+            command_output=command_result.output,
             remaining_steps=remaining_steps,
         ):
             if isinstance(chunk, str):
@@ -270,8 +315,18 @@ class TaskOrchestrator:
                 continue
             review = chunk
 
-        yield {"id": f"output-{run_id}-{current_step_id}", "kind": "output", "text": output or "命令已发送，暂无输出。"}
+        output_text = command_result.output
+        if not command_result.completed:
+            output_text = (output_text + "\n\n命令未在预期时间内完成，可能仍在运行或进入了交互状态。").strip()
+        elif command_result.exit_code not in {None, 0}:
+            output_text = (output_text + f"\n\n命令以非零退出码结束: {command_result.exit_code}").strip()
+        yield {"id": f"output-{run_id}-{current_step_id}", "kind": "output", "text": output_text or "命令已执行完成，暂无输出。"}
         plan_id = f"task-{run_id}"
+
+        if not command_result.completed or command_result.exit_code not in {None, 0}:
+            update_agent_task(session, task.id, status=TaskStatus.PENDING_APPROVAL.value)
+            yield {"id": f"error-{run_id}-{current_step_id}", "kind": "error", "text": "命令未成功完成，请根据输出调整后重试。"}
+            return
 
         if review is not None and review.decision == "retry":
             update_task_step(session, current_step_id, status="running")
@@ -288,7 +343,7 @@ class TaskOrchestrator:
                 step_index=current_index,
                 total_steps=len(task_steps),
                 asset_summary=f"asset_id={task.asset_id}",
-                recent_output=output,
+                recent_output=command_result.output,
                 model_config=model_config,
             )
             return
@@ -341,7 +396,7 @@ class TaskOrchestrator:
             step_index=current_index + 1,
             total_steps=len(task_steps),
             asset_summary=f"asset_id={task.asset_id}",
-            recent_output=output,
+            recent_output=command_result.output,
             model_config=model_config,
         )
 
@@ -454,25 +509,32 @@ class TaskOrchestrator:
         *,
         terminal_id: str,
         after_cursor: int,
-        max_wait_seconds: float = 5.0,
-        idle_timeout_seconds: float = 0.4,
+        max_wait_seconds: float = 20.0,
         poll_interval_seconds: float = 0.1,
-    ) -> str:
+    ) -> CommandRunResult:
         deadline = time() + max_wait_seconds
-        idle_deadline: float | None = None
         output_parts: list[str] = []
         cursor = after_cursor
         while time() < deadline:
             cursor, output = self._deps.terminal_service.read_output_since(terminal_id, cursor)
             if output:
                 output_parts.append(output)
-                idle_deadline = time() + idle_timeout_seconds
-                sleep(poll_interval_seconds)
-                continue
-            if idle_deadline is not None and time() >= idle_deadline:
-                break
+                combined_output = "".join(output_parts)
+                parsed = self._parse_command_result(combined_output)
+                if parsed.completed:
+                    return parsed
             sleep(poll_interval_seconds)
-        return "".join(output_parts)
+        return self._parse_command_result("".join(output_parts))
+
+    def _build_small_talk_response(self, prompt: str) -> str | None:
+        normalized = " ".join(prompt.strip().lower().split())
+        if not normalized:
+            return None
+        if normalized in {"hi", "hello", "hey", "你好", "您好", "在吗", "在嘛", "早上好", "下午好", "晚上好"}:
+            return "你好，我在。你可以直接告诉我想执行的运维任务、查看的信息，或者需要排查的问题。"
+        if normalized in {"thanks", "thank you", "谢谢", "多谢", "谢了"}:
+            return "不客气。你可以继续告诉我下一步想执行什么操作。"
+        return None
 
     def _build_delta_event(self, *, message_id: str, text: str, stage: str) -> dict:
         return {
@@ -482,6 +544,63 @@ class TaskOrchestrator:
             "stage": stage,
             "text": text,
         }
+
+    def _build_terminal_input(self, *, shell_kind: str, working_directory: str, command: str) -> str:
+        normalized_command = command.rstrip("\n")
+        normalized_working_directory = working_directory.strip() if working_directory else ""
+        if shell_kind == "powershell":
+            return self._build_powershell_command(normalized_working_directory, normalized_command)
+        if shell_kind == "cmd":
+            return self._build_cmd_command(normalized_working_directory, normalized_command)
+        return self._build_posix_command(normalized_working_directory, normalized_command)
+
+    def _build_posix_command(self, working_directory: str, command: str) -> str:
+        env_prefix = 'export PAGER=cat SYSTEMD_PAGER=cat GIT_PAGER=cat; '
+        wrapped_command = f"{env_prefix}{command}"
+        if working_directory:
+            normalized_working_directory = working_directory.replace('"', '\\"')
+            wrapped_command = f'cd "{normalized_working_directory}" && {wrapped_command}'
+        sentinel = f'printf "\\n{COMMAND_SENTINEL}:%s\\n" "$?"'
+        return f"{wrapped_command}; {sentinel}\r"
+
+    def _build_powershell_command(self, working_directory: str, command: str) -> str:
+        escaped_command = command.replace('"', '`"')
+        escaped_directory = working_directory.replace('"', '`"')
+        prefix_parts = [
+            '$env:PAGER="cat"',
+            '$env:SYSTEMD_PAGER="cat"',
+            '$env:GIT_PAGER="cat"',
+        ]
+        if working_directory:
+            prefix_parts.append(f'Set-Location -Path "{escaped_directory}"')
+        prefix = "; ".join(prefix_parts)
+        return f"{prefix}; {escaped_command}; Write-Output \"{COMMAND_SENTINEL}:$LASTEXITCODE\"\r"
+
+    def _build_cmd_command(self, working_directory: str, command: str) -> str:
+        escaped_directory = working_directory.replace('"', '""')
+        prefix_parts = [
+            'set "PAGER=cat"',
+            'set "SYSTEMD_PAGER=cat"',
+            'set "GIT_PAGER=cat"',
+        ]
+        if working_directory:
+            prefix_parts.append(f'cd /d "{escaped_directory}"')
+        prefix = " & ".join(prefix_parts)
+        return f"{prefix} & {command} & echo {COMMAND_SENTINEL}:%errorlevel%\r"
+
+    def _parse_command_result(self, output: str) -> CommandRunResult:
+        sentinel_prefix = f"{COMMAND_SENTINEL}:"
+        marker_index = output.rfind(sentinel_prefix)
+        if marker_index < 0:
+            return CommandRunResult(output=output.strip(), exit_code=None, completed=False)
+        visible_output = output[:marker_index].rstrip()
+        remainder = output[marker_index + len(sentinel_prefix):].strip()
+        exit_code: int | None
+        try:
+            exit_code = int(remainder.splitlines()[0]) if remainder else None
+        except ValueError:
+            exit_code = None
+        return CommandRunResult(output=visible_output, exit_code=exit_code, completed=True)
 
     def _load_plan_steps(self, session: Session, task_id: int, override_step: PlanStep | None = None, override_step_id: int | None = None) -> list[PlanStep]:
         rows = list_task_steps_by_task_id(session, task_id)

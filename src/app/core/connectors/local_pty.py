@@ -1,6 +1,7 @@
 import os
 import platform
 import select
+from pathlib import Path
 
 
 def _resolve_windows_shell() -> str:
@@ -27,6 +28,7 @@ class LocalPtyConnector:
     def __init__(self, *, cols: int = 80, rows: int = 24):
         self.cols = cols
         self.rows = rows
+        self.shell_kind = "posix"
         self._process = None
         self._pid = None
         self._fd = None
@@ -87,6 +89,11 @@ class LocalPtyConnector:
             raise RuntimeError("pywinpty is required for local terminal sessions on Windows") from exc
         PtyProcess = winpty.PtyProcess
         shell = _resolve_windows_shell()
+        shell_name = Path(shell).name.lower()
+        if "pwsh" in shell_name or shell_name == "powershell.exe":
+            self.shell_kind = "powershell"
+        else:
+            self.shell_kind = "cmd"
         self._process = PtyProcess.spawn(shell, dimensions=(self.rows, self.cols))
         return "local terminal connected"
 
@@ -115,6 +122,7 @@ class LocalPtyConnector:
         import pty
 
         shell = os.environ.get("SHELL") or "/bin/sh"
+        self.shell_kind = "posix"
         env = os.environ.copy()
         # Disable some shell extensions that might cause issues in PTY
         env["ZSH_AUTOSUGGEST_MANUAL_REBIND"] = "1"

@@ -41,8 +41,8 @@ export function AssetList({ assets, groups, selectedAssetId, onSelectAsset, onEd
   )
 
   return (
-    <div className="flex flex-col h-full bg-ops-panel" aria-label="Host connections" onMouseLeave={() => setMenuAssetId(null)}>
-      {visibleAssets.length === 0 ? <p className="text-center py-10 text-ops-muted text-sm">暂无远程资产</p> : null}
+    <div className="flex h-full flex-col bg-[#070b09]" aria-label="主机连接列表" onMouseLeave={() => setMenuAssetId(null)}>
+      {visibleAssets.length === 0 ? <p className="text-center py-10 text-ops-muted text-sm">空</p> : null}
       {assetGroups.map((group) => {
         const groupKey = String(group.id)
         const groupAssets = groupedAssets[groupKey] ?? []
@@ -52,7 +52,7 @@ export function AssetList({ assets, groups, selectedAssetId, onSelectAsset, onEd
 
         return (
           <section key={groupKey} className="mb-2" aria-label={group.label}>
-            <h3 className="px-4 py-1.5 text-[10px] font-bold text-ops-muted/60 uppercase tracking-widest bg-ops-deep/30">{group.label}</h3>
+            <h3 className="border-y border-ops-border/25 bg-[#0a0f0c] px-4 py-1.5 text-[10px] font-semibold uppercase tracking-[0.22em] text-ops-muted/80">{group.label}</h3>
             <ul className="flex flex-col list-none m-0 p-0">
               {groupAssets.map((asset) => {
                 const selected = asset.id === selectedAssetId
@@ -60,7 +60,7 @@ export function AssetList({ assets, groups, selectedAssetId, onSelectAsset, onEd
 
                 return (
                   <li key={asset.id} className="relative group">
-                    <div className={`relative flex items-center transition-colors ${selected ? 'bg-ops-cyan/5' : 'hover:bg-ops-border/5'} ${menuOpen ? 'bg-ops-border/10' : ''}`}>
+                    <div className={`relative flex items-center transition-colors ${selected ? 'bg-ops-green/6' : 'hover:bg-ops-panel/50'} ${menuOpen ? 'bg-ops-panel' : ''}`}>
                       <ListItemCard
                         title={asset.name}
                         meta={getAssetMeta(asset)}
@@ -92,7 +92,7 @@ export function AssetList({ assets, groups, selectedAssetId, onSelectAsset, onEd
                     </div>
 
                     {menuOpen ? (
-                      <div className="absolute right-2 top-9 w-32 py-1 bg-ops-strong border border-ops-border/40 rounded shadow-glass z-20 overflow-hidden" role="menu" aria-label={`${asset.name} actions`}>
+                      <div className="absolute right-2 top-9 z-20 w-32 overflow-hidden rounded-md border border-ops-border/50 bg-[#0c110e] shadow-[0_8px_24px_rgba(0,0,0,0.35)]" role="menu" aria-label={`${asset.name} 操作`}>
                         <button
                           type="button"
                           className="w-full text-left px-3 py-1.5 text-xs text-ops-text hover:bg-ops-cyan hover:text-ops-bg transition-colors flex items-center gap-2"

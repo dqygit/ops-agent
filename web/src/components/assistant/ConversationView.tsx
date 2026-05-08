@@ -2,12 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { EmptyState } from '../layout/EmptyState'
-import { DangerButton, PrimaryButton } from '../layout/Button'
 import type { EventItem } from '../../types/ops'
-
-function isPlanEvent(event: EventItem): event is Extract<EventItem, { kind: 'plan' }> {
-  return event.kind === 'plan'
-}
 
 type ConversationViewProps = {
   events: EventItem[]
@@ -23,30 +18,25 @@ function stripAnsi(text: string) {
 function stripJsonBlocks(text: string) {
   let result = text
 
-  // If model emits explicit split marker, keep only natural language before marker
   const markerIndex = result.indexOf('<FINAL_JSON>')
   if (markerIndex >= 0) {
     result = result.slice(0, markerIndex)
   }
 
-  // Remove fenced code blocks
   result = result.replace(/```json\s*[\s\S]*?```/gi, '')
   result = result.replace(/```\s*[\s\S]*?```/g, '')
-
-  // Remove obvious one-line JSON payloads
   result = result.replace(/\{\s*"(?:steps|decision|summary|title|reason|risk_level|expected_output|command)"[\s\S]*?\}/g, '')
 
-  // Trim off trailing JSON fragments often produced during streaming
   const jsonTailPatterns = [
     /\n\s*\{\s*"(?:steps|decision|summary|title|reason|risk_level|expected_output|command)"[\s\S]*$/,
     /\n\s*\[\s*\{[\s\S]*$/,
     /\n\s*"(?:title|reason|risk_level|expected_output|command|decision|summary)"\s*:[\s\S]*$/,
   ]
+
   for (const pattern of jsonTailPatterns) {
     result = result.replace(pattern, '')
   }
 
-  // Remove standalone JSON-looking lines
   result = result
     .split('\n')
     .filter((line) => {
@@ -59,7 +49,6 @@ function stripJsonBlocks(text: string) {
     })
     .join('\n')
 
-  // Clean punctuation artifacts left by streaming/json truncation
   result = result
     .replace(/[，,、。；;:：\-\s]+$/g, '')
     .replace(/([，,、]){2,}/g, '$1')
@@ -79,28 +68,26 @@ function OutputBlock({ text }: OutputBlockProps) {
   const shouldTruncate = lines.length > 8
 
   return (
-    <div className="flex flex-col gap-1 w-full overflow-hidden">
-      <div className="flex items-center justify-between px-2 py-1 bg-black/40 rounded-t border-t border-x border-ops-border/10">
-        <span className="text-[10px] font-bold text-ops-muted uppercase tracking-widest">Command Output</span>
-        {shouldTruncate && (
-          <button 
-            type="button" 
+    <div className="flex w-full flex-col gap-1 overflow-hidden">
+      <div className="flex items-center justify-between rounded-t border-x border-t border-ops-border/10 bg-black/40 px-2 py-1">
+        <span className="text-[10px] font-bold uppercase tracking-widest text-ops-muted">命令输出</span>
+        {shouldTruncate ? (
+          <button
+            type="button"
             onClick={() => setIsExpanded(!isExpanded)}
             className="text-[10px] text-ops-cyan hover:underline"
           >
-            {isExpanded ? 'Collapse' : `Expand (${lines.length} lines)`}
+            {isExpanded ? '收起' : `展开（${lines.length} 行）`}
           </button>
-        )}
+        ) : null}
       </div>
-      <pre 
-        className={`whitespace-pre-wrap word-break m-0 font-mono leading-tight p-3 bg-black/60 rounded-b border-b border-x border-ops-border/10 text-[11px] text-ops-text/90 transition-all ${
-          !isExpanded && shouldTruncate ? 'max-h-[160px] overflow-hidden relative' : 'max-h-none'
+      <pre
+        className={`m-0 whitespace-pre-wrap rounded-b border-x border-b border-ops-border/10 bg-black/60 p-3 font-mono text-[11px] leading-tight text-ops-text/90 transition-all ${
+          !isExpanded && shouldTruncate ? 'relative max-h-[160px] overflow-hidden' : 'max-h-none'
         }`}
       >
         {cleanText}
-        {!isExpanded && shouldTruncate && (
-          <div className="absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-black/80 to-transparent pointer-events-none" />
-        )}
+        {!isExpanded && shouldTruncate ? <div className="pointer-events-none absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-black/80 to-transparent" /> : null}
       </pre>
     </div>
   )
@@ -115,51 +102,180 @@ type CommandCardProps = {
 
 function CommandCard({ command, showActions, onApprove, onReject }: CommandCardProps) {
   return (
-    <div className="flex items-center gap-2 p-3 bg-ops-panel/60 border border-ops-border/30 rounded-lg">
-      {showActions ? (
-        <button
-          type="button"
-          onClick={onApprove}
-          className="flex-shrink-0 w-8 h-8 flex items-center justify-center rounded-full bg-ops-green/20 text-ops-green hover:bg-ops-green/30 transition-colors"
-          title="Approve"
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+    <div className="group rounded-lg border border-amber-500/50 bg-gradient-to-br from-amber-500/15 to-amber-600/10 p-4 shadow-lg transition-all hover:shadow-xl">
+      <div className="mb-2 flex items-center gap-2">
+        <div className="flex h-5 w-5 items-center justify-center rounded bg-amber-500/30">
+          <svg className="h-3 w-3 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
           </svg>
-        </button>
-      ) : null}
-      <code
-        className="flex-1 px-3 py-1.5 bg-black/40 rounded text-xs font-mono text-ops-text/90 truncate cursor-help"
-        title={command}
-      >
-        {command}
-      </code>
-      {showActions ? (
-        <button
-          type="button"
-          onClick={onReject}
-          className="flex-shrink-0 w-8 h-8 flex items-center justify-center rounded-full bg-ops-red/20 text-ops-red hover:bg-ops-red/30 transition-colors"
-          title="Reject"
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-          </svg>
-        </button>
-      ) : null}
+        </div>
+        <span className="text-[10px] font-bold uppercase tracking-wider text-amber-400/90">待审批命令</span>
+      </div>
+      <div className="flex items-center gap-3">
+        {showActions ? (
+          <button
+            type="button"
+            onClick={onApprove}
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-ops-green/25 text-ops-green shadow-sm transition-over:bg-ops-green/35 hover:scale-105 active:scale-95"
+            aria-label="批准执行"
+          >
+            <svg className="h-4.5 w-4.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+            </svg>
+          </button>
+        ) : null}
+        <code className="flex-1 rounded-md border border-amber-500/30 bg-black/40 px-3.5 py-2.5 text-xs font-mono leading-relaxed text-ops-text shadow-inner" title={command}>
+          {command}
+        </code>
+        {showActions ? (
+          <button
+            type="button"
+            onClick={onReject}
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-ops-red/25 text-ops-red shadow-sm transition-all hover:bg-ops-red/35 hover:scale-105 active:scale-95"
+            aria-label="拒绝执行"
+          >
+            <svg className="h-4.5 w-4.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        ) : null}
+      </div>
     </div>
   )
 }
 
+type PlanSummaryCardProps = {
+  event: Extract<EventItem, { kind: 'plan' }>
+}
+
+function PlanSummaryCard({ event }: PlanSummaryCardProps) {
+  return (
+    <div className="rounded-md border border-ops-border/40 bg-[#0a0f0c] p-3">
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <div className="h-3 w-1.5 rounded-full bg-ops-green" />
+          <h3 className="text-sm font-bold tracking-wide text-ops-text">{event.title?.trim() || '任务计划'}</h3>
+        </div>
+        <div className="flex items-center gap-2 text-[10px] uppercase tracking-wider text-ops-muted">
+          {event.loading ? <span className="animate-pulse text-ops-cyan">● 规划中...</span> : null}
+          {typeof event.version === 'number' ? <span className="rounded bg-ops-border/20 px-1.5 py-0.5">v{event.version}</span> : null}
+        </div>
+      </div>
+      <div className="flex flex-wrap gap-1.5">
+        {event.steps.map((step, index) => (
+          <div
+            key={step.id ?? `step-${index}`}
+            className={`inline-flex cursor-help items-center gap-1.5 rounded px-2 py-1 text-[11px] ${
+              step.status === 'completed'
+                ? 'border border-ops-green/20 bg-ops-green/10 text-ops-green'
+                : step.status === 'running'
+                  ? 'animate-pulse border border-ops-cyan/20 bg-ops-cyan/10 text-ops-cyan'
+                  : 'border border-ops-border/10 bg-black/20 text-ops-muted'
+            }`}
+            title={step.title}
+          >
+            <span className="font-bold">{index + 1}</span>
+            <span className="max-w-[120px] truncate">{step.title}</span>
+            {step.status === 'completed' ? <span>✓</span> : null}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+type EventCardProps = {
+  event: EventItem
+  isLastEvent: boolean
+  pendingApprovalRunId: string | null
+  onApprove?: () => void
+  onReject?: () => void
+}
+
+function EventCard({ event, isLastEvent, pendingApprovalRunId, onApprove, onReject }: EventCardProps) {
+  if (event.kind === 'status') {
+    return <div className="text-xs italic text-ops-muted">{event.text}</div>
+  }
+
+  if (event.kind === 'error') {
+    return (
+      <article className="rounded-md border border-ops-danger/40 bg-ops-danger/10 p-3">
+        <div className="mb-1 text-[10px] font-bold uppercase text-ops-red">系统错误</div>
+        <p className="m-0 font-mono text-xs text-ops-text/90">{event.text}</p>
+      </article>
+    )
+  }
+
+  if (event.kind === 'output') {
+    return <OutputBlock text={event.text} />
+  }
+
+  if (event.kind === 'user') {
+    return (
+      <article className="ml-8 rounded-md border border-ops-green/35 bg-ops-green/8 p-3">
+        <div className="mb-1 text-[9px] font-bold uppercase tracking-wider text-ops-cyan">用户</div>
+        <p className="m-0 text-sm text-ops-text">{event.text}</p>
+      </article>
+    )
+  }
+
+  if (event.kind === 'approval') {
+    const showActions = pendingApprovalRunId !== null && event.runId === pendingApprovalRunId
+    return <CommandCard command={event.command} showActions={showActions} onApprove={onApprove} onReject={onReject} />
+  }
+
+  if (event.kind === 'plan') {
+    return <PlanSummaryCard event={event} />
+  }
+
+  if (event.kind === 'delta') {
+    return (
+      <article className="group rounded-lg border border-ops-border/40 bg-gradient-to-br from-ops-panel/95 to-ops-panel/80 p-5 shadow-sm transition-all hover:border-ops-border/60 hover:shadow-md">
+        <div className="mb-3 flex items-center gap-2">
+          <div className="h-1.5 w-1.5 rounded-full bg-ops-cyan animate-pulse" />
+          <div className="text-[10px] font-bold uppercase tracking-wider text-ops-cyan/90">
+            {getStageLabel(event.stage)}
+          </div>
+        </div>
+        <div className="prose prose-invert prose-base max-w-none text-[15px] leading-relaxed text-ops-text/95 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&>h1]:text-xl [&>h1]:font-bold [&>h1]:text-ops-text [&>h1]:mb-3 [&>h1]:mt-4 [&>h2]:text-lg [&>h2]:font-bold [&>h2]:text-ops-text [&>h2]:mb-2.5 [&>h2]:mt-3.5 [&>h3]:text-base [&>h3]:font-semibold [&>h3]:text-ops-text/95 [&>h3]:mb-2 [&>h3]:mt-3 [&>p]:my-2.5 [&>p]:leading-7 [&>ul]:my-2.5 [&>ul]:space-y-1.5 [&>ol]:my-2.5 [&>ol]:space-y-1.5 [&>li]:leading-6 [&>li]:text-ops-text/90 [&>code]:bg-black/40 [&>code]:px-1.5 [&>code]:py-0.5 [&>code]:rounded [&>code]:text-ops-cyan [&>code]:text-sm [&>code]:font-mono [&>pre]:bg-black/60 [&>pre]:p-4 [&>pre]:rounded-lg [&>pre]:border [&>pre]:border-ops-border/20 [&>pre]:my-3 [&>pre>code]:bg-transparent [&>pre>code]:p-0 [&>pre>code]:text-ops-text/90 [&>blockquote]:border-l-4 [&>blockquote]:border-ops-cyan/40 [&>blockquote]:pl-4 [&>blockquote]:italic [&>blockquote]:text-ops-text/80 [&>strong]:font-bold [&>strong]:text-ops-text [&>em]:italic [&>a]:text-ops-cyan [&>a]:underline [&>a]:hover:text-ops-cyan/80">
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>{stripJsonBlocks(event.text)}</ReactMarkdown>
+          {isLastEvent ? <span className="ml-1 inline-block h-4 w-1.5 animate-pulse align-[-2px] bg-ops-cyan/90 rounded-sm" /> : null}
+        </div>
+      </article>
+    )
+  }
+
+  return (
+    <article className="group rounded-lg border border-ops-border/40 bg-gradient-to-br from-ops-panel/95 to-ops-panel/80 p-5 shadow-sm transition-all hover:border-ops-border/60 hover:shadow-md">
+      <div className="mb-3 flex items-center gap-2">
+        <div className="h-1.5 w-1.5 rounded-full bg-ops-green/80" />
+        <div className="text-[10px] font-bold uppercase tracking-wider text-ops-green/90">
+          {event.kind === 'final' ? '✓ 结论' : '助手回复'}
+        </div>
+      </div>
+      <div className="prose prose-invert prose-base max-w-none text-[15px] leading-relaxed text-ops-text/95 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&>h1]:text-xl [&>h1]:font-bold [&>h1]:text-ops-text [&>h1]:mb-3 [&>h1]:mt-4 [&>h2]:text-lg [&>h2]:font-bold [&>h2]:text-ops-text [&>h2]:mb-2.5 [&>h2]:mt-3.5 [&>h3]:text-base [&>h3]:font-semibold [&>h3]:text-ops-text/95 [&>h3]:mb-2 [&>h3]:mt-3 [&>p]:my-2.5 [&>p]:leading-7 [&>ul]:my-2.5 [&>ul]:space-y-1.5 [&>ol]:my-2.5 [&>ol]:space-y-1.5 [&>li]:leading-6 [&>li]:text-ops-text/90 [&>code]:bg-black/40 [&>code]:px-1.5 [&>code]:py-0.5 [&>code]:rounded [&>code]:text-ops-cyan [&>code]:text-sm [&>code]:font-mono [&>pre]:bg-black/60 [&>pre]:p-4 [&>pre]:rounded-lg [&>pre]:border [&>pre]:border-ops-border/:bg-transparent [&>pre>code]:p-0 [&>pre>code]:text-ops-text/90 [&>blockquote]:border-l-4 [&>blockquote]:border-ops-cyan/40 [&>blockquote]:pl-4 [&>blockquote]:italic [&>blockquote]:text-ops-text/80 [&>strong]:font-bold [&>strong]:text-ops-text [&>em]:italic [&>a]:text-ops-cyan [&>a]:underline [&>a]:hover:text-ops-cyan/80">
+        <ReactMarkdown remarkPlugins={[remarkGfm]}>{stripJsonBlocks(event.text)}</ReactMarkdown>
+      </div>
+    </article>
+  )
+}
+
 function getStageLabel(stage?: string) {
-  if (stage === 'planner') return 'Planner'
-  if (stage === 'executor') return 'Executor'
-  if (stage === 'review') return 'Review'
-  return 'Assistant'
+  if (stage === 'planner') return '规划'
+  if (stage === 'executor') return '执行'
+  if (stage === 'review') return '复核'
+  return '助手'
 }
 
 export function ConversationView({ events, pendingApprovalRunId, onApprove, onReject }: ConversationViewProps) {
   const scrollContainerRef = useRef<HTMLDivElement | null>(null)
   const shouldAutoScrollRef = useRef(true)
+
+  // 找到最新的 plan 事件
+  const latestPlanEvent = events.filter(e => e.kind === 'plan').pop() as Extract<EventItem, { kind: 'plan' }> | undefined
+  
+  // 过滤掉所有 plan 事件,只保留其他事件
+  const nonPlanEvents = events.filter(e => e.kind !== 'plan')
 
   useEffect(() => {
     const el = scrollContainerRef.current
@@ -188,169 +304,36 @@ export function ConversationView({ events, pendingApprovalRunId, onApprove, onRe
 
   if (events.length === 0) {
     return (
-      <div className="flex-1 overflow-y-auto p-4" aria-label="Assistant conversation">
+      <div className="flex-1 overflow-y-auto p-4" aria-label="助手会话">
         <EmptyState
-          title="No assistant output"
-          description="Choose a model and run an agent task to populate plans, approvals, and results here."
+          title="准备开始"
+          description="输入任务后，执行记录、审批请求和结果会显示在这里。"
         />
       </div>
     )
   }
-
-  // Filter out empty plan events (loading placeholders with no steps)
-  const visibleEvents = events.filter((event) => {
-    if (event.kind === 'plan' && (!event.steps || event.steps.length === 0) && event.loading !== true) {
-      return false
-    }
-    return true
-  })
-
-  if (visibleEvents.length === 0) {
-    return (
-      <div className="flex-1 overflow-y-auto p-4" aria-label="Assistant conversation">
-        <EmptyState
-          title="No assistant output"
-          description="Choose a model and run an agent task to populate plans, approvals, and results here."
-        />
-      </div>
-    )
-  }
-
-  // Find the latest plan event
-  const latestPlanEvent = visibleEvents.filter(isPlanEvent).pop()
-
-  // Filter non-plan events for the conversation area
-  const rawConversationEvents = visibleEvents.filter(event => event.kind !== 'plan')
-  const latestPendingApprovalEventId = pendingApprovalRunId
-    ? [...rawConversationEvents]
-        .reverse()
-        .find((event) => event.kind === 'approval' && event.runId === pendingApprovalRunId)?.id ?? null
-    : null
-  const conversationEvents = rawConversationEvents
 
   return (
-    <div className="flex-1 overflow-hidden flex flex-col" aria-label="Assistant conversation">
-      {/* Task Plan Card - Fixed at top */}
-      {latestPlanEvent && (
-        <div className="flex-shrink-0 px-4 pt-4 pb-2">
-          <div className="p-3 rounded-lg border bg-ops-panel/80 border-ops-border/30 shadow-glass">
-            <div className="flex items-center justify-between gap-3 mb-2">
-              <div className="flex items-center gap-2">
-                <div className="w-1.5 h-3 bg-ops-green rounded-full" />
-                <h3 className="font-bold text-ops-text text-sm tracking-wide">{latestPlanEvent.title?.trim() || 'Task Plan'}</h3>
-              </div>
-              <div className="flex items-center gap-2 text-[10px] uppercase tracking-wider text-ops-muted">
-                {latestPlanEvent.loading ? <span className="text-ops-cyan animate-pulse">● Planning...</span> : null}
-                {typeof latestPlanEvent.version === 'number' ? <span className="bg-ops-border/20 px-1.5 py-0.5 rounded">v{latestPlanEvent.version}</span> : null}
-              </div>
-            </div>
-            
-            <div className="flex flex-wrap gap-1.5">
-              {latestPlanEvent.steps.map((step, index) => (
-                <div
-                  key={step.id ?? `step-${index}`}
-                  className={`inline-flex items-center gap-1.5 px-2 py-1 rounded text-[11px] cursor-help ${
-                    step.status === 'completed'
-                      ? 'bg-ops-green/10 text-ops-green border border-ops-green/20'
-                      : step.status === 'running'
-                      ? 'bg-ops-cyan/10 text-ops-cyan border border-ops-cyan/20 animate-pulse'
-                      : 'bg-black/20 text-ops-muted border border-ops-border/10'
-                  }`}
-                  title={step.title}
-                >
-                  <span className="font-bold">{index + 1}</span>
-                  <span className="truncate max-w-[120px]">{step.title}</span>
-                  {step.status === 'completed' && <span>✓</span>}
-                </div>
-              ))}
-            </div>
-          </div>
+    <div className="flex flex-1 flex-col overflow-hidden" aria-label="助手会话">
+      {/* 固定在顶部的任务计划 */}
+      {latestPlanEvent ? (
+        <div className="border-b border-ops-border/30 bg-ops-bg/95 px-4 py-3 backdrop-blur-sm">
+          <PlanSummaryCard event={latestPlanEvent} />
         </div>
-      )}
-
-      {/* Conversation Area - Scrollable */}
-      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto px-4 pb-4 flex flex-col gap-3">
-        {conversationEvents.map((event) => {
-          if (event.kind === 'status') {
-            return <div key={event.id} className="text-xs text-ops-muted italic">{event.text}</div>
-          }
-
-          if (event.kind === 'error') {
-            return (
-              <article key={event.id} className="p-3 rounded-lg bg-ops-red/10 border border-ops-red/30">
-                <div className="font-bold uppercase text-[10px] mb-1 text-ops-red">System Error</div>
-                <p className="m-0 text-xs font-mono text-ops-text/90">{event.text}</p>
-              </article>
-            )
-          }
-
-          if (event.kind === 'output') {
-            return <OutputBlock key={event.id} text={event.text} />
-          }
-
-          if (event.kind === 'user') {
-            return (
-              <article key={event.id} className="p-3 rounded-lg bg-ops-cyan/10 border border-ops-cyan/20 ml-8">
-                <div className="font-bold uppercase text-[9px] mb-1 text-ops-cyan tracking-wider">User</div>
-                <p className="m-0 text-sm text-ops-text">{event.text}</p>
-              </article>
-            )
-          }
-
-          if (event.kind === 'approval') {
-            const showActions = latestPendingApprovalEventId !== null && event.id === latestPendingApprovalEventId
-            return (
-              <CommandCard
-                key={event.id}
-                command={event.command}
-                showActions={showActions}
-                onApprove={onApprove}
-                onReject={onReject}
-              />
-            )
-          }
-
-          const isLastEvent = events[events.length - 1].id === event.id
-
-          if (event.kind === 'delta') {
-            const cleanText = stripJsonBlocks(event.text)
-            if (!cleanText) return null
-            return (
-              <article
-                key={event.id}
-                className="p-3 rounded-lg bg-ops-panel/60 border border-ops-border/20"
-              >
-                <div className="font-bold uppercase text-[9px] mb-1 opacity-50 tracking-wider">
-                  {getStageLabel(event.stage)}
-                </div>
-                <div className="prose prose-invert prose-sm max-w-none text-ops-text/90 leading-relaxed">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                    {cleanText}
-                  </ReactMarkdown>
-                  {isLastEvent ? <span className="inline-block w-1.5 h-4 ml-1 align-[-2px] bg-ops-cyan/90 animate-pulse" /> : null}
-                </div>
-              </article>
-            )
-          }
-
-          const cleanText = stripJsonBlocks(event.text)
-          if (!cleanText) return null
-          return (
-            <article
-              key={event.id}
-              className="p-3 rounded-lg bg-ops-panel/60 border border-ops-border/20"
-            >
-              <div className="font-bold uppercase text-[9px] mb-1 opacity-40 tracking-wider">
-                {event.kind === 'final' ? 'Conclusion' : 'Assistant'}
-              </div>
-              <div className="prose prose-invert prose-sm max-w-none text-ops-text/90 leading-relaxed">
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                  {cleanText}
-                </ReactMarkdown>
-              </div>
-            </article>
-          )
-        })}
+      ) : null}
+      
+      {/* 滚动区域 */}
+      <div ref={scrollContainerRef} className="flex flex-1 flex-col gap-3 overflow-y-auto px-4 py-4">
+        {nonPlanEvents.map((event) => (
+          <EventCard
+            key={event.id}
+            event={event}
+            isLastEvent={events[events.length - 1].id === event.id}
+            pendingApprovalRunId={pendingApprovalRunId}
+            onApprove={onApprove}
+            onReject={onReject}
+          />
+        ))}
       </div>
     </div>
   )

@@ -1,4 +1,4 @@
-export type AssetType = 'linux' | 'local_terminal' | 'network' | 'cisco' | 'huawei' | 'juniper' | 'h3c' | 'telnet' | 'serial'
+export type AssetType = 'linux' | 'local_terminal' | 'network' | 'cisco' | 'huawei' | 'juniper' | 'h3c' | 'serial'
 
 export type AssetGroup = {
   id: number
@@ -85,6 +85,30 @@ export type EventItem =
   | { id: string; kind: 'final'; text: string }
   | { id: string; kind: 'error'; text: string }
   | { id: string; kind: 'user'; text: string }
+
+export type ConversationSummary = {
+  id: string
+  title: string
+  selectedModel: string | null
+  createdAt: string
+  updatedAt: string
+  eventCount: number
+  lastEventKind: string | null
+}
+
+export type ConversationDetail = {
+  id: string
+  title: string
+  selectedModel: string | null
+  createdAt: string
+  updatedAt: string
+  events: EventItem[]
+}
+
+export type DeleteConversationResult = {
+  deletedConversationId: string
+  activeConversationId: string | null
+}
 
 export type AssetContext = {
   asset: Asset

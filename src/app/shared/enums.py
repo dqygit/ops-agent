@@ -9,6 +9,7 @@ class AssetType(str, Enum):
     HUAWEI = "huawei"
     JUNIPER = "juniper"
     H3C = "h3c"
+    SERIAL = "serial"
 
 
 class TaskStatus(str, Enum):

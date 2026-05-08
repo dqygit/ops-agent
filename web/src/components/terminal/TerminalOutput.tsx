@@ -62,10 +62,10 @@ export function TerminalOutput({ sessionKey, output, onInput, onResize }: Termin
       fontSize: 13,
       convertEol: true,
       theme: {
-        background: '#081012',
-        foreground: '#dce9e6',
-        cursor: '#67d8ff',
-        selectionBackground: 'rgba(103, 216, 255, 0.3)',
+        background: '#050807',
+        foreground: '#d7e4dd',
+        cursor: '#84cc16',
+        selectionBackground: 'rgba(132, 204, 22, 0.22)',
       },
     })
     const fitAddon = new FitAddon()
@@ -179,8 +179,8 @@ export function TerminalOutput({ sessionKey, output, onInput, onResize }: Termin
   return (
     <div
       ref={containerRef}
-      className="flex-1 w-full bg-ops-bg p-2 relative overflow-hidden focus:outline-none"
-      aria-label="Terminal output"
+      className="relative flex-1 w-full overflow-hidden bg-[#050807] p-2 focus:outline-none"
+      aria-label="终端输出"
       onMouseDown={() => {
         terminalRef.current?.focus()
       }}

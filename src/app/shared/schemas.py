@@ -23,6 +23,10 @@ class AssetCreate(BaseModel):
             return self
         if not self.host:
             raise ValueError("host is required for remote assets")
+        if self.asset_type is AssetType.SERIAL:
+            if self.port <= 0 or self.port == 22:
+                raise ValueError("port must be an explicit positive baud rate for serial assets")
+            return self
         if not self.username:
             raise ValueError("username is required for remote assets")
         if not self.auth_type:
@@ -42,6 +46,7 @@ class SSHKeyUpdate(BaseModel):
     public_key: str | None = None
     private_key: SecretStr | None = None
     passphrase: SecretStr | None = None
+    clear_passphrase: bool = False
 
 
 class ModelConfig(BaseModel):

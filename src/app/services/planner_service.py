@@ -98,10 +98,15 @@ class PlannerService:
                 LLMMessage(
                     role="system",
                     content=(
-                        "你是 Ops Planner。先用自然语言简短说明你如何拆解任务，语气像在和用户解释，不要输出 JSON。"
-                        "自然语言说明结束后，单独输出标记 <FINAL_JSON>，然后输出 JSON："
-                        '{"steps":[{"title":str,"reason":str,"risk_level":str,"expected_output":str}]}'
-                        "。plan 阶段不要生成 command、working_directory。risk_level 只能是 low、medium、high。"
+                        "作为运维任务规划助手，请先用自然语言简短说明如何拆解任务，然后输出标记 <FINAL_JSON>，最后输出 JSON 格式的执行计划。"
+                        "\n\nJSON 格式："
+                        '\n{"steps":[{"title":"步骤标题","reason":"执行原因","risk_level":"风险等级","expected_output":"预期输出"}]}'
+                        "\n\n要求："
+                        "\n- risk_level 只能是 low、medium、high"
+                        "\n- 规划阶段不生成 command 和 working_directory"
+                        "\n- 所有步骤适配非交互式终端"
+                        "\n- 避免交互命令（less、more、man、top、htop、watch、vim、vi、nano）"
+                        "\n- 对于可能分页的命令使用非交互形式（--no-pager、tail、head、sed、grep）"
                     ),
                 ),
                 LLMMessage(
@@ -114,6 +119,7 @@ class PlannerService:
                 ),
             ],
             temperature=0.1,
+            json_mode=False,
         )
 
     def _build_review_request(
@@ -129,11 +135,12 @@ class PlannerService:
                 LLMMessage(
                     role="system",
                     content=(
-                        "你是 Ops Planner。先用自然语言简短说明你如何判断当前结果，再输出标记 <FINAL_JSON>，"
-                        '最后输出 JSON：{"decision":"retry|advance|complete","summary":str}。'
-                        "当当前步骤执行结果有问题需要重新生成命令并再次审批时用 retry；"
-                        "当前步骤通过且应继续下一个步骤时用 advance；"
-                        "全部步骤完成时用 complete。"
+                        "作为运维任务评估助手，请先用自然语言简短说明如何判断当前结果，再输出标记 <FINAL_JSON>，"
+                        '最后输出 JSON：{"decision":"retry|advance|complete","summary":"总结"}。'
+                        "\n\n决策说明："
+                        "\n- retry: 当前步骤有问题，需要重新生成命令"
+                        "\n- advance: 当前步骤通过，继续下一步"
+                        "\n- complete: 全部步骤完成"
                     ),
                 ),
                 LLMMessage(
@@ -147,6 +154,7 @@ class PlannerService:
                 ),
             ],
             temperature=0.1,
+            json_mode=False,
         )
 
     def summarize_task_result(
@@ -188,9 +196,13 @@ class PlannerService:
                 LLMMessage(
                     role="system",
                     content=(
-                        "你是 Ops 总结助手。请基于任务目标和执行历史，输出简洁中文总结。"
-                        "必须包含：任务是否完成、关键执行动作、关键结果、风险或后续建议。"
-                        "只输出自然语言，不要 JSON。"
+                        "作为运维任务总结助手，请基于任务目标和执行历史输出简洁的中文总结。"
+                        "\n\n总结应包含："
+                        "\n- 任务是否完成"
+                        "\n- 关键执行动作"
+                        "\n- 关键结果"
+                        "\n- 风险或后续建议"
+                        "\n\n只输出自然语言，不要 JSON 格式。"
                     ),
                 ),
                 LLMMessage(
@@ -203,6 +215,7 @@ class PlannerService:
                 ),
             ],
             temperature=0.2,
+            json_mode=False,
         )
 
     def _parse_plan_steps(self, text: str) -> list[PlanStep]:
