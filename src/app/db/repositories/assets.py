@@ -4,7 +4,7 @@ from typing import Any, cast
 from sqlalchemy import desc
 from sqlmodel import Session, select
 
-from app.db.models import AgentTask, Asset, AssetGroup, Approval, AutoApprovalMatch, AutoApprovalRule, CommandExecution, Credential, ModelUsage, TaskStep
+from app.db.models import  Asset, AssetGroup, Credential, ModelUsage
 from app.shared.schemas import AssetCreate
 
 
@@ -67,28 +67,15 @@ def list_assets(session: Session) -> list[Asset]:
     return list(session.exec(select(Asset).order_by(desc(cast(Any, Asset.id)))).all())
 
 
+def get_asset(session: Session, asset_id: int) -> Asset | None:
+    return session.exec(select(Asset).where(Asset.id == asset_id)).first()
+
+
 def delete_asset_graph(session: Session, asset_id: int) -> bool:
     asset = session.get(Asset, asset_id)
     if asset is None:
         return False
 
-    tasks = list(session.exec(select(AgentTask).where(AgentTask.asset_id == asset_id)).all())
-    task_ids = [row.id for row in tasks if row.id is not None]
-
-    for task_id in task_ids:
-        for row in session.exec(select(AutoApprovalMatch).where(AutoApprovalMatch.task_id == task_id)).all():
-            session.delete(row)
-        for row in session.exec(select(CommandExecution).where(CommandExecution.task_id == task_id)).all():
-            session.delete(row)
-        for row in session.exec(select(Approval).where(Approval.task_id == task_id)).all():
-            session.delete(row)
-        for row in session.exec(select(ModelUsage).where(ModelUsage.task_id == task_id)).all():
-            session.delete(row)
-        for row in session.exec(select(TaskStep).where(TaskStep.task_id == task_id)).all():
-            session.delete(row)
-
-    for row in tasks:
-        session.delete(row)
     for row in session.exec(select(Credential).where(Credential.asset_id == asset_id)).all():
         session.delete(row)
 

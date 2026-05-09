@@ -1,14 +1,42 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { EmptyState } from '../layout/EmptyState'
-import type { EventItem } from '../../types/ops'
+import type { EventItem, PlanEvent } from '../../types/ops'
 
 type ConversationViewProps = {
   events: EventItem[]
-  pendingApprovalRunId: string | null
+  pendingApprovalRuntimeId: string | null
   onApprove?: () => void
   onReject?: () => void
+}
+
+type DeltaEvent = Extract<EventItem, { kind: 'delta' }>
+type CommandStart = Extract<EventItem, { kind: 'command_start' }>
+type CommandChunk = Extract<EventItem, { kind: 'command_chunk' }>
+type CommandEnd = Extract<EventItem, { kind: 'command_end' }>
+
+type Group =
+  | { type: 'event'; event: EventItem }
+  | { type: 'thinking'; deltas: DeltaEvent[]; key: string }
+  | {
+      type: 'command'
+      key: string
+      startEvent: CommandStart
+      chunkEvents: CommandChunk[]
+      endEvent?: CommandEnd
+    }
+
+const STAGE_ORDER: Array<'planner' | 'executor' | 'review'> = ['planner', 'executor', 'review']
+const STAGE_LABEL: Record<string, string> = {
+  planner: '规划',
+  executor: '精炼',
+  review: '复核',
+}
+const STAGE_ICON_COLOR: Record<string, string> = {
+  planner: 'text-violet-400',
+  executor: 'text-ops-cyan',
+  review: 'text-emerald-400',
 }
 
 function stripAnsi(text: string) {
@@ -57,6 +85,21 @@ function stripJsonBlocks(text: string) {
   return result.trim()
 }
 
+const PROSE_CLASS =
+  'prose prose-invert prose-sm max-w-none text-[14px] leading-7 text-ops-text/95 ' +
+  '[&>*:first-child]:mt-0 [&>*:last-child]:mb-0 ' +
+  '[&_h1]:text-lg [&_h1]:font-bold [&_h1]:text-ops-text [&_h1]:mb-2 [&_h1]:mt-3 ' +
+  '[&_h2]:text-base [&_h2]:font-bold [&_h2]:text-ops-text [&_h2]:mb-2 [&_h2]:mt-3 ' +
+  '[&_h3]:text-sm [&_h3]:font-semibold [&_h3]:text-ops-text/95 [&_h3]:mb-1.5 [&_h3]:mt-2.5 ' +
+  '[&_p]:my-2 [&_ul]:my-2 [&_ul]:space-y-1 [&_ol]:my-2 [&_ol]:space-y-1 ' +
+  '[&_li]:leading-6 [&_li]:text-ops-text/90 ' +
+  '[&_code]:bg-black/40 [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:rounded [&_code]:text-ops-cyan [&_code]:text-[13px] [&_code]:font-mono ' +
+  '[&_pre]:bg-black/60 [&_pre]:p-3 [&_pre]:rounded-md [&_pre]:border [&_pre]:border-ops-border/20 [&_pre]:my-2.5 ' +
+  '[&_pre>code]:bg-transparent [&_pre>code]:p-0 [&_pre>code]:text-ops-text/90 ' +
+  '[&_blockquote]:border-l-4 [&_blockquote]:border-ops-cyan/40 [&_blockquote]:pl-3 [&_blockquote]:italic [&_blockquote]:text-ops-text/80 ' +
+  '[&_strong]:font-bold [&_strong]:text-ops-text [&_em]:italic ' +
+  '[&_a]:text-ops-cyan [&_a]:underline hover:[&_a]:text-ops-cyan/80'
+
 type OutputBlockProps = {
   text: string
   label?: string
@@ -70,7 +113,7 @@ function OutputBlock({ text, label = '命令输出' }: OutputBlockProps) {
 
   return (
     <div className="flex w-full flex-col gap-1 overflow-hidden">
-        <div className="flex items-center justify-between rounded-t border-x border-t border-ops-border/10 bg-black/40 px-2 py-1">
+      <div className="flex items-center justify-between rounded-t border-x border-t border-ops-border/10 bg-black/40 px-2 py-1">
         <span className="text-[10px] font-bold uppercase tracking-widest text-ops-muted">{label}</span>
         {shouldTruncate ? (
           <button
@@ -95,9 +138,9 @@ function OutputBlock({ text, label = '命令输出' }: OutputBlockProps) {
 }
 
 type CommandExecutionCardProps = {
-  startEvent: Extract<EventItem, { kind: 'command_start' }>
-  chunkEvents: Extract<EventItem, { kind: 'command_chunk' }>[]
-  endEvent?: Extract<EventItem, { kind: 'command_end' }>
+  startEvent: CommandStart
+  chunkEvents: CommandChunk[]
+  endEvent?: CommandEnd
 }
 
 function CommandExecutionCard({ startEvent, chunkEvents, endEvent }: CommandExecutionCardProps) {
@@ -116,7 +159,7 @@ function CommandExecutionCard({ startEvent, chunkEvents, endEvent }: CommandExec
           <div className="text-[10px] font-bold uppercase tracking-wider text-ops-cyan/90">命令执行</div>
           <div className="mt-1 text-sm font-semibold text-ops-text">{startEvent.title?.trim() || '终端命令'}</div>
         </div>
-        <div className={`rounded px-2 py-1 text-[10px] font-bold ${endEvent ? (exitCode === null || exitCode === 0 ? 'bg-ops-green/15 text-ops-green' : 'bg-ops-danger/15 text-ops-red') : 'bg-ops-cyan/15 text-ops-cyan'}`}>
+        <div className={`rounded px-2 py-1 text-[10px] font-bold ${endEvent ? (exitCode === null || exitCode === 0 ? 'bg-ops-green/15 text-ops-green' : 'bg-ops-danger/15 text-ops-red') : 'bg-ops-cyan/15 text-ops-cyan animate-pulse'}`}>
           {statusLabel}
         </div>
       </div>
@@ -151,10 +194,10 @@ function CommandCard({ command, showActions, onApprove, onReject }: CommandCardP
           <button
             type="button"
             onClick={onApprove}
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-ops-green/25 text-ops-green shadow-sm transition-over:bg-ops-green/35 hover:scale-105 active:scale-95"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-ops-green/25 text-ops-green shadow-sm transition-all hover:bg-ops-green/35 hover:scale-105 active:scale-95"
             aria-label="批准执行"
           >
-            <svg className="h-4.5 w-4.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
             </svg>
           </button>
@@ -169,7 +212,7 @@ function CommandCard({ command, showActions, onApprove, onReject }: CommandCardP
             className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-ops-red/25 text-ops-red shadow-sm transition-all hover:bg-ops-red/35 hover:scale-105 active:scale-95"
             aria-label="拒绝执行"
           >
-            <svg className="h-4.5 w-4.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>
@@ -180,54 +223,195 @@ function CommandCard({ command, showActions, onApprove, onReject }: CommandCardP
 }
 
 type PlanSummaryCardProps = {
-  event: Extract<EventItem, { kind: 'plan' }>
+  event: PlanEvent
 }
 
 function PlanSummaryCard({ event }: PlanSummaryCardProps) {
+  const isPlanMode = event.mode === 'plan'
+  const totalSteps = event.steps.length
+  const completedSteps = event.steps.filter((step) => step.status === 'completed').length
+  const runningStep = event.steps.find((step) => step.status === 'running')
+  const progress = totalSteps > 0 ? Math.round((completedSteps / totalSteps) * 100) : 0
+
   return (
-    <div className="rounded-md border border-ops-border/40 bg-[#0a0f0c] p-3">
-      <div className="mb-2 flex items-center justify-between gap-3">
+    <div className="rounded-lg border border-ops-border/40 bg-gradient-to-br from-[#0a0f0c] to-[#0d1410] p-3 shadow-sm">
+      <div className="mb-2.5 flex items-center justify-between gap-3">
         <div className="flex items-center gap-2">
-          <div className="h-3 w-1.5 rounded-full bg-ops-green" />
-          <h3 className="text-sm font-bold tracking-wide text-ops-text">{event.title?.trim() || '任务计划'}</h3>
+          <div className={`h-3.5 w-1.5 rounded-full ${isPlanMode ? 'bg-ops-cyan' : 'bg-ops-green'}`} />
+          <h3 className="text-[13.5px] font-bold tracking-wide text-ops-text">{event.title?.trim() || '任务计划'}</h3>
+          {isPlanMode && event.lockedPlan ? (
+            <span className="inline-flex items-center gap-1 rounded-md border border-ops-cyan/35 bg-ops-cyan/10 px-1.5 py-0.5 text-[10px] font-medium text-ops-cyan">
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"></rect><path d="M7 11V7a5 5 0 0110 0v4"></path></svg>
+              已锁定
+            </span>
+          ) : null}
         </div>
         <div className="flex items-center gap-2 text-[10px] uppercase tracking-wider text-ops-muted">
-          {event.loading ? <span className="animate-pulse text-ops-cyan">● 规划中...</span> : null}
-          {typeof event.version === 'number' ? <span className="rounded bg-ops-border/20 px-1.5 py-0.5">v{event.version}</span> : null}
+          {event.loading ? <span className="animate-pulse text-ops-cyan">● 规划中</span> : null}
+          {totalSteps > 0 ? (
+            <span className="tabular-nums">
+              {completedSteps}/{totalSteps}
+            </span>
+          ) : null}
+          {typeof event.version === 'number' && event.version > 0 ? (
+            <span className="rounded bg-ops-border/20 px-1.5 py-0.5">v{event.version}</span>
+          ) : null}
         </div>
       </div>
-      <div className="flex flex-wrap gap-1.5">
-        {event.steps.map((step, index) => (
+
+      {totalSteps > 0 ? (
+        <div className="mb-2.5 h-1 overflow-hidden rounded-full bg-ops-border/15">
           <div
-            key={step.id ?? `step-${index}`}
-            className={`inline-flex cursor-help items-center gap-1.5 rounded px-2 py-1 text-[11px] ${
-              step.status === 'completed'
-                ? 'border border-ops-green/20 bg-ops-green/10 text-ops-green'
-                : step.status === 'running'
-                  ? 'animate-pulse border border-ops-cyan/20 bg-ops-cyan/10 text-ops-cyan'
-                  : 'border border-ops-border/10 bg-black/20 text-ops-muted'
-            }`}
-            title={step.title}
-          >
-            <span className="font-bold">{index + 1}</span>
-            <span className="max-w-[120px] truncate">{step.title}</span>
-            {step.status === 'completed' ? <span>✓</span> : null}
-          </div>
-        ))}
-      </div>
+            className={`h-full rounded-full transition-all duration-500 ${isPlanMode ? 'bg-gradient-to-r from-ops-cyan via-ops-cyan/80 to-emerald-400' : 'bg-gradient-to-r from-ops-green to-emerald-400'}`}
+            style={{ width: `${progress}%` }}
+          />
+        </div>
+      ) : null}
+
+      <ol className="flex flex-col gap-1">
+        {event.steps.map((step, index) => {
+          const isRunning = step.status === 'running' || (runningStep === undefined && index === completedSteps && step.status === 'pending')
+          return (
+            <li
+              key={step.id ?? `step-${index}`}
+              className={`flex items-start gap-2.5 rounded-md border px-2.5 py-1.5 text-[12px] transition-colors ${
+                step.status === 'completed'
+                  ? 'border-ops-green/25 bg-ops-green/5 text-ops-green'
+                  : isRunning
+                    ? 'border-ops-cyan/35 bg-ops-cyan/8 text-ops-cyan shadow-[0_0_0_1px_rgba(34,211,238,0.18)]'
+                    : 'border-ops-border/20 bg-black/15 text-ops-muted'
+              }`}
+              title={step.title}
+            >
+              <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[10px] font-bold">
+                {step.status === 'completed' ? '✓' : index + 1}
+              </span>
+              <span className="min-w-0 flex-1 truncate font-medium">{step.title}</span>
+              {isRunning ? <span className="shrink-0 text-[10px] uppercase tracking-wider text-ops-cyan/80 animate-pulse">执行中</span> : null}
+            </li>
+          )
+        })}
+      </ol>
     </div>
+  )
+}
+
+type ThinkingChainProps = {
+  deltas: DeltaEvent[]
+  isStreaming: boolean
+}
+
+function ThinkingChain({ deltas, isStreaming }: ThinkingChainProps) {
+  const stageContent = useMemo(() => {
+    const out: Record<string, string> = {}
+    for (const d of deltas) {
+      const stage = d.stage || 'planner'
+      if (out[stage]) {
+        out[stage] += '\n\n'
+      } else {
+        out[stage] = ''
+      }
+      out[stage] += stripJsonBlocks(d.text || '')
+    }
+    return out
+  }, [deltas])
+
+  const visibleStages = STAGE_ORDER.filter((s) => (stageContent[s] || '').trim().length > 0)
+
+  const lastDeltaStage = (deltas[deltas.length - 1]?.stage || visibleStages[0] || 'planner') as string
+  const [activeStage, setActiveStage] = useState<string>(lastDeltaStage)
+  const [userInteracted, setUserInteracted] = useState(false)
+  const [isExpanded, setIsExpanded] = useState<boolean>(isStreaming)
+
+  // 流式过程中跟随最新 stage；用户主动切过则尊重用户
+  useEffect(() => {
+    if (isStreaming && !userInteracted) {
+      setActiveStage(lastDeltaStage)
+    }
+  }, [isStreaming, lastDeltaStage, userInteracted])
+
+  // 流式时自动展开
+  useEffect(() => {
+    if (isStreaming) {
+      setIsExpanded(true)
+    }
+  }, [isStreaming])
+
+  // 流式结束后默认收起一次（避免一次任务结束后还堆积一堆展开的卡）
+  const wasStreamingRef = useRef(isStreaming)
+  useEffect(() => {
+    if (wasStreamingRef.current && !isStreaming) {
+      setIsExpanded(false)
+    }
+    wasStreamingRef.current = isStreaming
+  }, [isStreaming])
+
+  if (visibleStages.length === 0) return null
+  const activeKey = visibleStages.includes(activeStage as (typeof STAGE_ORDER)[number]) ? activeStage : visibleStages[0]
+  const activeText = stageContent[activeKey] || ''
+
+  return (
+    <article className="rounded-lg border border-ops-border/35 bg-[linear-gradient(180deg,rgba(15,23,42,0.55),rgba(10,15,12,0.85))] shadow-sm">
+      <header className="flex items-center justify-between gap-3 border-b border-ops-border/20 px-3 py-2">
+        <div className="flex items-center gap-2 min-w-0">
+          <div className={`h-1.5 w-1.5 rounded-full ${isStreaming ? 'bg-ops-cyan animate-pulse' : 'bg-ops-border/60'}`} />
+          <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-ops-muted">AI 思考链</span>
+          <div className="ml-1 flex shrink-0 items-center gap-1">
+            {visibleStages.map((stage) => {
+              const isActive = stage === activeKey
+              return (
+                <button
+                  key={stage}
+                  type="button"
+                  onClick={() => {
+                    setUserInteracted(true)
+                    setActiveStage(stage)
+                    setIsExpanded(true)
+                  }}
+                  className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] transition-colors ${
+                    isActive
+                      ? 'bg-ops-cyan/15 text-ops-cyan border border-ops-cyan/35'
+                      : 'border border-ops-border/30 bg-black/25 text-ops-muted hover:text-ops-text hover:border-ops-border/55'
+                  }`}
+                >
+                  <span className={STAGE_ICON_COLOR[stage] || ''}>●</span>
+                  {STAGE_LABEL[stage] || stage}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={() => setIsExpanded((prev) => !prev)}
+          className="shrink-0 rounded p-1 text-ops-muted hover:bg-ops-border/15 hover:text-ops-text"
+          aria-label={isExpanded ? '收起思考链' : '展开思考链'}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className={`transition-transform ${isExpanded ? 'rotate-180' : ''}`}>
+            <path d="M6 9l6 6 6-6" />
+          </svg>
+        </button>
+      </header>
+      {isExpanded ? (
+        <div className="px-4 py-3">
+          <div className={PROSE_CLASS}>
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{activeText}</ReactMarkdown>
+            {isStreaming ? <span className="ml-1 inline-block h-3.5 w-1.5 animate-pulse align-[-2px] rounded-sm bg-ops-cyan/85" /> : null}
+          </div>
+        </div>
+      ) : null}
+    </article>
   )
 }
 
 type EventCardProps = {
   event: EventItem
-  isLastEvent: boolean
-  pendingApprovalRunId: string | null
+  pendingApprovalRuntimeId: string | null
   onApprove?: () => void
   onReject?: () => void
 }
 
-function EventCard({ event, isLastEvent, pendingApprovalRunId, onApprove, onReject }: EventCardProps) {
+function EventCard({ event, pendingApprovalRuntimeId, onApprove, onReject }: EventCardProps) {
   if (event.kind === 'status') {
     return <div className="text-xs italic text-ops-muted">{event.text}</div>
   }
@@ -245,119 +429,109 @@ function EventCard({ event, isLastEvent, pendingApprovalRunId, onApprove, onReje
     return <OutputBlock text={event.text} />
   }
 
-  if (event.kind === 'command_start' || event.kind === 'command_chunk' || event.kind === 'command_end' || event.kind === 'terminal_status') {
-    return null
-  }
-
   if (event.kind === 'user') {
     return (
-      <article className="ml-8 rounded-md border border-ops-green/35 bg-ops-green/8 p-3">
-        <div className="mb-1 text-[9px] font-bold uppercase tracking-wider text-ops-cyan">用户</div>
-        <p className="m-0 text-sm text-ops-text">{event.text}</p>
-      </article>
+      <div className="flex justify-end">
+        <article className="max-w-[85%] rounded-lg border border-ops-cyan/40 bg-gradient-to-br from-ops-cyan/12 to-ops-cyan/6 px-3.5 py-2.5 shadow-sm">
+          <div className="mb-0.5 text-[9.5px] font-bold uppercase tracking-[0.16em] text-ops-cyan/90">你</div>
+          <p className="m-0 whitespace-pre-wrap text-[14px] leading-6 text-ops-text">{event.text}</p>
+        </article>
+      </div>
     )
   }
 
   if (event.kind === 'approval') {
-    const showActions = pendingApprovalRunId !== null && event.runId === pendingApprovalRunId
+    const showActions = pendingApprovalRuntimeId !== null && event.runtimeId === pendingApprovalRuntimeId
     return <CommandCard command={event.command} showActions={showActions} onApprove={onApprove} onReject={onReject} />
   }
 
-  if (event.kind === 'plan') {
-    return <PlanSummaryCard event={event} />
-  }
-
-  if (event.kind === 'delta') {
+  if (event.kind === 'final') {
     return (
-      <article className="group rounded-lg border border-ops-border/40 bg-gradient-to-br from-ops-panel/95 to-ops-panel/80 p-5 shadow-sm transition-all hover:border-ops-border/60 hover:shadow-md">
-        <div className="mb-3 flex items-center gap-2">
-          <div className="h-1.5 w-1.5 rounded-full bg-ops-cyan animate-pulse" />
-          <div className="text-[10px] font-bold uppercase tracking-wider text-ops-cyan/90">
-            {getStageLabel(event.stage)}
-          </div>
+      <article className="rounded-lg border border-ops-green/45 bg-gradient-to-br from-ops-green/12 to-emerald-500/8 p-4 shadow-sm">
+        <div className="mb-2 flex items-center gap-2">
+          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-ops-green/25 text-ops-green">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M5 13l4 4L19 7" /></svg>
+          </span>
+          <div className="text-[10px] font-bold uppercase tracking-wider text-ops-green/95">任务结论</div>
         </div>
-        <div className="prose prose-invert prose-base max-w-none text-[15px] leading-relaxed text-ops-text/95 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&>h1]:text-xl [&>h1]:font-bold [&>h1]:text-ops-text [&>h1]:mb-3 [&>h1]:mt-4 [&>h2]:text-lg [&>h2]:font-bold [&>h2]:text-ops-text [&>h2]:mb-2.5 [&>h2]:mt-3.5 [&>h3]:text-base [&>h3]:font-semibold [&>h3]:text-ops-text/95 [&>h3]:mb-2 [&>h3]:mt-3 [&>p]:my-2.5 [&>p]:leading-7 [&>ul]:my-2.5 [&>ul]:space-y-1.5 [&>ol]:my-2.5 [&>ol]:space-y-1.5 [&>li]:leading-6 [&>li]:text-ops-text/90 [&>code]:bg-black/40 [&>code]:px-1.5 [&>code]:py-0.5 [&>code]:rounded [&>code]:text-ops-cyan [&>code]:text-sm [&>code]:font-mono [&>pre]:bg-black/60 [&>pre]:p-4 [&>pre]:rounded-lg [&>pre]:border [&>pre]:border-ops-border/20 [&>pre]:my-3 [&>pre>code]:bg-transparent [&>pre>code]:p-0 [&>pre>code]:text-ops-text/90 [&>blockquote]:border-l-4 [&>blockquote]:border-ops-cyan/40 [&>blockquote]:pl-4 [&>blockquote]:italic [&>blockquote]:text-ops-text/80 [&>strong]:font-bold [&>strong]:text-ops-text [&>em]:italic [&>a]:text-ops-cyan [&>a]:underline [&>a]:hover:text-ops-cyan/80">
+        <div className={PROSE_CLASS}>
           <ReactMarkdown remarkPlugins={[remarkGfm]}>{stripJsonBlocks(event.text)}</ReactMarkdown>
-          {isLastEvent ? <span className="ml-1 inline-block h-4 w-1.5 animate-pulse align-[-2px] bg-ops-cyan/90 rounded-sm" /> : null}
         </div>
       </article>
     )
   }
 
-  return (
-    <article className="group rounded-lg border border-ops-border/40 bg-gradient-to-br from-ops-panel/95 to-ops-panel/80 p-5 shadow-sm transition-all hover:border-ops-border/60 hover:shadow-md">
-      <div className="mb-3 flex items-center gap-2">
-        <div className="h-1.5 w-1.5 rounded-full bg-ops-green/80" />
-        <div className="text-[10px] font-bold uppercase tracking-wider text-ops-green/90">
-          {event.kind === 'final' ? '✓ 结论' : '助手回复'}
-        </div>
-      </div>
-      <div className="prose prose-invert prose-base max-w-none text-[15px] leading-relaxed text-ops-text/95 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&>h1]:text-xl [&>h1]:font-bold [&>h1]:text-ops-text [&>h1]:mb-3 [&>h1]:mt-4 [&>h2]:text-lg [&>h2]:font-bold [&>h2]:text-ops-text [&>h2]:mb-2.5 [&>h2]:mt-3.5 [&>h3]:text-base [&>h3]:font-semibold [&>h3]:text-ops-text/95 [&>h3]:mb-2 [&>h3]:mt-3 [&>p]:my-2.5 [&>p]:leading-7 [&>ul]:my-2.5 [&>ul]:space-y-1.5 [&>ol]:my-2.5 [&>ol]:space-y-1.5 [&>li]:leading-6 [&>li]:text-ops-text/90 [&>code]:bg-black/40 [&>code]:px-1.5 [&>code]:py-0.5 [&>code]:rounded [&>code]:text-ops-cyan [&>code]:text-sm [&>code]:font-mono [&>pre]:bg-black/60 [&>pre]:p-4 [&>pre]:rounded-lg [&>pre]:border [&>pre]:border-ops-border/:bg-transparent [&>pre>code]:p-0 [&>pre>code]:text-ops-text/90 [&>blockquote]:border-l-4 [&>blockquote]:border-ops-cyan/40 [&>blockquote]:pl-4 [&>blockquote]:italic [&>blockquote]:text-ops-text/80 [&>strong]:font-bold [&>strong]:text-ops-text [&>em]:italic [&>a]:text-ops-cyan [&>a]:underline [&>a]:hover:text-ops-cyan/80">
-        <ReactMarkdown remarkPlugins={[remarkGfm]}>{stripJsonBlocks(event.text)}</ReactMarkdown>
-      </div>
-    </article>
-  )
+  // 兜底（不应该走到这里 —— delta/plan/command_* 都已经被分组处理）
+  return null
 }
 
-function getStageLabel(stage?: string) {
-  if (stage === 'planner') return '规划'
-  if (stage === 'executor') return '执行'
-  if (stage === 'review') return '复核'
-  return '助手'
-}
-
-export function ConversationView({ events, pendingApprovalRunId, onApprove, onReject }: ConversationViewProps) {
+export function ConversationView({ events, pendingApprovalRuntimeId, onApprove, onReject }: ConversationViewProps) {
   const scrollContainerRef = useRef<HTMLDivElement | null>(null)
   const shouldAutoScrollRef = useRef(true)
 
-  // 找到最新的 plan 事件
-  const latestPlanEvent = events.filter(e => e.kind === 'plan').pop() as Extract<EventItem, { kind: 'plan' }> | undefined
-  
-  // 过滤掉所有 plan 事件,只保留其他事件
-  const nonPlanEvents = events.filter(e => e.kind !== 'plan')
+  const planEvents = events.filter((e): e is PlanEvent => e.kind === 'plan')
+  const latestPlanEvent = planEvents[planEvents.length - 1]
+  const isPlanMode = latestPlanEvent?.mode === 'plan'
+  const showPlanCard = !!latestPlanEvent && isPlanMode
 
-  const renderedEvents: Array<
-    | { type: 'event'; event: EventItem }
-    | {
-        type: 'command'
-        startEvent: Extract<EventItem, { kind: 'command_start' }>
-        chunkEvents: Extract<EventItem, { kind: 'command_chunk' }>[],
-        endEvent?: Extract<EventItem, { kind: 'command_end' }>
-      }
-  > = []
+  // 是否正在流式（最后一个事件是 delta，说明 LLM 还在产出 token）
+  const lastEvent = events[events.length - 1]
+  const isStreamingNow = lastEvent?.kind === 'delta'
 
-  const commandGroupMap = new Map<string, { index: number; startEvent: Extract<EventItem, { kind: 'command_start' }>; chunkEvents: Extract<EventItem, { kind: 'command_chunk' }>[]; endEvent?: Extract<EventItem, { kind: 'command_end' }> }>()
+  const groups: Group[] = []
+  const commandGroupMap = new Map<string, { index: number }>()
+  let currentDeltaGroup: DeltaEvent[] = []
+  let deltaGroupCounter = 0
 
-  nonPlanEvents.forEach((event) => {
-    if (event.kind === 'command_start') {
-      const group = { startEvent: event, chunkEvents: [] as Extract<EventItem, { kind: 'command_chunk' }>[], endEvent: undefined as Extract<EventItem, { kind: 'command_end' }> | undefined }
-      renderedEvents.push({ type: 'command', ...group })
-      commandGroupMap.set(event.commandId, { index: renderedEvents.length - 1, ...group })
-      return
+  const flushDeltaGroup = () => {
+    if (currentDeltaGroup.length === 0) return
+    groups.push({ type: 'thinking', deltas: currentDeltaGroup, key: `chain-${deltaGroupCounter++}` })
+    currentDeltaGroup = []
+  }
+
+  for (const event of events) {
+    if (event.kind === 'plan') {
+      // 计划事件已经被 PlanSummaryCard pinned 在顶部统一渲染（且 Agent 模式不展示）
+      continue
     }
-
-    if (event.kind === 'command_chunk') {
-      const group = commandGroupMap.get(event.commandId)
-      if (group) {
-        group.chunkEvents.push(event)
-      }
-      return
-    }
-
-    if (event.kind === 'command_end') {
-      const group = commandGroupMap.get(event.commandId)
-      if (group) {
-        group.endEvent = event
-      }
-      return
-    }
-
     if (event.kind === 'terminal_status') {
-      return
+      continue
     }
 
-    renderedEvents.push({ type: 'event', event })
-  })
+    if (event.kind === 'delta') {
+      currentDeltaGroup.push(event)
+      continue
+    }
+
+    flushDeltaGroup()
+
+    if (event.kind === 'command_start') {
+      const group = { startEvent: event, chunkEvents: [] as CommandChunk[], endEvent: undefined as CommandEnd | undefined }
+      groups.push({ type: 'command', key: `cmd-${event.commandId}`, ...group })
+      commandGroupMap.set(event.commandId, { index: groups.length - 1 })
+      continue
+    }
+    if (event.kind === 'command_chunk') {
+      const ref = commandGroupMap.get(event.commandId)
+      if (ref) {
+        const target = groups[ref.index]
+        if (target.type === 'command') target.chunkEvents.push(event)
+      }
+      continue
+    }
+    if (event.kind === 'command_end') {
+      const ref = commandGroupMap.get(event.commandId)
+      if (ref) {
+        const target = groups[ref.index]
+        if (target.type === 'command') target.endEvent = event
+      }
+      continue
+    }
+
+    groups.push({ type: 'event', event })
+  }
+
+  flushDeltaGroup()
 
   useEffect(() => {
     const el = scrollContainerRef.current
@@ -395,36 +569,43 @@ export function ConversationView({ events, pendingApprovalRunId, onApprove, onRe
     )
   }
 
+  // chain 是否流式：仅最后一个 group 是 thinking 时，结合 isStreamingNow 判断
+  const lastGroupIndex = groups.length - 1
+
   return (
     <div className="flex flex-1 flex-col overflow-hidden" aria-label="助手会话">
-      {/* 固定在顶部的任务计划 */}
-      {latestPlanEvent ? (
+      {showPlanCard && latestPlanEvent ? (
         <div className="border-b border-ops-border/30 bg-ops-bg/95 px-4 py-3 backdrop-blur-sm">
           <PlanSummaryCard event={latestPlanEvent} />
         </div>
       ) : null}
-      
-      {/* 滚动区域 */}
+
       <div ref={scrollContainerRef} className="flex flex-1 flex-col gap-3 overflow-y-auto px-4 py-4">
-        {renderedEvents.map((entry, index) =>
-          entry.type === 'command' ? (
-            <CommandExecutionCard
-              key={entry.startEvent.commandId}
-              startEvent={entry.startEvent}
-              chunkEvents={entry.chunkEvents}
-              endEvent={entry.endEvent}
-            />
-          ) : (
+        {groups.map((entry, index) => {
+          if (entry.type === 'command') {
+            return (
+              <CommandExecutionCard
+                key={entry.key}
+                startEvent={entry.startEvent}
+                chunkEvents={entry.chunkEvents}
+                endEvent={entry.endEvent}
+              />
+            )
+          }
+          if (entry.type === 'thinking') {
+            const isLast = index === lastGroupIndex
+            return <ThinkingChain key={entry.key} deltas={entry.deltas} isStreaming={isLast && isStreamingNow} />
+          }
+          return (
             <EventCard
               key={entry.event.id}
               event={entry.event}
-              isLastEvent={index === renderedEvents.length - 1}
-              pendingApprovalRunId={pendingApprovalRunId}
+              pendingApprovalRuntimeId={pendingApprovalRuntimeId}
               onApprove={onApprove}
               onReject={onReject}
             />
           )
-        )}
+        })}
       </div>
     </div>
   )

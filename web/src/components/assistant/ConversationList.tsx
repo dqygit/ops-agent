@@ -22,71 +22,120 @@ function formatUpdatedTime(value: string) {
   return timeFormatter.format(date)
 }
 
-function getEventKindLabel(kind: string | null) {
-  if (kind === 'approval') return '待审批'
-  if (kind === 'error') return '错误'
-  if (kind === 'final') return '完成'
-  if (kind === 'plan') return '计划'
-  if (kind === 'output') return '输出'
-  if (kind === 'user') return '提问'
-  if (kind === 'delta') return '处理中'
-  return '空会话'
+type StatusMeta = { label: string; color: string }
+
+function getStatusMeta(kind: string | null): StatusMeta {
+  switch (kind) {
+    case 'approval':
+      return { label: '待审批', color: 'text-amber-400 border-amber-400/40 bg-amber-400/10' }
+    case 'error':
+      return { label: '错误', color: 'text-ops-red border-ops-danger/45 bg-ops-danger/10' }
+    case 'final':
+      return { label: '完成', color: 'text-ops-green border-ops-green/40 bg-ops-green/10' }
+    case 'plan':
+      return { label: '规划中', color: 'text-ops-cyan border-ops-cyan/40 bg-ops-cyan/10' }
+    case 'output':
+    case 'command_end':
+      return { label: '已执行', color: 'text-ops-text/80 border-ops-border/30 bg-black/20' }
+    case 'user':
+      return { label: '已发起', color: 'text-ops-text/80 border-ops-border/30 bg-black/20' }
+    case 'delta':
+      return { label: '处理中', color: 'text-ops-cyan border-ops-cyan/30 bg-ops-cyan/10' }
+    default:
+      return { label: '空会话', color: 'text-ops-muted border-ops-border/30 bg-black/15' }
+  }
+}
+
+function getInitial(title: string) {
+  const trimmed = (title || '').trim()
+  if (!trimmed) return '·'
+  // 优先使用第一个汉字 / 字母 / 数字
+  const ch = Array.from(trimmed)[0]
+  return ch || '·'
 }
 
 export function ConversationList({ items, activeConversationId, onSelect, onDelete }: ConversationListProps) {
   return (
     <div className="flex h-full flex-col bg-[#070b09]" aria-label="会话列表">
-
       <div className="flex-1 overflow-y-auto p-2.5">
         {items.length > 0 ? (
-          <div className="flex flex-col gap-2">
+          <ul className="flex flex-col gap-1.5" role="list">
             {items.map((item) => {
               const isActive = item.id === activeConversationId
+              const status = getStatusMeta(item.lastEventKind)
+              const isUntitled = !item.title || item.title.trim() === '' || item.title.trim() === 'New'
+              const displayTitle = isUntitled ? '未命名会话' : item.title
+
               return (
-                <div key={item.id} className="group relative">
+                <li key={item.id} className="group relative">
                   <button
                     type="button"
-                    className={`relative w-full overflow-hidden border-l-2 px-3 py-3 text-left transition-colors ${
+                    className={`relative flex w-full items-start gap-2.5 overflow-hidden rounded-lg border px-3 py-3 text-left transition-all ${
                       isActive
-                        ? 'border-l-ops-green bg-ops-green/8'
-                        : 'border-l-transparent bg-transparent hover:bg-ops-panel/70'
+                        ? 'border-ops-green/55 bg-gradient-to-br from-ops-green/12 via-ops-green/6 to-transparent shadow-[0_0_0_1px_rgba(34,197,94,0.18)]'
+                        : 'border-transparent bg-transparent hover:border-ops-border/40 hover:bg-ops-panel/55'
                     }`}
                     onClick={() => onSelect(item.id)}
-                    title={item.title}
+                    title={displayTitle}
                   >
-                    {isActive ? <span className="absolute inset-y-3 left-0 w-0.5 rounded-full bg-ops-cyan shadow-[0_0_12px_rgba(34,211,238,0.7)]" aria-hidden="true" /> : null}
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0 flex-1">
+                    {isActive ? (
+                      <span
+                        className="absolute inset-y-2 left-0 w-[3px] rounded-r-full bg-gradient-to-b from-ops-green via-ops-cyan to-ops-green/40"
+                        aria-hidden="true"
+                      />
+                    ) : null}
 
-                        <div className="truncate text-sm font-medium tracking-[0.01em] text-ops-text">{item.title}</div>
-                        <div className="mt-1 flex items-center gap-2 text-[11px] text-ops-muted">
-                          <span>{formatUpdatedTime(item.updatedAt)}</span>
-                          <span className="text-ops-border/60">•</span>
-                          <span>{item.eventCount} 条事件</span>
-                        </div>
-                        
-                      </div>
-                    
+                    {/* 圆形首字图标 */}
+                    <div
+                      className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-sm font-semibold tracking-tight ${
+                        isActive
+                          ? 'border border-ops-green/45 bg-ops-green/15 text-ops-green'
+                          : 'border border-ops-border/40 bg-black/30 text-ops-text/80 group-hover:border-ops-border/60'
+                      }`}
+                      aria-hidden="true"
+                    >
+                      {getInitial(displayTitle)}
                     </div>
-                    <div className="mt-2 flex items-center justify-between gap-2">
-                      <div className="inline-flex rounded-lg border border-ops-border/10 bg-black/15 px-2 py-1 text-[10px] uppercase tracking-[0.12em] text-ops-text/65">
-                        {getEventKindLabel(item.lastEventKind)}
+
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-start justify-between gap-2">
+                        <h3
+                          className={`truncate text-[13.5px] font-semibold leading-snug tracking-[-0.005em] ${
+                            isActive ? 'text-ops-text' : 'text-ops-text/95'
+                          } ${isUntitled ? 'italic text-ops-text/55' : ''}`}
+                        >
+                          {displayTitle}
+                        </h3>
                       </div>
-                      <div className="h-px flex-1 bg-gradient-to-r from-ops-border/10 to-transparent" aria-hidden="true" />
+
+                      <div className="mt-1 flex items-center gap-1.5 text-[11px] leading-tight text-ops-muted">
+                        <span
+                          className={`inline-flex shrink-0 items-center rounded-full border px-1.5 py-[1px] text-[10px] font-medium uppercase tracking-[0.06em] ${status.color}`}
+                        >
+                          {status.label}
+                        </span>
+                        <span className="text-ops-border/60" aria-hidden="true">·</span>
+                        <span className="shrink-0">{formatUpdatedTime(item.updatedAt)}</span>
+                        <span className="text-ops-border/60" aria-hidden="true">·</span>
+                        <span className="shrink-0 tabular-nums text-ops-muted/85">{item.eventCount} 条</span>
+                      </div>
                     </div>
                   </button>
                   <button
                     type="button"
-                    className="absolute right-2 top-2 rounded-md p-1 text-ops-muted opacity-0 transition-all hover:bg-ops-danger/10 hover:text-ops-danger group-hover:opacity-100"
-                    onClick={() => onDelete(item.id)}
-                    aria-label={`删除会话 ${item.title}`}
+                    className="absolute right-2 top-2 rounded-md p-1 text-ops-muted opacity-0 transition-all hover:bg-ops-danger/15 hover:text-ops-danger group-hover:opacity-100 focus:opacity-100"
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      onDelete(item.id)
+                    }}
+                    aria-label={`删除会话 ${displayTitle}`}
                   >
-                    ×
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6L6 18M6 6l12 12" /></svg>
                   </button>
-                </div>
+                </li>
               )
             })}
-          </div>
+          </ul>
         ) : (
           <div className="rounded-2xl border border-dashed border-ops-border/20 bg-[linear-gradient(180deg,rgba(34,211,238,0.06),rgba(15,23,42,0.16))] px-3 py-5 text-xs text-ops-muted">
             <div className="flex flex-col gap-2">

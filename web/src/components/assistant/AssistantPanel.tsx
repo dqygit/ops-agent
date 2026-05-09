@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import { PanelCard } from '../layout/PanelCard'
-import type { Asset, ConversationSummary, EventItem } from '../../types/ops'
+import type { RunMode } from '../../types/api'
+import type { Asset, ConversationSummary, EventItem, RuntimeSnapshot, RuntimeSummary } from '../../types/ops'
 import { ConversationView } from './ConversationView'
 import { PromptInput } from './PromptInput'
 
@@ -9,13 +10,17 @@ type AssistantPanelProps = {
   activeConversationId: string | null
   activeConversationTitle: string
   events: EventItem[]
-  pendingApprovalRunId: string | null
+  pendingApprovalRuntimeId: string | null
+  runtimeSummaries: RuntimeSummary[]
+  activeRuntimeSnapshot: RuntimeSnapshot | null
   models: string[]
   selectedModel: string
+  runMode: RunMode
   prompt: string
   selectedAsset: Asset
   loadError: string | null
   onModelChange: (model: string) => void
+  onRunModeChange: (mode: RunMode) => void
   onPromptChange: (prompt: string) => void
   onCreateConversation: () => void
   onSelectConversation: (conversationId: string) => void
@@ -48,13 +53,17 @@ export function AssistantPanel({
   activeConversationId,
   activeConversationTitle,
   events,
-  pendingApprovalRunId,
+  pendingApprovalRuntimeId,
+  runtimeSummaries,
+  activeRuntimeSnapshot,
   models,
   selectedModel,
+  runMode,
   prompt,
   selectedAsset,
   loadError,
   onModelChange,
+  onRunModeChange,
   onPromptChange,
   onCreateConversation,
   onSelectConversation,
@@ -80,11 +89,28 @@ export function AssistantPanel({
                 <span className="h-1.5 w-1.5 rounded-full bg-ops-green" />
                 {selectedAsset.name}
               </span>
+              <span
+                className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[10.5px] font-medium uppercase tracking-[0.06em] ${
+                  runMode === 'plan'
+                    ? 'border-ops-cyan/35 bg-ops-cyan/10 text-ops-cyan'
+                    : 'border-ops-green/35 bg-ops-green/10 text-ops-green'
+                }`}
+                title={runMode === 'plan' ? '锁定全部步骤后逐条执行；中高风险逐条审批' : '边规划边执行，可重试或重规划'}
+              >
+                {runMode === 'plan' ? (
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"></rect><path d="M7 11V7a5 5 0 0110 0v4"></path></svg>
+                ) : (
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3" /><path d="M12 1v6M12 17v6M1 12h6M17 12h6" /></svg>
+                )}
+                {runMode === 'plan' ? 'Plan' : 'Agent'} 模式
+              </span>
               <span>{selectedAsset.host}</span>
               <span className="text-ops-border/70">•</span>
               <span>{selectedModel || '未选择模型'}</span>
               <span className="text-ops-border/70">•</span>
               <span>{activeConversation?.eventCount ?? events.length} 条事件</span>
+              <span className="text-ops-border/70">•</span>
+              <span>{runtimeSummaries.length} 条 runtime</span>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -98,9 +124,9 @@ export function AssistantPanel({
           </div>
         </div>
         <div className="grid grid-cols-3 gap-2 text-[11px] text-ops-muted">
-          <div className="rounded-md border border-ops-border/40 bg-ops-panel px-3 py-2">状态：{pendingApprovalRunId ? '待审批' : events.length > 0 ? '处理中 / 已执行' : '空闲'}</div>
+          <div className="rounded-md border border-ops-border/40 bg-ops-panel px-3 py-2">状态：{activeRuntimeSnapshot?.status ?? (pendingApprovalRuntimeId ? '待审批' : events.length > 0 ? '处理中 / 已执行' : '空闲')}</div>
           <div className="rounded-md border border-ops-border/40 bg-ops-panel px-3 py-2">更新于 {formatHeaderTime(activeConversation?.updatedAt ?? null)}</div>
-          <div className="rounded-md border border-ops-border/40 bg-ops-panel px-3 py-2">模型：{selectedModel || '未选择模型'}</div>
+          <div className="rounded-md border border-ops-border/40 bg-ops-panel px-3 py-2">Runtime：{activeRuntimeSnapshot?.runtimeId ?? '未激活'}</div>
         </div>
       </header>
 
@@ -112,15 +138,17 @@ export function AssistantPanel({
             </div>
           ) : null}
 
-          <ConversationView events={events} pendingApprovalRunId={pendingApprovalRunId} onApprove={onApprove} onReject={onReject} />
+          <ConversationView events={events} pendingApprovalRuntimeId={pendingApprovalRuntimeId} onApprove={onApprove} onReject={onReject} />
 
           <PromptInput
             prompt={prompt}
             models={models}
             selectedModel={selectedModel}
+            runMode={runMode}
             selectedAsset={selectedAsset}
             onPromptChange={onPromptChange}
             onModelChange={onModelChange}
+            onRunModeChange={onRunModeChange}
             onRun={onRun}
           />
         </div>

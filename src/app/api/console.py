@@ -1,5 +1,6 @@
 from types import SimpleNamespace
 import json
+import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
@@ -8,20 +9,21 @@ from sqlmodel import Session
 from app.api.assets import to_asset_view
 from app.api.groups import to_asset_group_view
 from app.api.ssh_keys import to_ssh_key_view
-from app.api.schemas import ConsoleApprovalRequest, ConsoleBootstrapView, ConsoleRunRequest
-from app.core.engine.task_orchestrator import OrchestratorDependencies, TaskOrchestrator
+from app.api.schemas import ConsoleApprovalRequest, ConsoleBootstrapView, ConsoleRunRequest, RuntimeEventsResponse, RuntimeSnapshotView, RuntimeSummaryView
 from app.services.ssh_key_service import list_ssh_key_records
 from app.api.terminal import get_terminal_service
 from app.db.repositories.models import get_default_model_config, list_model_configs
 from app.db.session import get_session
 from app.services.asset_service import get_asset_record, list_asset_group_records, list_asset_records
-from app.services.executor_service import ExecutorService
+
 from app.services.model_service import ModelService
-from app.services.planner_service import PlannerService
 from app.services.terminal_service import TerminalService
+from app.services.console_app_service import ConsoleAppService, TaskOrchestrator
 from app.shared.enums import AssetType
 
 router = APIRouter()
+_console_app_service = ConsoleAppService()
+logger = logging.getLogger(__name__)
 
 
 def _sse_event(payload: dict) -> str:
@@ -36,14 +38,7 @@ async def _parse_request_model(request: Request, model_type):
 
 
 def get_task_orchestrator(terminal_service: TerminalService = Depends(get_terminal_service)) -> TaskOrchestrator:
-    return TaskOrchestrator(
-        OrchestratorDependencies(
-            planner=PlannerService(),
-            executor=ExecutorService(),
-            model_service=ModelService(),
-            terminal_service=terminal_service,
-        )
-    )
+    return _console_app_service.build_orchestrator(terminal_service)
 
 
 @router.get("/api/console/bootstrap")
@@ -115,16 +110,61 @@ async def run_console_agent(
         terminal_id=payload.terminal_id,
         model_name=payload.model_name,
         conversation_id=payload.conversation_id,
+        mode=payload.mode,
     )
 
     def event_stream():
         try:
+            logger.warning("console.run stream opened conversation_id=%s asset_id=%s terminal_id=%s", payload.conversation_id, asset_id, payload.terminal_id)
             for event in stream:
+                logger.warning("console.run stream event conversation_id=%s kind=%s id=%s", payload.conversation_id, event.get("kind"), event.get("id"))
                 yield _sse_event(event)
         except Exception as exc:
+            logger.exception("console.run stream failed conversation_id=%s", payload.conversation_id)
             yield _sse_event({"id": "error-run", "kind": "error", "text": str(exc), "recoverable": True})
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
+@router.get("/api/console/conversations/{conversation_id}/runtimes")
+def list_conversation_runtimes(conversation_id: str) -> list[RuntimeSummaryView]:
+    runtimes = _console_app_service.runtime_manager.list_runtimes(conversation_id)
+    return [
+        RuntimeSummaryView(
+            runtime_id=runtime.runtime_id,
+            conversation_id=runtime.conversation_id,
+            asset_id=runtime.asset_id,
+            terminal_id=runtime.terminal_id,
+            status=runtime.status,
+            current_step_id=runtime.current_step_id,
+            pending_approval_step_id=runtime.pending_approval_step_id,
+            updated_at=runtime.updated_at,
+        )
+        for runtime in runtimes
+    ]
+
+
+@router.get("/api/console/runtimes/{runtime_id}/snapshot")
+def get_runtime_snapshot(runtime_id: str) -> RuntimeSnapshotView:
+    snapshot = _console_app_service.runtime_manager.get_snapshot(runtime_id)
+    return RuntimeSnapshotView.model_validate(snapshot, from_attributes=True)
+
+
+@router.get("/api/console/runtimes/{runtime_id}/events")
+def get_runtime_events(runtime_id: str, since: int = 0) -> RuntimeEventsResponse:
+    latest_sequence, events = _console_app_service.runtime_manager.events_since(runtime_id, since)
+    return RuntimeEventsResponse(latest_sequence=latest_sequence, events=[dict(event) for event in events])
+
+
+@router.get("/api/console/debug/runtimes")
+def debug_runtime_manager_state() -> dict:
+    conversations: dict[str, list[str]] = {}
+    for conversation_id, runtimes in _console_app_service.runtime_manager._runtimes_by_conversation.items():
+        conversations[conversation_id] = list(runtimes.keys())
+    return {
+        "conversation_count": len(conversations),
+        "conversations": conversations,
+    }
 
 
 @router.post("/api/console/approval")
@@ -134,7 +174,7 @@ async def approve_console_agent(
     orchestrator: TaskOrchestrator = Depends(get_task_orchestrator),
 ):
     payload = await _parse_request_model(request, ConsoleApprovalRequest)
-    stream = orchestrator.stream_approve(session=session, run_id=payload.run_id, approved=payload.approved)
+    stream = orchestrator.stream_approve(session=session, runtime_id=payload.runtime_id, approved=payload.approved)
 
     def event_stream():
         try:

@@ -1,4 +1,6 @@
-import type { Asset, AssetGroup, EventItem, SessionRecord, SSHKey } from './ops'
+import type { Asset, AssetGroup, EventItem, RunMode, RuntimeSnapshot, RuntimeSummary, SessionRecord, SSHKey } from './ops'
+
+export type { RunMode }
 
 export type ConversationSummaryDto = {
   id: string
@@ -36,4 +38,53 @@ export type ConsoleBootstrap = {
   terminalOutput: string
   initialEvents: EventItem[]
   sshKeys: SSHKey[]
+}
+
+export type RuntimeSummaryDto = {
+  runtime_id: string
+  conversation_id: string
+  asset_id: number
+  terminal_id: string | null
+  status: string
+  current_step_id: string | null
+  pending_approval_step_id: string | null
+  updated_at: string
+}
+
+export type RuntimeSnapshotDto = {
+  runtime_id: string
+  conversation_id: string
+  asset_id: number
+  terminal_id: string | null
+  status: string
+  steps: Array<{
+    step_id: string
+    title: string
+    command: string
+    reason: string
+    risk_level: string
+    working_directory?: string | null
+    expected_output?: string | null
+    status: 'pending' | 'running' | 'completed' | 'failed'
+    output?: string
+    exit_code?: number | null
+  }>
+  current_step_id: string | null
+  pending_approval_step_id: string | null
+  last_output_excerpt: string
+  summary: string | null
+  error_message: string | null
+  created_at: string
+  updated_at: string
+  last_sequence: number
+}
+
+export type RuntimeEventsResponseDto = {
+  latest_sequence: number
+  events: Array<Record<string, unknown>>
+}
+
+export type RuntimeApiModels = {
+  summary: RuntimeSummary
+  snapshot: RuntimeSnapshot
 }

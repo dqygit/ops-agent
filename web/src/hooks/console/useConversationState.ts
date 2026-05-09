@@ -5,8 +5,10 @@ import {
   deleteConversation as deleteConversationApi,
   getConversation,
   getConversations,
+  getRuntimeSnapshot,
+  listConversationRuntimes,
 } from '../../api'
-import type { ConversationSummary, EventItem } from '../../types/ops'
+import type { ConversationSummary, EventItem, RuntimeSnapshot, RuntimeSummary } from '../../types/ops'
 import { normalizePlanEvents, upsertConversationSummaryFromDetail } from './consoleShared'
 
 export function useConversationState(selectedModel: string) {
@@ -14,6 +16,9 @@ export function useConversationState(selectedModel: string) {
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null)
   const [activeConversationTitle, setActiveConversationTitle] = useState('')
   const [events, setEvents] = useState<EventItem[]>([])
+  const [runtimeSummaries, setRuntimeSummaries] = useState<RuntimeSummary[]>([])
+  const [activeRuntimeId, setActiveRuntimeId] = useState<string | null>(null)
+  const [activeRuntimeSnapshot, setActiveRuntimeSnapshot] = useState<RuntimeSnapshot | null>(null)
   
   const activeConversationIdRef = useRef<string | null>(null)
 
@@ -26,6 +31,11 @@ export function useConversationState(selectedModel: string) {
     setActiveConversationId(detail.id)
     setActiveConversationTitle(detail.title)
     setEvents(normalizePlanEvents(detail.events))
+    const runtimes = await listConversationRuntimes(conversationId)
+    setRuntimeSummaries(runtimes)
+    const nextRuntimeId = runtimes[0]?.runtimeId ?? null
+    setActiveRuntimeId(nextRuntimeId)
+    setActiveRuntimeSnapshot(nextRuntimeId ? await getRuntimeSnapshot(nextRuntimeId) : null)
     return detail
   }, [])
 
@@ -46,6 +56,17 @@ export function useConversationState(selectedModel: string) {
     []
   )
 
+  const syncConversationRuntimes = useCallback(async (conversationId: string) => {
+    const runtimes = await listConversationRuntimes(conversationId)
+    setRuntimeSummaries(runtimes)
+    const nextRuntimeId = activeRuntimeId && runtimes.some((runtime: RuntimeSummary) => runtime.runtimeId === activeRuntimeId)
+      ? activeRuntimeId
+      : (runtimes[0]?.runtimeId ?? null)
+    setActiveRuntimeId(nextRuntimeId)
+    setActiveRuntimeSnapshot(nextRuntimeId ? await getRuntimeSnapshot(nextRuntimeId) : null)
+    return runtimes
+  }, [activeRuntimeId])
+
   const createConversation = useCallback(async () => {
     const created = await createConversationApi(selectedModel || null)
     setConversationSummaries((currentItems) => {
@@ -55,6 +76,9 @@ export function useConversationState(selectedModel: string) {
     setActiveConversationId(created.conversation.id)
     setActiveConversationTitle(created.conversation.title)
     setEvents(normalizePlanEvents(created.events))
+    setRuntimeSummaries([])
+    setActiveRuntimeId(null)
+    setActiveRuntimeSnapshot(null)
     return created.conversation.id
   }, [selectedModel])
 
@@ -105,7 +129,11 @@ export function useConversationState(selectedModel: string) {
     activeConversationTitle,
     events,
     setEvents,
+    runtimeSummaries,
+    activeRuntimeId,
+    activeRuntimeSnapshot,
     loadConversation,
+    syncConversationRuntimes,
     refreshConversationList,
     createConversation,
     deleteConversation,

@@ -1,6 +1,5 @@
 from datetime import UTC, datetime
 from typing import Any, cast
-
 from sqlalchemy import desc
 from sqlmodel import Session, select
 

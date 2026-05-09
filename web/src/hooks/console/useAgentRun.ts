@@ -1,6 +1,7 @@
 import { useCallback, useState, type RefObject } from 'react'
 import { appendConversationEvents, streamApproveAgent, streamRunAgent } from '../../api'
-import type { Asset, EventItem } from '../../types/ops'
+import type { RunMode } from '../../types/api'
+import type { Asset, EventItem, RuntimeSummary } from '../../types/ops'
 import { flushDeltaBuffer, LOCAL_TERMINAL_ASSET_ID, mergeDeltaEvent } from './consoleShared'
 
 interface UseAgentRunProps {
@@ -23,14 +24,15 @@ interface UseAgentRunProps {
     events: EventItem[]
   }) => void
   refreshConversationList: () => Promise<any>
+  syncConversationRuntimes: (conversationId: string) => Promise<RuntimeSummary[]>
 
   // 终端域依赖
   selectedAsset: Asset
   activeTerminalTab: { sessionId: string | null } | null
 
   // 基础态依赖
-  prompt: string
   selectedModel: string
+  runMode: RunMode
   setLoadError: (error: string | null) => void
 }
 
@@ -43,13 +45,14 @@ export function useAgentRun({
   applyConversationDetailIfActive,
   upsertConversationSummary,
   refreshConversationList,
+  syncConversationRuntimes,
   selectedAsset,
   activeTerminalTab,
-  prompt,
   selectedModel,
+  runMode,
   setLoadError,
 }: UseAgentRunProps) {
-  const [pendingApprovalRunId, setPendingApprovalRunId] = useState<string | null>(null)
+  const [pendingApprovalRuntimeId, setPendingApprovalRuntimeId] = useState<string | null>(null)
 
   const runAgent = useCallback(async (runPrompt: string) => {
     setLoadError(null)
@@ -76,7 +79,7 @@ export function useAgentRun({
       upsertConversationSummary(persisted)
       if (activeConversationIdRef.current === conversationId) {
         setEvents(persistedEvents)
-        setPendingApprovalRunId(null)
+        setPendingApprovalRuntimeId(null)
       }
 
       const stream = await streamRunAgent(
@@ -86,6 +89,7 @@ export function useAgentRun({
         activeTerminalTab?.sessionId ?? null,
         selectedModel,
         conversationId,
+        runMode,
       )
 
       const deltaBuffer = new Map<string, string>()
@@ -110,8 +114,9 @@ export function useAgentRun({
         const detail = await appendConversationEvents(conversationId, [event])
         upsertConversationSummary(detail)
         applyConversationDetailIfActive(conversationId, detail)
+        await syncConversationRuntimes(conversationId)
         if (event.kind === 'approval' && activeConversationIdRef.current === conversationId) {
-          setPendingApprovalRunId(event.runId ?? null)
+          setPendingApprovalRuntimeId(event.runtimeId ?? null)
         }
       }
 
@@ -120,6 +125,7 @@ export function useAgentRun({
       if (finalEvents.length > 0) {
         await appendConversationEvents(conversationId, finalEvents)
       }
+      await syncConversationRuntimes(conversationId)
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to run agent.'
       if (!conversationId || activeConversationIdRef.current === conversationId) {
@@ -136,6 +142,7 @@ export function useAgentRun({
           const detail = await appendConversationEvents(conversationId, [errorEvent])
           upsertConversationSummary(detail)
           applyConversationDetailIfActive(conversationId, detail)
+          await syncConversationRuntimes(conversationId)
         } catch {
           // Fall back to loadError if persisting the error event also fails.
         }
@@ -151,27 +158,28 @@ export function useAgentRun({
     activeConversationId,
     activeConversationIdRef,
     createConversation,
-    prompt,
     selectedAsset,
     activeTerminalTab,
     selectedModel,
+    runMode,
     setLoadError,
     upsertConversationSummary,
     setEvents,
     applyConversationDetailIfActive,
     refreshConversationList,
+    syncConversationRuntimes,
     events,
   ])
 
   const submitApproval = useCallback(
     async (approved: boolean) => {
-      if (!pendingApprovalRunId || !activeConversationId) {
+      if (!pendingApprovalRuntimeId || !activeConversationId) {
         return
       }
 
-      const runId = pendingApprovalRunId
+      const runId = pendingApprovalRuntimeId
       const conversationId = activeConversationId
-      setPendingApprovalRunId(null)
+      setPendingApprovalRuntimeId(null)
 
       try {
         const stream = await streamApproveAgent(runId, approved)
@@ -197,8 +205,9 @@ export function useAgentRun({
           const detail = await appendConversationEvents(conversationId, [event])
           upsertConversationSummary(detail)
           applyConversationDetailIfActive(conversationId, detail)
+          await syncConversationRuntimes(conversationId)
           if (event.kind === 'approval' && activeConversationIdRef.current === conversationId) {
-            setPendingApprovalRunId(event.runId ?? null)
+            setPendingApprovalRuntimeId(event.runtimeId ?? null)
           }
         }
 
@@ -207,6 +216,7 @@ export function useAgentRun({
         if (finalEvents.length > 0) {
           await appendConversationEvents(conversationId, finalEvents)
         }
+        await syncConversationRuntimes(conversationId)
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Failed to submit approval.'
         setLoadError(errorMessage)
@@ -220,12 +230,13 @@ export function useAgentRun({
           const detail = await appendConversationEvents(conversationId, [errorEvent])
           upsertConversationSummary(detail)
           applyConversationDetailIfActive(conversationId, detail)
+          await syncConversationRuntimes(conversationId)
         } catch {
           // Fall back to loadError if persisting the error event also fails.
         }
 
         if (activeConversationIdRef.current === conversationId) {
-          setPendingApprovalRunId(runId)
+          setPendingApprovalRuntimeId(runId)
         }
       } finally {
         try {
@@ -236,7 +247,7 @@ export function useAgentRun({
       }
     },
     [
-      pendingApprovalRunId,
+      pendingApprovalRuntimeId,
       activeConversationId,
       activeConversationIdRef,
       setLoadError,
@@ -244,12 +255,13 @@ export function useAgentRun({
       applyConversationDetailIfActive,
       setEvents,
       refreshConversationList,
+      syncConversationRuntimes,
       events,
     ]
   )
 
   return {
-    pendingApprovalRunId,
+    pendingApprovalRuntimeId,
     runAgent,
     approveRun: () => void submitApproval(true),
     rejectRun: () => void submitApproval(false),

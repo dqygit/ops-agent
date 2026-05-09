@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import type { RunMode } from './types/api'
 import { Group as PanelGroup, Panel, Separator as PanelResizeHandle } from 'react-resizable-panels'
 import { AssetModals, type AssetModalsRef } from './components/assets/AssetModals'
 import { AssetSidebar } from './components/assets/AssetSidebar'
@@ -18,6 +19,7 @@ type ActiveModal = 'settings' | null
 export function App() {
   const [activeModal, setActiveModal] = useState<ActiveModal>(null)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const [runMode, setRunMode] = useState<RunMode>('agent')
   const centerFallbackClassName = 'flex h-full items-center justify-center border-x border-ops-border/40 bg-ops-deep'
   const assetModalsRef = useRef<AssetModalsRef>(null)
 
@@ -40,7 +42,10 @@ export function App() {
     activeConversationTitle,
     events,
     setEvents,
+    runtimeSummaries,
+    activeRuntimeSnapshot,
     loadConversation,
+    syncConversationRuntimes,
     refreshConversationList,
     createConversation,
     deleteConversation,
@@ -59,6 +64,9 @@ export function App() {
     resizeTerminal,
     initializeLocalTerminal,
     selectAsset,
+    clearActiveTerminal,
+    copyActiveTerminalOutput,
+    reconnectActiveTerminal,
   } = useTerminalSessions({
     assets: bootstrap.assets,
     historyByAsset: bootstrap.historyByAsset,
@@ -81,7 +89,7 @@ export function App() {
   })
 
   const {
-    pendingApprovalRunId,
+    pendingApprovalRuntimeId,
     runAgent,
     approveRun,
     rejectRun,
@@ -94,16 +102,34 @@ export function App() {
     applyConversationDetailIfActive,
     upsertConversationSummary,
     refreshConversationList,
+    syncConversationRuntimes,
     selectedAsset,
     activeTerminalTab,
-    prompt,
     selectedModel,
+    runMode,
     setLoadError,
   })
 
   const terminalOutput = activeTerminalTab?.output ?? ''
   const selectedAssetId = selectedAsset?.id ?? 0
   const [isConsoleInitialized, setIsConsoleInitialized] = useState(false)
+
+  const busyCommand = useMemo(() => {
+    const commandsInOrder: Array<{ id: string; cmd: string }> = []
+    const ended = new Set<string>()
+    for (const evt of events) {
+      if (evt.kind === 'command_start') {
+        commandsInOrder.push({ id: evt.commandId, cmd: evt.command })
+      } else if (evt.kind === 'command_end') {
+        ended.add(evt.commandId)
+      }
+    }
+    for (let i = commandsInOrder.length - 1; i >= 0; i -= 1) {
+      const item = commandsInOrder[i]
+      if (!ended.has(item.id)) return item.cmd
+    }
+    return null
+  }, [events])
 
   useEffect(() => {
     if (!isBootstrapLoaded || loadError || isConsoleInitialized) {
@@ -211,13 +237,17 @@ export function App() {
                 activeConversationId={activeConversationId}
                 activeConversationTitle={activeConversationTitle}
                 events={events}
-                pendingApprovalRunId={pendingApprovalRunId}
+                pendingApprovalRuntimeId={pendingApprovalRuntimeId}
+                runtimeSummaries={runtimeSummaries}
+                activeRuntimeSnapshot={activeRuntimeSnapshot}
                 models={bootstrap.modelOptions}
                 selectedModel={selectedModel}
                 prompt={prompt}
+                runMode={runMode}
                 selectedAsset={selectedAsset}
                 loadError={loadError}
                 onModelChange={setSelectedModel}
+                onRunModeChange={setRunMode}
                 onPromptChange={setPrompt}
                 onCreateConversation={() => {
                   void createConversation()
@@ -262,9 +292,18 @@ export function App() {
                   tabs={terminalTabs.map((item) => item.asset)}
                   activeAssetId={activeTerminalAssetId}
                   output={terminalOutput}
+                  busyCommand={busyCommand}
                   onInput={sendTerminalInput}
                   onResize={resizeTerminal}
                   onSelectTab={setActiveTerminalAssetId}
+                  onCloseTab={removeTerminalTab}
+                  onClear={clearActiveTerminal}
+                  onCopy={() => {
+                    void copyActiveTerminalOutput()
+                  }}
+                  onReconnect={() => {
+                    void reconnectActiveTerminal()
+                  }}
                 />
               </Panel>
             </>

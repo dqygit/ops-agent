@@ -1,7 +1,10 @@
 import os
 import platform
 import select
+import subprocess
 from pathlib import Path
+
+from app.core.connectors.execution import ExecutionContext, ExecutionEvent, ExecutionResult
 
 
 def _resolve_windows_shell() -> str:
@@ -32,9 +35,84 @@ class LocalPtyConnector:
         self._process = None
         self._pid = None
         self._fd = None
+        self._execution_results: dict[str, ExecutionResult] = {}
 
-    def run_command(self, command: str) -> str:
-        raise NotImplementedError("local terminal command execution requires an interactive session")
+    def start_execution(self, command: str, context: ExecutionContext, execution_id: str) -> None:
+        output = self.run_command(command, context=context)
+        self._execution_results[execution_id] = output
+
+    def read_execution_events(self, execution_id: str) -> list[ExecutionEvent]:
+        result = self._execution_results.get(execution_id)
+        if result is None:
+            return []
+        return [
+            ExecutionEvent(execution_id=execution_id, event_type="started"),
+            ExecutionEvent(execution_id=execution_id, event_type="output", text=result.output),
+            ExecutionEvent(
+                execution_id=execution_id,
+                event_type="completed",
+                text=result.output,
+                completed=result.completed,
+                success=result.success,
+                needs_attention=result.needs_attention,
+                exit_code=result.exit_code,
+                completion_reason=result.completion_reason,
+            ),
+        ]
+
+    def get_execution_result(self, execution_id: str) -> ExecutionResult:
+        result = self._execution_results.get(execution_id)
+        if result is None:
+            return ExecutionResult(execution_id=execution_id, output="", completed=False, success=False, needs_attention=True, completion_reason="unsupported")
+        return result
+
+    def run_command(self, command: str, context: ExecutionContext | None = None) -> ExecutionResult:
+        if platform.system() == "Windows":
+            shell = _resolve_windows_shell()
+            shell_name = Path(shell).name.lower()
+            if "pwsh" in shell_name or shell_name == "powershell.exe":
+                completed = subprocess.run(
+                    [shell, "-NoLogo", "-NoProfile", "-Command", command],
+                    capture_output=True,
+                    text=True,
+                    cwd=context.working_directory if context and context.working_directory else None,
+                )
+            else:
+                completed = subprocess.run(
+                    [shell, "/c", command],
+                    capture_output=True,
+                    text=True,
+                    cwd=context.working_directory if context and context.working_directory else None,
+                )
+            output = f"{completed.stdout}{completed.stderr}".strip()
+            return ExecutionResult(
+                execution_id="local-sync",
+                output=output,
+                completed=True,
+                success=completed.returncode == 0,
+                needs_attention=completed.returncode != 0,
+                exit_code=completed.returncode,
+                completion_reason="exit_code",
+            )
+
+        completed = subprocess.run(
+            command,
+            shell=True,
+            capture_output=True,
+            text=True,
+            cwd=context.working_directory if context and context.working_directory else None,
+            executable=os.environ.get("SHELL") or "/bin/sh",
+        )
+        output = f"{completed.stdout}{completed.stderr}".strip()
+        return ExecutionResult(
+            execution_id="local-sync",
+            output=output,
+            completed=True,
+            success=completed.returncode == 0,
+            needs_attention=completed.returncode != 0,
+            exit_code=completed.returncode,
+            completion_reason="exit_code",
+        )
 
     def open_interactive(self) -> str:
         if platform.system() == "Windows":

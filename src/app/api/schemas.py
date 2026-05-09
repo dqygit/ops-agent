@@ -1,3 +1,5 @@
+from typing import Any
+
 from datetime import datetime
 
 from pydantic import BaseModel, Field, SecretStr
@@ -300,6 +302,7 @@ class ConsoleBootstrapView(BaseModel):
 
 class ConsoleRunRequest(BaseModel):
     prompt: str
+    mode: str = "agent"
     currentEvents: list[dict] = Field(default_factory=list)
     asset_id: int | None = None
     terminal_id: str | None = None
@@ -309,8 +312,63 @@ class ConsoleRunRequest(BaseModel):
 
 
 class ConsoleApprovalRequest(BaseModel):
-    run_id: str
+    runtime_id: str
     approved: bool
+
+
+class RuntimeStepView(BaseModel):
+    step_id: str
+    title: str
+    command: str
+    reason: str
+    risk_level: str
+    working_directory: str | None = None
+    expected_output: str | None = None
+    status: str
+    output: str = ""
+    exit_code: int | None = None
+
+
+class RuntimeSummaryView(BaseModel):
+    runtime_id: str
+    conversation_id: str
+    asset_id: int
+    terminal_id: str | None = None
+    status: str
+    current_step_id: str | None = None
+    pending_approval_step_id: str | None = None
+    updated_at: datetime
+
+
+class RuntimeSnapshotView(BaseModel):
+    runtime_id: str
+    conversation_id: str
+    asset_id: int
+    terminal_id: str | None = None
+    status: str
+    steps: list[RuntimeStepView] = Field(default_factory=list)
+    current_step_id: str | None = None
+    pending_approval_step_id: str | None = None
+    last_output_excerpt: str = ""
+    summary: str | None = None
+    error_message: str | None = None
+    created_at: datetime
+    updated_at: datetime
+    last_sequence: int = 0
+
+
+class RuntimeEventView(BaseModel):
+    type: str
+    conversation_id: str
+    runtime_id: str
+    sequence: int
+    timestamp: str
+    payload: dict = Field(default_factory=dict)
+
+
+class RuntimeEventsResponse(BaseModel):
+    latest_sequence: int
+    events: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class ConversationSummaryView(BaseModel):

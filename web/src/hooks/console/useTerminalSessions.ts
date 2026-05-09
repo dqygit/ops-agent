@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   closeTerminalSession as closeTerminalSessionApi,
   createTerminalSession,
+  reconnectTerminalSession,
 } from '../../api'
 import type { Asset } from '../../types/ops'
 import {
@@ -165,6 +166,73 @@ export function useTerminalSessions({
     }
     socket.send(JSON.stringify({ type: 'input', data }))
   }, [])
+
+  const clearActiveTerminal = useCallback(() => {
+    syncTerminalTabs((currentTabs) =>
+      currentTabs.map((tab) =>
+        tab.assetId === activeTerminalAssetId ? { ...tab, output: '' } : tab
+      )
+    )
+    firstOutputHandledRef.current[activeTerminalAssetId] = true
+  }, [activeTerminalAssetId, syncTerminalTabs])
+
+  const copyActiveTerminalOutput = useCallback(async (): Promise<boolean> => {
+    const tab = terminalTabsRef.current.find((item) => item.assetId === activeTerminalAssetId)
+    const raw = tab?.output ?? ''
+    if (!raw) return false
+    const cleaned = raw.replace(/[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g, '')
+    try {
+      await navigator.clipboard.writeText(cleaned)
+      return true
+    } catch {
+      return false
+    }
+  }, [activeTerminalAssetId])
+
+  const reconnectActiveTerminal = useCallback(async () => {
+    const tab = terminalTabsRef.current.find((item) => item.assetId === activeTerminalAssetId)
+    if (!tab) return
+    const existingSocket = terminalSocketsRef.current[activeTerminalAssetId]
+    if (existingSocket && (existingSocket.readyState === WebSocket.OPEN || existingSocket.readyState === WebSocket.CONNECTING)) {
+      existingSocket.close()
+    }
+    delete terminalSocketsRef.current[activeTerminalAssetId]
+    if (terminalSocketRef.current === existingSocket) {
+      terminalSocketRef.current = null
+    }
+
+    syncTerminalTabs((currentTabs) =>
+      currentTabs.map((item) =>
+        item.assetId === activeTerminalAssetId ? { ...item, sessionId: null, output: '' } : item
+      )
+    )
+    firstOutputHandledRef.current[activeTerminalAssetId] = false
+
+    try {
+      let nextSessionId: string | null = null
+      if (tab.sessionId) {
+        const result = await reconnectTerminalSession(tab.sessionId, activeTerminalAssetId)
+        if (result.error || !result.terminal_id) {
+          throw new Error(result.error || '重连失败')
+        }
+        nextSessionId = result.terminal_id
+      } else {
+        const result = await createTerminalSession(activeTerminalAssetId)
+        if (result.error || !result.terminal_id) {
+          throw new Error(result.error || '重连失败')
+        }
+        nextSessionId = result.terminal_id
+      }
+      syncTerminalTabs((currentTabs) =>
+        currentTabs.map((item) =>
+          item.assetId === activeTerminalAssetId ? { ...item, sessionId: nextSessionId } : item
+        )
+      )
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : '终端重连失败'
+      setLoadError(errorMessage)
+    }
+  }, [activeTerminalAssetId, syncTerminalTabs, setLoadError])
 
   const resizeTerminal = useCallback((cols: number, rows: number) => {
     const socket = terminalSocketRef.current
@@ -357,5 +425,8 @@ export function useTerminalSessions({
     resizeTerminal,
     initializeLocalTerminal,
     selectAsset,
+    clearActiveTerminal,
+    copyActiveTerminalOutput,
+    reconnectActiveTerminal,
   }
 }

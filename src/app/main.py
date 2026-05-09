@@ -1,6 +1,11 @@
-
 import os
+import sys
 from importlib import import_module
+from pathlib import Path
+
+ROOT_SRC = Path(__file__).resolve().parents[1]
+if str(ROOT_SRC) not in sys.path:
+    sys.path.insert(0, str(ROOT_SRC))
 
 from app.api import app
 from app.services.terminal_service import TerminalService

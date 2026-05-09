@@ -109,3 +109,41 @@ def close_terminal_session(
     if not closed:
         raise HTTPException(status_code=404, detail="Terminal session not found")
     return Response(status_code=204)
+
+
+class TerminalReconnectRequest(BaseModel):
+    asset_id: int
+
+
+@router.post("/api/terminal/sessions/{terminal_id}/reconnect")
+def reconnect_terminal_session(
+    terminal_id: str,
+    payload: TerminalReconnectRequest,
+    session: Session = Depends(get_session),
+    terminal_service: TerminalService = Depends(get_terminal_service),
+) -> TerminalSessionResponse:
+    asset = get_asset_record(session, payload.asset_id)
+    if asset is None and payload.asset_id == 0:
+        # Local terminal fallback when asset not persisted in DB.
+        from types import SimpleNamespace
+
+        asset = SimpleNamespace(
+            id=0,
+            name="本地终端",
+            asset_type="local_terminal",
+            host="localhost",
+            port=0,
+            username="",
+            auth_type="",
+            tags=[],
+            ssh_key_id=None,
+        )
+    if asset is None:
+        raise HTTPException(status_code=404, detail="Asset not found")
+    terminal_service.close_session(terminal_id)
+    result = terminal_service.open_session(asset)
+    return TerminalSessionResponse(
+        terminal_id=result.get("terminal_id"),
+        channel=result.get("channel"),
+        error=result.get("error", ""),
+    )

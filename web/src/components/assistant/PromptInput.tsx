@@ -1,3 +1,4 @@
+import type { RunMode } from '../../types/api'
 import type { Asset } from '../../types/ops'
 import { ModelSelector } from './ModelSelector'
 
@@ -5,19 +6,33 @@ type PromptInputProps = {
   prompt: string
   models: string[]
   selectedModel: string
+  runMode: RunMode
   selectedAsset: Asset
   onPromptChange: (prompt: string) => void
   onModelChange: (model: string) => void
+  onRunModeChange: (mode: RunMode) => void
   onRun: (prompt: string) => Promise<void>
+}
+
+const MODE_DESCRIPTION: Record<RunMode, string> = {
+  agent: '边规划边执行，每步可重试或重规划。适合探索性、不确定结果的任务。',
+  plan: '一次锁定全部步骤，按顺序执行；中高风险逐条审批。适合规范化、可预知的流程。',
+}
+
+const MODE_LABEL: Record<RunMode, string> = {
+  agent: 'Agent',
+  plan: 'Plan',
 }
 
 export function PromptInput({
   prompt,
   models,
   selectedModel,
+  runMode,
   selectedAsset,
   onPromptChange,
   onModelChange,
+  onRunModeChange,
   onRun,
 }: PromptInputProps) {
   const submitPrompt = async () => {
@@ -58,8 +73,47 @@ export function PromptInput({
         }}
         placeholder="到任意主机执行命令查询、排查错误和任务处理等任何事情"
       />
-      <div className="flex items-center justify-between border-t border-ops-border/10 px-2.5 pb-2 pt-2">
-        <ModelSelector models={models} selectedModel={selectedModel} onModelChange={onModelChange} />
+      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-ops-border/10 px-2.5 pb-2 pt-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <ModelSelector models={models} selectedModel={selectedModel} onModelChange={onModelChange} />
+
+          <div
+            className="inline-flex items-center rounded-md border border-ops-border/40 bg-ops-panel p-0.5"
+            role="radiogroup"
+            aria-label="执行模式"
+          >
+            {(Object.keys(MODE_LABEL) as RunMode[]).map((mode) => {
+              const isActive = runMode === mode
+              return (
+                <button
+                  key={mode}
+                  type="button"
+                  role="radio"
+                  aria-checked={isActive}
+                  title={MODE_DESCRIPTION[mode]}
+                  onClick={() => onRunModeChange(mode)}
+                  className={`inline-flex items-center gap-1 rounded px-2 py-1 text-[11px] font-medium transition-colors ${
+                    isActive
+                      ? mode === 'plan'
+                        ? 'bg-ops-cyan/15 text-ops-cyan shadow-[inset_0_0_0_1px_rgba(34,211,238,0.35)]'
+                        : 'bg-ops-green/15 text-ops-green shadow-[inset_0_0_0_1px_rgba(34,197,94,0.35)]'
+                      : 'text-ops-muted hover:text-ops-text'
+                  }`}
+                >
+                  {mode === 'plan' ? (
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"></rect><path d="M7 11V7a5 5 0 0110 0v4"></path></svg>
+                  ) : (
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3" /><path d="M12 1v6M12 17v6M4.22 4.22l4.24 4.24M15.54 15.54l4.24 4.24M1 12h6M17 12h6M4.22 19.78l4.24-4.24M15.54 8.46l4.24-4.24" /></svg>
+                  )}
+                  {MODE_LABEL[mode]}
+                </button>
+              )
+            })}
+          </div>
+          <span className="hidden max-w-[260px] truncate text-[11px] text-ops-muted/85 sm:inline" title={MODE_DESCRIPTION[runMode]}>
+            {MODE_DESCRIPTION[runMode]}
+          </span>
+        </div>
         <button
           className={`flex h-9 min-w-9 shrink-0 items-center justify-center rounded-md border transition-colors ${
             prompt.trim()

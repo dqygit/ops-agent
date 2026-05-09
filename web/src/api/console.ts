@@ -1,8 +1,8 @@
 import { mapAsset } from './assets'
 import { requestEventStream, requestJson } from './client'
 import { mapAssetGroup, type AssetGroupDto } from './groups'
-import type { ConsoleBootstrap } from '../types/api'
-import type { EventItem } from '../types/ops'
+import type { ConsoleBootstrap, RunMode, RuntimeEventsResponseDto, RuntimeSnapshotDto, RuntimeSummaryDto } from '../types/api'
+import type { EventItem, RuntimeEventEnvelope, RuntimeSnapshot, RuntimeSummary } from '../types/ops'
 
 type ConsoleBootstrapDto = Omit<ConsoleBootstrap, 'assets' | 'groups'> & {
   assets: Parameters<typeof mapAsset>[0][]
@@ -18,18 +18,65 @@ export async function getConsoleBootstrap(): Promise<ConsoleBootstrap> {
   }
 }
 
-export async function runAgent(prompt: string, currentEvents: EventItem[], assetId?: number, terminalId?: string | null, modelName?: string, conversationId?: string): Promise<EventItem[]> {
-  return requestJson<EventItem[]>('/api/console/run', {
-    method: 'POST',
-    body: JSON.stringify({ prompt, currentEvents, asset_id: assetId, terminal_id: terminalId, model_name: modelName, conversation_id: conversationId }),
-  })
+function mapRuntimeSummary(dto: RuntimeSummaryDto): RuntimeSummary {
+  return {
+    runtimeId: dto.runtime_id,
+    conversationId: dto.conversation_id,
+    assetId: dto.asset_id,
+    terminalId: dto.terminal_id,
+    status: dto.status,
+    currentStepId: dto.current_step_id,
+    pendingApprovalStepId: dto.pending_approval_step_id,
+    updatedAt: dto.updated_at,
+  }
 }
 
-export async function approveAgent(runId: string, approved: boolean): Promise<EventItem[]> {
-  return requestJson<EventItem[]>('/api/console/approval', {
-    method: 'POST',
-    body: JSON.stringify({ run_id: runId, approved }),
-  })
+function mapRuntimeSnapshot(dto: RuntimeSnapshotDto): RuntimeSnapshot {
+  return {
+    runtimeId: dto.runtime_id,
+    conversationId: dto.conversation_id,
+    assetId: dto.asset_id,
+    terminalId: dto.terminal_id,
+    status: dto.status,
+    steps: dto.steps.map((step) => ({
+      stepId: step.step_id,
+      title: step.title,
+      command: step.command,
+      reason: step.reason,
+      riskLevel: step.risk_level,
+      workingDirectory: step.working_directory,
+      expectedOutput: step.expected_output,
+      status: step.status,
+      output: step.output,
+      exitCode: step.exit_code,
+    })),
+    currentStepId: dto.current_step_id,
+    pendingApprovalStepId: dto.pending_approval_step_id,
+    lastOutputExcerpt: dto.last_output_excerpt,
+    summary: dto.summary,
+    errorMessage: dto.error_message,
+    createdAt: dto.created_at,
+    updatedAt: dto.updated_at,
+    lastSequence: dto.last_sequence,
+  }
+}
+
+export async function listConversationRuntimes(conversationId: string): Promise<RuntimeSummary[]> {
+  const runtimes = await requestJson<RuntimeSummaryDto[]>(`/api/console/conversations/${conversationId}/runtimes`)
+  return runtimes.map(mapRuntimeSummary)
+}
+
+export async function getRuntimeSnapshot(runtimeId: string): Promise<RuntimeSnapshot> {
+  const snapshot = await requestJson<RuntimeSnapshotDto>(`/api/console/runtimes/${runtimeId}/snapshot`)
+  return mapRuntimeSnapshot(snapshot)
+}
+
+export async function getRuntimeEvents(runtimeId: string, since = 0): Promise<{ latestSequence: number; events: RuntimeEventEnvelope[] }> {
+  const response = await requestJson<RuntimeEventsResponseDto>(`/api/console/runtimes/${runtimeId}/events?since=${since}`)
+  return {
+    latestSequence: response.latest_sequence,
+    events: response.events as RuntimeEventEnvelope[],
+  }
 }
 
 function parseSseBlock(block: string): EventItem | null {
@@ -71,18 +118,18 @@ async function* readEventStream(response: Response): AsyncGenerator<EventItem, v
   }
 }
 
-export async function streamRunAgent(prompt: string, currentEvents: EventItem[], assetId?: number, terminalId?: string | null, modelName?: string, conversationId?: string): Promise<AsyncGenerator<EventItem, void, void>> {
+export async function streamRunAgent(prompt: string, currentEvents: EventItem[], assetId?: number, terminalId?: string | null, modelName?: string, conversationId?: string, mode: RunMode = 'agent'): Promise<AsyncGenerator<EventItem, void, void>> {
   const response = await requestEventStream('/api/console/run', {
     method: 'POST',
-    body: JSON.stringify({ prompt, currentEvents, asset_id: assetId, terminal_id: terminalId, model_name: modelName, conversation_id: conversationId }),
+    body: JSON.stringify({ prompt, mode, currentEvents, asset_id: assetId, terminal_id: terminalId, model_name: modelName, conversation_id: conversationId }),
   })
   return readEventStream(response)
 }
 
-export async function streamApproveAgent(runId: string, approved: boolean): Promise<AsyncGenerator<EventItem, void, void>> {
+export async function streamApproveAgent(runtimeId: string, approved: boolean): Promise<AsyncGenerator<EventItem, void, void>> {
   const response = await requestEventStream('/api/console/approval', {
     method: 'POST',
-    body: JSON.stringify({ run_id: runId, approved }),
+    body: JSON.stringify({ runtime_id: runtimeId, approved }),
   })
   return readEventStream(response)
 }

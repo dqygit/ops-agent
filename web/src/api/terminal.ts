@@ -18,3 +18,10 @@ export async function closeTerminalSession(terminalSessionId: string): Promise<v
     method: 'DELETE',
   })
 }
+
+export async function reconnectTerminalSession(terminalSessionId: string, assetId: number): Promise<TerminalSessionResponse> {
+  return requestJson<TerminalSessionResponse>(`/api/terminal/sessions/${terminalSessionId}/reconnect`, {
+    method: 'POST',
+    body: JSON.stringify({ asset_id: assetId }),
+  })
+}

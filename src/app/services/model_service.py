@@ -5,7 +5,8 @@ from pathlib import Path
 from pydantic import SecretStr
 from sqlmodel import Session
 
-from app.integrations.llm.base import LLMCompletionRequest, LLMMessage
+from app.core.llm.base import LLMCompletionRequest, LLMMessage
+from app.core.llm.factory import build_llm_provider
 
 from app.db.models import ModelConfigRecord
 from app.db.repositories.models import list_model_names_by_provider
@@ -21,54 +22,12 @@ class ModelService:
         self._provider_client = provider_client
         self._settings_path = settings_path or shared_config.SETTINGS_PATH
 
-    def generate_conversation_title(self, prompt: str, model_name: str | None = None) -> str | None:
-        prompt_text = prompt.strip()
-        if not prompt_text:
-            return None
-
-        try:
-            config = self.load_settings()
-            if model_name:
-                config = config.model_copy(update={"model_name": model_name})
-            if self._provider_client is not None:
-                provider = self._provider_client
-            else:
-                from app.integrations.llm.factory import build_llm_provider
-                provider = build_llm_provider(config)
-            response = provider.complete(
-                config=config,
-                request=LLMCompletionRequest(
-                    messages=[
-                        LLMMessage(
-                            role="system",
-                            content=(
-                                "你是一个会话标题生成助手。请根据用户的首条消息生成一个简短的中文标题。"
-                                "要求：不超过12个字，直接输出标题内容，不要加引号或句号。"
-                            ),
-                        ),
-                        LLMMessage(role="user", content=prompt_text),
-                    ],
-                    temperature=0.2,
-                    max_tokens=32,
-                    json_mode=False,
-                ),
-            )
-        except Exception:
-            return None
-
-        title = response.text.strip()
-        if not title:
-            return None
-        title = title.splitlines()[0].strip().strip('"').strip("'").strip()
-        if not title:
-            return None
-        return title[:24]
-
+    
     def validate(self, config: ModelConfig) -> bool:
         if self._provider_client is not None:
             provider = self._provider_client
         else:
-            from app.integrations.llm.factory import build_llm_provider
+            from app.core.llm.factory import build_llm_provider
             provider = build_llm_provider(config)
         try:
             provider.complete(
@@ -86,6 +45,39 @@ class ModelService:
 
     def get_active_model(self, default_config: ModelConfig, session_override: ModelConfig | None) -> ModelConfig:
         return session_override or default_config
+
+    def generate_conversation_title(self, prompt: str, *, model_name: str | None = None) -> str:
+        """根据用户首条任务消息生成一个简短中文会话标题（≤12 字，无标点）。"""
+        try:
+            config = self.load_settings()
+            if model_name and model_name != config.model_name:
+                config = config.model_copy(update={"model_name": model_name})
+            provider = self._provider_client or build_llm_provider(config)
+            request = LLMCompletionRequest(
+                messages=[
+                    LLMMessage(
+                        role="system",
+                        content=(
+                            "你是会话标题生成助手。基于用户的首条任务消息，给出一个 ≤12 个汉字、"
+                            "概括用户意图的中文短标题。不要带标点，不要带引号，不要带 emoji，"
+                            "不要解释，只输出标题本身。"
+                        ),
+                    ),
+                    LLMMessage(role="user", content=prompt.strip()),
+                ],
+                temperature=0.2,
+                max_tokens=32,
+                json_mode=False,
+            )
+            response = provider.complete(config=config, request=request)
+            title = (response.text or "").strip()
+        except Exception:
+            return ""
+        title = title.splitlines()[0] if title else ""
+        title = title.strip().strip("\"'`，。.,；;：:!?！？")
+        if len(title) > 16:
+            title = title[:16]
+        return title
 
     def build_default_config(self) -> ModelConfig:
         provider = os.environ.get("OPS_AGENT_PROVIDER", ModelProvider.OPENAI_COMPATIBLE.value)

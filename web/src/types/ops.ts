@@ -64,6 +64,8 @@ export type PlanStep = {
   status?: PlanStepStatus
 }
 
+export type RunMode = 'agent' | 'plan'
+
 export type PlanEvent = {
   id: string
   kind: 'plan'
@@ -74,6 +76,9 @@ export type PlanEvent = {
   isLatest?: boolean
   updated?: boolean
   steps: PlanStep[]
+  runtimeId?: string
+  mode?: RunMode
+  lockedPlan?: boolean
 }
 
 export type TerminalStreamKind = 'echo' | 'stdout' | 'stderr' | 'status'
@@ -106,6 +111,56 @@ export type CommandEndEvent = {
   summary?: string
 }
 
+export type RuntimeStep = {
+  stepId: string
+  title: string
+  command: string
+  reason: string
+  riskLevel: string
+  workingDirectory?: string | null
+  expectedOutput?: string | null
+  status: 'pending' | 'running' | 'completed' | 'failed'
+  output?: string
+  exitCode?: number | null
+}
+
+export type RuntimeSummary = {
+  runtimeId: string
+  conversationId: string
+  assetId: number
+  terminalId: string | null
+  status: string
+  currentStepId: string | null
+  pendingApprovalStepId: string | null
+  updatedAt: string
+}
+
+export type RuntimeSnapshot = {
+  runtimeId: string
+  conversationId: string
+  assetId: number
+  terminalId: string | null
+  status: string
+  steps: RuntimeStep[]
+  currentStepId: string | null
+  pendingApprovalStepId: string | null
+  lastOutputExcerpt: string
+  summary: string | null
+  errorMessage: string | null
+  createdAt: string
+  updatedAt: string
+  lastSequence: number
+}
+
+export type RuntimeEventEnvelope = {
+  type: string
+  conversationId: string
+  runtimeId: string
+  sequence: number
+  timestamp: string
+  [key: string]: unknown
+}
+
 export type TerminalStatusEvent = {
   id: string
   kind: 'terminal_status'
@@ -118,7 +173,7 @@ export type EventItem =
   | { id: string; kind: 'status'; text: string }
   | { id: string; kind: 'delta'; text: string; messageId: string; stage?: string }
   | PlanEvent
-  | { id: string; kind: 'approval'; text: string; command: string; runId?: string }
+  | { id: string; kind: 'approval'; text: string; command: string; runtimeId?: string; stepId?: string }
   | { id: string; kind: 'output'; text: string }
   | CommandStartEvent
   | CommandChunkEvent
