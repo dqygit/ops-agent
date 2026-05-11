@@ -8,12 +8,12 @@ type ButtonProps = {
 } & ButtonHTMLAttributes<HTMLButtonElement>
 
 export function Button({ children, className = '', variant = 'default', type = 'button', ...props }: ButtonProps) {
-  const baseClasses = 'inline-flex items-center justify-center rounded-md border px-4 py-2 text-sm font-medium transition-colors focus:outline-none'
+  const baseClasses = 'inline-flex items-center justify-center rounded-md border px-4 py-2 text-sm font-medium transition-all duration-200 active:scale-95 focus:outline-none'
   const variantClassName = {
-    default: 'border-ops-border/70 bg-ops-panel text-ops-text hover:border-ops-border hover:bg-ops-deep',
-    primary: 'border-ops-green/60 bg-[rgb(132_204_22_/_0.12)] text-ops-green hover:border-ops-green hover:bg-[rgb(132_204_22_/_0.18)]',
-    danger: 'border-ops-danger/60 bg-[rgb(239_68_68_/_0.12)] text-ops-danger hover:border-ops-danger hover:bg-[rgb(239_68_68_/_0.18)]',
-    'tab-active': 'rounded-none border-b-ops-green border-l-ops-border/70 border-r-ops-border/70 border-t-transparent bg-ops-deep text-ops-green',
+    default: 'border-ops-border/40 bg-ops-panel text-ops-text hover:border-ops-border hover:bg-ops-deep',
+    primary: 'border-ops-cyan/50 bg-ops-cyan/10 text-ops-cyan hover:border-ops-cyan hover:bg-ops-cyan/20 hover:shadow-glow',
+    danger: 'border-ops-danger/50 bg-ops-danger/10 text-ops-danger hover:border-ops-danger hover:bg-ops-danger/20',
+    'tab-active': 'rounded-none border-b-2 border-b-ops-cyan border-x-ops-border/40 border-t-transparent bg-ops-deep text-ops-cyan',
   }[variant]
 
   const mergedClassName = `${baseClasses} ${variantClassName} ${className}`.trim()

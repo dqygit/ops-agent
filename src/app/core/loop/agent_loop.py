@@ -1,21 +1,22 @@
 """简化后的 Agent Loop。
 
 仅保留：
-- LLM tool calling
-- execute_command 工具调用
+- LLM tool calling (基于 ToolHandler)
 - 命令审批策略检查
 - 用户审批恢复执行
-- 终端执行事件输出
 """
 
 from __future__ import annotations
 
 import json
+import logging
 import uuid
 from collections.abc import Iterator
-from typing import Any, Protocol
+from typing import Any
 
-from app.core.llm.base import LLMCompletionRequest, LLMCompletionResponse, LLMMessage
+logger = logging.getLogger(__name__)
+
+from app.core.llm.types import LLMCompletionRequest, LLMCompletionResponse, LLMMessage
 from app.core.llm.factory import build_llm_provider
 from app.core.loop.loop_events import (
     LoopEvent,
@@ -24,31 +25,19 @@ from app.core.loop.loop_events import (
     emit_approval_required,
     emit_completed,
     emit_delta,
-    emit_execution_completed,
-    emit_execution_output,
-    emit_execution_started,
     emit_failed,
     emit_plan_updated,
 )
 from app.core.loop.loop_state import LoopRuntimeStep, LoopState
-from app.core.tool.schema import LLMToolDefinition
-from app.services.approval_service import get_approval_service
-
-
-class TerminalSessionResolver(Protocol):
-    def get_session(self, terminal_id: str) -> Any | None: ...
-
-    def acquire_terminal_slot(self, runtime_id: str, terminal_id: str) -> bool: ...
-
-    def release_terminal_slot(self, runtime_id: str, terminal_id: str) -> None: ...
+from app.core.tool.handler import ToolHandler
 
 
 EventCallback = Any
 
 
 class AgentLoop:
-    def __init__(self, *, terminal: TerminalSessionResolver) -> None:
-        self._terminal = terminal
+    def __init__(self, *, tools: list[ToolHandler]) -> None:
+        self._tools = {t.definition.name: t for t in tools}
 
     def run(self, state: LoopState) -> Iterator[LoopEvent]:
         if state.context.mode == "plan":
@@ -87,7 +76,14 @@ class AgentLoop:
         state.phase = "executing"
         yield emit_plan_updated(runtime_id=state.context.runtime_id, plan_payload=self._snapshot_plan(state))
 
-        ok, output = yield from self._execute_step(state, current_step)
+        tool_name = state.pending_tool_name
+        args = state.pending_tool_args or {}
+        handler = self._tools.get(tool_name)
+        if handler is None:
+            ok, output = False, f"Unsupported tool: {tool_name}"
+        else:
+            ok, output = yield from handler.execute(state=state, step_id=current_step.step_id, args=args)
+
         current_step.status = "completed" if ok else "failed"
         state.messages.append(
             LLMMessage(
@@ -101,13 +97,14 @@ class AgentLoop:
         state.pending_tool_name = None
         state.pending_tool_args = None
         yield emit_plan_updated(runtime_id=state.context.runtime_id, plan_payload=self._snapshot_plan(state))
+        
         if state.context.mode == "plan":
             if ok:
                 yield from self._run_plan_mode(state, continue_existing=True)
                 return
             state.phase = "failed"
             state.error_message = output
-            yield emit_failed(runtime_id=state.context.runtime_id, error=output or "计划步骤执行失败。")
+            yield emit_failed(runtime_id=state.context.runtime_id, error=output or "Failed to execute plan step.")
             return
         yield from self._tool_calling_loop(state)
 
@@ -143,7 +140,7 @@ class AgentLoop:
             state.cursor += 1
 
         state.phase = "completed"
-        state.summary = "计划任务已执行完毕。"
+        state.summary = "Plan execution completed."
         yield emit_completed(runtime_id=state.context.runtime_id, summary=state.summary)
 
     def _generate_plan(self, state: LoopState) -> Iterator[LoopEvent]:
@@ -154,10 +151,10 @@ class AgentLoop:
                 LLMMessage(
                     role="system",
                     content=(
-                        "你是一个运维任务规划器。请根据用户目标生成可执行的任务计划。"
-                        "返回 JSON 对象，格式为 {\"steps\": [...]}。"
-                        "每个 step 包含 title、reason、command、working_directory、expected_output、risk_level。"
-                        "command 必须是单步可执行命令。不要输出 JSON 以外的内容。"
+                        "You are an operations task planner. Please generate an executable task plan based on the user's goal."
+                        "Return a JSON object in the format {\"steps\": [...]}."
+                        "Each step includes title, reason, command, working_directory, expected_output, and risk_level."
+                        "Command must be a single executable command. Do not output anything other than JSON."
                     ),
                 ),
                 LLMMessage(
@@ -187,9 +184,9 @@ class AgentLoop:
                 state.steps.append(
                     LoopRuntimeStep(
                         step_id=f"step-{uuid.uuid4().hex[:8]}",
-                        title=str(data.get("title") or f"步骤 {index}"),
+                        title=str(data.get("title") or f"Step {index}"),
                         command=command,
-                        reason=str(data.get("reason") or "执行计划步骤"),
+                        reason=str(data.get("reason") or "Executing plan step"),
                         risk_level=str(data.get("risk_level") or "low"),
                         working_directory=str(data.get("working_directory") or "") or None,
                         expected_output=str(data.get("expected_output") or "") or None,
@@ -200,7 +197,7 @@ class AgentLoop:
             state.phase = "planning"
             yield emit_plan_updated(runtime_id=ctx.runtime_id, plan_payload=self._snapshot_plan(state))
         except Exception as exc:
-            error = f"任务规划失败: {exc}"
+            error = f"Task planning failed: {exc}"
             state.phase = "failed"
             state.error_message = error
             yield emit_failed(runtime_id=ctx.runtime_id, error=error)
@@ -211,9 +208,10 @@ class AgentLoop:
             f"操作系统类型: {ctx.os_type}\n"
             f"当前主机信息: {ctx.asset_summary}\n"
             f"Shell: {ctx.shell_type}\n\n"
-            "你是一个执行单个计划步骤的运维助手。"
-            "你只能通过 execute_command 工具执行操作。"
-            "优先完成当前步骤，完成后直接给出简短结果总结。"
+            "You are an operations assistant executing a single plan step."
+            "You can use the provided tools to perform actions."
+            "Prioritize completing the current step, and directly provide a brief summary of the result once finished."
+            "Always respond in English."
         )
         user_msg = (
             f"原始任务: {ctx.user_prompt}\n"
@@ -222,7 +220,7 @@ class AgentLoop:
             f"建议命令: {step.command or '无'}\n"
             f"建议工作目录: {step.working_directory or '未指定'}\n"
             f"期望输出: {step.expected_output or '未指定'}\n"
-            "请围绕当前步骤执行，必要时可以调整命令，但不要偏离该步骤目标。"
+            "请围绕当前步骤执行，必要时可以调整参数，但不要偏离该步骤目标。"
         )
         return [LLMMessage(role="system", content=system_msg), LLMMessage(role="user", content=user_msg)]
 
@@ -236,36 +234,26 @@ class AgentLoop:
         provider = build_llm_provider(state.context.model_config)
         ctx = state.context
 
-        tools = [
-            LLMToolDefinition(
-                name="execute_command",
-                description="执行终端命令。系统会自动根据 settings.json 中的审批策略判断是允许、拒绝还是要求用户审批。",
-                input_schema={
-                    "type": "object",
-                    "properties": {
-                        "command": {"type": "string", "description": "要执行的终端命令"},
-                        "working_directory": {"type": "string", "description": "工作目录（可选）"},
-                    },
-                    "required": ["command"],
-                },
-            )
-        ]
+        tools = [t.definition for t in self._tools.values()]
 
         if not state.messages:
             mode_instruction = (
-                "你是一个谨慎的运维助手。你只能通过 execute_command 工具执行操作。系统会自动根据审批策略判断命令是否可直接执行。"
+                "你是一个谨慎的运维助手。你可以使用提供的工具执行操作。系统会自动根据策略判断操作是否可直接执行。"
                 if ctx.mode == "plan"
-                else "你是一个自主运维助手。你只能通过 execute_command 工具执行操作。系统会自动根据审批策略判断命令是否可直接执行。"
+                else "你是一个自主运维助手。你可以使用提供的工具执行操作。系统会自动根据策略判断操作是否可直接执行。"
             )
             system_msg = (
                 f"操作系统类型: {ctx.os_type}\n"
                 f"当前主机信息: {ctx.asset_summary}\n"
                 f"Shell: {ctx.shell_type}\n\n"
-                f"规则: {mode_instruction}\n"
-                "当需要检查环境或完成任务时，直接调用 execute_command。"
+                "Rules: " + mode_instruction + "\n"
+                "When you need to check the environment or complete a task, call the corresponding tool directly."
+                "Always respond in English."
             )
             state.messages.append(LLMMessage(role="system", content=system_msg))
             state.messages.append(LLMMessage(role="user", content=ctx.user_prompt))
+
+        import time
 
         while True:
             response_text_parts: list[str] = []
@@ -273,10 +261,16 @@ class AgentLoop:
             finish_reason: str | None = None
             message_id = f"msg-{uuid.uuid4()}"
 
+            t0 = time.monotonic()
+            first_chunk_logged = False
             for chunk in provider.stream_complete(
                 config=ctx.model_config,
                 request=LLMCompletionRequest(messages=state.messages, tools=tools, json_mode=False),
             ):
+                if not first_chunk_logged:
+                    ttft = time.monotonic() - t0
+                    logger.warning("LLM TTFT: %.2fs (runtime_id=%s, model=%s, msg_count=%d)", ttft, ctx.runtime_id, ctx.model_config.model_name, len(state.messages))
+                    first_chunk_logged = True
                 if chunk.delta:
                     response_text_parts.append(chunk.delta)
                     yield emit_delta(
@@ -286,7 +280,6 @@ class AgentLoop:
                         text=chunk.delta,
                     )
                 if chunk.tool_arguments_delta:
-                    # Do not emit raw json to the UI text stream
                     pass
                 if chunk.tool_calls:
                     response_tool_calls = chunk.tool_calls
@@ -309,7 +302,7 @@ class AgentLoop:
                 )
 
             if not response.tool_calls:
-                summary = response.text or "任务已执行完毕。"
+                summary = response.text or "Task execution completed."
                 if finalize_on_complete:
                     state.phase = "completed"
                     state.summary = summary
@@ -317,7 +310,8 @@ class AgentLoop:
                 return False, True, summary
 
             for tool_call in response.tool_calls:
-                if tool_call.name != "execute_command":
+                handler = self._tools.get(tool_call.name)
+                if handler is None:
                     state.messages.append(
                         LLMMessage(
                             role="tool",
@@ -331,23 +325,13 @@ class AgentLoop:
                 args = tool_call.arguments
                 command = str(args.get("command", "")).strip()
                 working_directory = args.get("working_directory")
-                if not command:
-                    state.messages.append(
-                        LLMMessage(
-                            role="tool",
-                            content="Missing required field: command",
-                            tool_call_id=tool_call.id,
-                            name=tool_call.name,
-                        )
-                    )
-                    continue
 
                 if plan_step is None:
                     step = LoopRuntimeStep(
                         step_id=f"step-{uuid.uuid4().hex[:8]}",
-                        title=command,
+                        title=command or tool_call.name,
                         command=command,
-                        reason="LLM requested command execution",
+                        reason="LLM requested tool execution",
                         risk_level="low",
                         working_directory=str(working_directory) if working_directory else None,
                         status="pending",
@@ -357,11 +341,12 @@ class AgentLoop:
                     yield emit_plan_updated(runtime_id=ctx.runtime_id, plan_payload=self._snapshot_plan(state))
                 else:
                     step = plan_step
-                    step.command = command
+                    if command:
+                        step.command = command
                     step.working_directory = str(working_directory) if working_directory else None
                     yield emit_plan_updated(runtime_id=ctx.runtime_id, plan_payload=self._snapshot_plan(state))
 
-                action, reason = get_approval_service().check_command(command)
+                action, reason = handler.needs_approval(args)
                 if action == "deny":
                     step.status = "failed"
                     state.messages.append(
@@ -388,7 +373,7 @@ class AgentLoop:
                         step_id=step.step_id,
                         step_index=state.cursor,
                         command=step.command,
-                        title="命令需要审批",
+                        title="Action Requires Approval",
                         reason=reason,
                         risk_level="high",
                         working_directory=step.working_directory,
@@ -399,7 +384,9 @@ class AgentLoop:
                 step.status = "running"
                 state.phase = "executing"
                 yield emit_plan_updated(runtime_id=ctx.runtime_id, plan_payload=self._snapshot_plan(state))
-                ok, output = yield from self._execute_step(state, step)
+                
+                ok, output = yield from handler.execute(state=state, step_id=step.step_id, args=args)
+                
                 step.status = "completed" if ok else "failed"
                 state.messages.append(
                     LLMMessage(
@@ -412,84 +399,6 @@ class AgentLoop:
                 yield emit_plan_updated(runtime_id=ctx.runtime_id, plan_payload=self._snapshot_plan(state))
 
         return False, True, ""
-
-    def _execute_step(self, state: LoopState, step: LoopRuntimeStep) -> Iterator[LoopEvent]:
-        ctx = state.context
-        terminal_id = ctx.terminal_id
-        if terminal_id is None:
-            error = "终端未连接，无法执行。"
-            state.phase = "failed"
-            state.error_message = error
-            yield emit_failed(runtime_id=ctx.runtime_id, error=error)
-            return False, ""
-
-        session_manager = self._terminal.get_session(terminal_id)
-        if session_manager is None:
-            error = "终端会话不存在，无法执行命令。"
-            state.phase = "failed"
-            state.error_message = error
-            yield emit_failed(runtime_id=ctx.runtime_id, error=error)
-            return False, ""
-
-        if not self._terminal.acquire_terminal_slot(ctx.runtime_id, terminal_id):
-            error = "当前终端已有其他任务在执行，请稍后再试。"
-            state.phase = "failed"
-            state.error_message = error
-            yield emit_failed(runtime_id=ctx.runtime_id, error=error)
-            return False, ""
-
-        try:
-            execution_id = session_manager.start_execution(
-                step.command,
-                type("ExecutionContext", (), {"working_directory": step.working_directory})(),
-            )
-            execution = session_manager.get_execution_result(execution_id)
-            command_id = execution.execution_id or step.step_id
-
-            yield emit_execution_started(
-                runtime_id=ctx.runtime_id,
-                step_id=step.step_id,
-                step_index=state.cursor,
-                command_id=command_id,
-                terminal_id=terminal_id,
-                command=step.command,
-                title=step.title,
-            )
-
-            step.output = execution.output
-            step.exit_code = execution.exit_code
-            state.last_output_excerpt = execution.output[-4000:] if execution.output else ""
-
-            if execution.output:
-                yield emit_execution_output(
-                    runtime_id=ctx.runtime_id,
-                    step_id=step.step_id,
-                    command_id=command_id,
-                    terminal_id=terminal_id,
-                    text=execution.output,
-                    stream="stdout",
-                )
-
-            success = execution.completed and execution.exit_code in {None, 0}
-            yield emit_execution_completed(
-                runtime_id=ctx.runtime_id,
-                step_id=step.step_id,
-                step_index=state.cursor,
-                command_id=command_id,
-                terminal_id=terminal_id,
-                exit_code=execution.exit_code,
-                completed=execution.completed,
-                success=success,
-            )
-            return success, execution.output
-        except Exception as exc:
-            error = f"命令执行异常: {exc}"
-            state.phase = "failed"
-            state.error_message = error
-            yield emit_failed(runtime_id=ctx.runtime_id, error=error)
-            return False, ""
-        finally:
-            self._terminal.release_terminal_slot(ctx.runtime_id, terminal_id)
 
     def _snapshot_plan(self, state: LoopState) -> dict[str, Any]:
         return {

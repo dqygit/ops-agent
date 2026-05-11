@@ -33,7 +33,7 @@ export function TerminalPanel({
   onReconnect,
 }: TerminalPanelProps) {
   return (
-    <PanelCard className="h-full w-full border-l border-ops-border/40 bg-[#050807]">
+    <div className="h-full w-full border-l border-ops-border/40 bg-ops-deep shadow-inner flex flex-col overflow-hidden">
       <TerminalHeader
         asset={asset}
         tabs={tabs}
@@ -46,6 +46,6 @@ export function TerminalPanel({
         onReconnect={onReconnect}
       />
       <TerminalOutput sessionKey={String(activeAssetId)} output={output} onInput={onInput} onResize={onResize} />
-    </PanelCard>
+    </div>
   )
 }

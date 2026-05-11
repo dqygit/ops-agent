@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -10,33 +12,34 @@
 
 @layer components {
   .field-control {
-    @apply rounded-md border border-ops-border/70 bg-ops-deep text-ops-text px-3 py-2
-      shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] transition-colors
-      placeholder:text-ops-muted/55 focus:outline-none focus:border-ops-green focus:ring-1 focus:ring-ops-green/35;
+    @apply rounded-xl border border-ops-border/40 bg-ops-deep text-ops-text px-4 py-2.5
+      shadow-[inset_0_1px_0_rgba(255,255,255,0.02)] transition-all duration-200
+      placeholder:text-ops-muted/40 text-[13px] font-medium
+      focus:outline-none focus:border-ops-cyan/50 focus:ring-1 focus:ring-ops-cyan/20 focus:shadow-glow;
   }
 
   .button {
-    @apply inline-flex items-center justify-center rounded-md border border-ops-border/70
-      bg-ops-panel px-4 py-2 text-sm font-medium text-ops-text transition-colors
-      hover:border-ops-border hover:bg-ops-deep disabled:cursor-not-allowed disabled:opacity-50;
+    @apply inline-flex items-center justify-center rounded-xl border border-ops-border/40
+      bg-ops-panel px-5 py-2.5 text-[13px] font-bold  tracking-wider text-ops-text transition-all duration-200
+      hover:border-ops-border/60 hover:bg-ops-panel/80 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40;
   }
 
   .button-primary {
-    @apply border-ops-green/60 text-ops-green hover:border-ops-green;
-    background-color: rgb(132 204 22 / 0.12);
+    @apply border-ops-cyan/40 text-ops-cyan hover:border-ops-cyan/60 hover:shadow-glow;
+    background-color: rgba(6, 182, 212, 0.1);
   }
 
   .button-primary:hover {
-    background-color: rgb(132 204 22 / 0.18);
+    background-color: rgba(6, 182, 212, 0.15);
   }
 
   .button-danger {
-    @apply border-ops-danger/60 text-ops-danger hover:border-ops-danger;
-    background-color: rgb(239 68 68 / 0.12);
+    @apply border-ops-danger/40 text-ops-danger hover:border-ops-danger/60;
+    background-color: rgba(239, 68, 68, 0.1);
   }
 
   .button-danger:hover {
-    background-color: rgb(239 68 68 / 0.18);
+    background-color: rgba(239, 68, 68, 0.15);
   }
 
   .settings-error {
@@ -70,12 +73,12 @@
 
 /* Scrollbar styling */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 4px;
+  height: 4px;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  @apply bg-ops-border rounded-full hover:bg-ops-muted;
+  @apply bg-ops-border/40 rounded-full hover:bg-ops-border/80 transition-colors;
 }

@@ -118,7 +118,7 @@ export function useTerminalSessions({
           throw new Error(result.error)
         }
         if (result.terminal_id === null) {
-          throw new Error('终端会话创建失败')
+          throw new Error('Failed to create terminal session')
         }
         syncTerminalTabs((currentTabs) =>
           currentTabs.map((tabItem) =>
@@ -129,7 +129,7 @@ export function useTerminalSessions({
         )
       } catch (error) {
         const errorMessage =
-          error instanceof Error ? error.message : '连接资产终端失败'
+          error instanceof Error ? error.message : 'Failed to connect to asset terminal'
         setLoadError(errorMessage)
 
         syncTerminalTabs((currentTabs) =>
@@ -137,7 +137,7 @@ export function useTerminalSessions({
             tabItem.assetId === asset.id
               ? {
                   ...tabItem,
-                  output: `\r\n\x1b[31m[错误] ${errorMessage}\x1b[0m\r\n`,
+                  output: `\r\n\x1b[31m[ERROR] ${errorMessage}\x1b[0m\r\n`,
                 }
               : tabItem
           )
@@ -213,13 +213,13 @@ export function useTerminalSessions({
       if (tab.sessionId) {
         const result = await reconnectTerminalSession(tab.sessionId, activeTerminalAssetId)
         if (result.error || !result.terminal_id) {
-          throw new Error(result.error || '重连失败')
+          throw new Error(result.error || 'Reconnection failed')
         }
         nextSessionId = result.terminal_id
       } else {
         const result = await createTerminalSession(activeTerminalAssetId)
         if (result.error || !result.terminal_id) {
-          throw new Error(result.error || '重连失败')
+          throw new Error(result.error || 'Reconnection failed')
         }
         nextSessionId = result.terminal_id
       }
@@ -229,12 +229,15 @@ export function useTerminalSessions({
         )
       )
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : '终端重连失败'
+      const errorMessage = error instanceof Error ? error.message : 'Terminal reconnection failed'
       setLoadError(errorMessage)
     }
   }, [activeTerminalAssetId, syncTerminalTabs, setLoadError])
 
+  const lastTerminalSizeRef = useRef<{ cols: number; rows: number } | null>(null)
+
   const resizeTerminal = useCallback((cols: number, rows: number) => {
+    lastTerminalSizeRef.current = { cols, rows }
     const socket = terminalSocketRef.current
     if (socket?.readyState !== WebSocket.OPEN) {
       return
@@ -274,7 +277,7 @@ export function useTerminalSessions({
     [assets, connectAssetTerminal, setLoadError]
   )
 
-  // WebSocket 管理
+  // WebSocket Management
   useEffect(() => {
     const currentSockets = terminalSocketsRef.current
     const activeTab = terminalTabs.find(
@@ -299,6 +302,12 @@ export function useTerminalSessions({
       socket.addEventListener('open', () => {
         if (tabItem.assetId === activeTerminalAssetId) {
           terminalSocketRef.current = socket
+          if (lastTerminalSizeRef.current) {
+            socket.send(JSON.stringify({ type: 'resize', ...lastTerminalSizeRef.current }))
+          }
+        } else if (lastTerminalSizeRef.current) {
+           // We might want to size background tabs too, but active is most important
+           socket.send(JSON.stringify({ type: 'resize', ...lastTerminalSizeRef.current }))
         }
       })
 
@@ -387,7 +396,7 @@ export function useTerminalSessions({
     }
   }, [activeTerminalAssetId, syncTerminalTabs, terminalTabs, setLoadError])
 
-  // 清理所有 WebSocket
+  // Cleanup all WebSockets
   useEffect(() => {
     return () => {
       for (const tabItem of terminalTabsRef.current) {

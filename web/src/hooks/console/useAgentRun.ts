@@ -5,7 +5,7 @@ import type { Asset, EventItem, RuntimeSummary } from '../../types/ops'
 import { flushDeltaBuffer, LOCAL_TERMINAL_ASSET_ID, mergeDeltaEvent, mergePersistedEventsWithTransient, PENDING_ASSISTANT_MESSAGE_ID } from './consoleShared'
 
 interface UseAgentRunProps {
-  // 会话域依赖
+  // Conversation dependencies
   activeConversationId: string | null
   activeConversationIdRef: RefObject<string | null>
   events: EventItem[]
@@ -26,11 +26,11 @@ interface UseAgentRunProps {
   refreshConversationList: () => Promise<any>
   syncConversationRuntimes: (conversationId: string) => Promise<RuntimeSummary[]>
 
-  // 终端域依赖
+  // Terminal dependencies
   selectedAsset: Asset
   activeTerminalTab: { sessionId: string | null } | null
 
-  // 基础态依赖
+  // Base state dependencies
   selectedModel: string
   runMode: RunMode
   setLoadError: (error: string | null) => void
@@ -84,7 +84,7 @@ export function useAgentRun({
         kind: 'delta',
         messageId: PENDING_ASSISTANT_MESSAGE_ID,
         stage: 'assistant',
-        text: '正在发送请求并等待模型响应…',
+        text: 'Initiating request and waiting for model response...',
       }
 
       if (activeConversationIdRef.current === conversationId) {
@@ -104,6 +104,7 @@ export function useAgentRun({
       )
 
       const deltaBuffer = new Map<string, string>()
+      const pendingPersistEvents: EventItem[] = []
 
       for await (const event of stream) {
         if (event.kind === 'delta' && event.messageId) {
@@ -122,16 +123,14 @@ export function useAgentRun({
           continue
         }
 
-        const detail = await appendConversationEvents(conversationId, [event])
-        upsertConversationSummary(detail)
+        // Immediately update UI with transient event, don't block SSE stream
         if (activeConversationIdRef.current === conversationId) {
-          setEvents((currentEvents: EventItem[]) => mergePersistedEventsWithTransient(detail.events, currentEvents))
-        } else {
-          applyConversationDetailIfActive(conversationId, detail)
+          setEvents((currentEvents: EventItem[]) => [...currentEvents, event])
         }
-        if (shouldSyncRuntimeForEvent(event)) {
-          await syncConversationRuntimes(conversationId)
-        }
+
+        // Collect non-delta events, batch persist after stream ends
+        pendingPersistEvents.push(event)
+
         if (event.kind === 'approval_required' && activeConversationIdRef.current === conversationId) {
           setPendingApprovalRuntimeId(event.runtimeId ?? null)
           setPendingApprovalToken(event.approvalToken ?? null)
@@ -142,10 +141,17 @@ export function useAgentRun({
         }
       }
 
-      // 持久化 delta 缓冲区
+      // Batch persist all non-delta events + delta buffer after stream ends
       const finalEvents = flushDeltaBuffer(deltaBuffer, events)
-      if (finalEvents.length > 0) {
-        await appendConversationEvents(conversationId, finalEvents)
+      const allPersistEvents = [...pendingPersistEvents, ...finalEvents]
+      if (allPersistEvents.length > 0) {
+        const detail = await appendConversationEvents(conversationId, allPersistEvents)
+        upsertConversationSummary(detail)
+        if (activeConversationIdRef.current === conversationId) {
+          setEvents((currentEvents: EventItem[]) => mergePersistedEventsWithTransient(detail.events, currentEvents))
+        } else {
+          applyConversationDetailIfActive(conversationId, detail)
+        }
       }
       await syncConversationRuntimes(conversationId)
     } catch (error) {
@@ -217,7 +223,7 @@ export function useAgentRun({
             kind: 'delta',
             messageId: PENDING_ASSISTANT_MESSAGE_ID,
             stage: 'assistant',
-            text: approved ? '已提交批准，等待模型继续…' : '已提交拒绝，等待模型继续…',
+            text: approved ? 'Approval submitted, waiting for model to continue...' : 'Rejection submitted, waiting for model to continue...',
           },
         ])
       }
@@ -225,6 +231,7 @@ export function useAgentRun({
       try {
         const stream = await streamApproveAgent(runId, approved, approvalToken ?? undefined)
         const deltaBuffer = new Map<string, string>()
+        const pendingPersistEvents: EventItem[] = []
 
         for await (const event of stream) {
           if (event.kind === 'delta' && event.messageId) {
@@ -243,16 +250,14 @@ export function useAgentRun({
             continue
           }
 
-          const detail = await appendConversationEvents(conversationId, [event])
-          upsertConversationSummary(detail)
+          // Immediately update UI with transient event, don't block SSE stream
           if (activeConversationIdRef.current === conversationId) {
-            setEvents((currentEvents: EventItem[]) => mergePersistedEventsWithTransient(detail.events, currentEvents))
-          } else {
-            applyConversationDetailIfActive(conversationId, detail)
+            setEvents((currentEvents: EventItem[]) => [...currentEvents, event])
           }
-          if (shouldSyncRuntimeForEvent(event)) {
-            await syncConversationRuntimes(conversationId)
-          }
+
+          // Collect non-delta events, batch persist after stream ends
+          pendingPersistEvents.push(event)
+
           if (event.kind === 'approval_required' && activeConversationIdRef.current === conversationId) {
             setPendingApprovalRuntimeId(event.runtimeId ?? null)
             setPendingApprovalToken(event.approvalToken ?? null)
@@ -263,10 +268,17 @@ export function useAgentRun({
           }
         }
 
-        // 持久化 delta 缓冲区
+        // Batch persist all non-delta events + delta buffer after stream ends
         const finalEvents = flushDeltaBuffer(deltaBuffer, events)
-        if (finalEvents.length > 0) {
-          await appendConversationEvents(conversationId, finalEvents)
+        const allPersistEvents = [...pendingPersistEvents, ...finalEvents]
+        if (allPersistEvents.length > 0) {
+          const detail = await appendConversationEvents(conversationId, allPersistEvents)
+          upsertConversationSummary(detail)
+          if (activeConversationIdRef.current === conversationId) {
+            setEvents((currentEvents: EventItem[]) => mergePersistedEventsWithTransient(detail.events, currentEvents))
+          } else {
+            applyConversationDetailIfActive(conversationId, detail)
+          }
         }
         await syncConversationRuntimes(conversationId)
       } catch (error) {

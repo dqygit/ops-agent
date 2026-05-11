@@ -147,9 +147,9 @@ def list_conversation_runtimes(conversation_id: str) -> list[RuntimeSummaryView]
             conversation_id=runtime.conversation_id,
             asset_id=runtime.asset_id,
             terminal_id=runtime.terminal_id,
-            status=runtime.state.get("status", "running"),
-            current_step_id=runtime.state.get("current_step"),
-            pending_approval_step_id=(runtime.state.get("pending_approval") or {}).get("step_id"),
+            status=runtime.state.phase,
+            current_step_id=runtime.state.get_current_step().step_id if runtime.state.get_current_step() else None,
+            pending_approval_step_id=runtime.state.pending_tool_call_id,
             updated_at=runtime.updated_at,
         )
         for runtime in runtimes

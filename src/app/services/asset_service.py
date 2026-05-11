@@ -42,7 +42,7 @@ def ensure_default_asset_group(session):
     existing_group = session.exec(select(AssetGroup).where(AssetGroup.name == "default")).first()
     if existing_group is not None:
         return existing_group
-    return create_asset_group(session, name="default", description="默认分组")
+    return create_asset_group(session, name="default", description="Default Group")
 
 
 def list_asset_group_records(session):

@@ -45,12 +45,6 @@ export function TerminalOutput({ sessionKey, output, onInput, onResize }: Termin
       return
     }
 
-    const now = Date.now()
-    const lastInput = lastSentInputRef.current
-    if (lastInput !== null && lastInput.value === data && now - lastInput.timestamp < 20) {
-      return
-    }
-    lastSentInputRef.current = { value: data, timestamp: now }
     onInputRef.current(data)
   }
 
@@ -64,12 +58,27 @@ export function TerminalOutput({ sessionKey, output, onInput, onResize }: Termin
       cursorBlink: true,
       fontFamily: 'Cascadia Code, JetBrains Mono, Consolas, monospace',
       fontSize: 13,
-      convertEol: true,
       theme: {
-        background: '#050807',
-        foreground: '#d7e4dd',
-        cursor: '#84cc16',
-        selectionBackground: 'rgba(132, 204, 22, 0.22)',
+        background: '#0B0F19',
+        foreground: '#F1F5F9',
+        cursor: '#06B6D4',
+        selectionBackground: 'rgba(6, 182, 212, 0.3)',
+        black: '#1E293B',
+        red: '#EF4444',
+        green: '#10B981',
+        yellow: '#F59E0B',
+        blue: '#3B82F6',
+        magenta: '#8B5CF6',
+        cyan: '#06B6D4',
+        white: '#F1F5F9',
+        brightBlack: '#475569',
+        brightRed: '#F87171',
+        brightGreen: '#34D399',
+        brightYellow: '#FBBF24',
+        brightBlue: '#60A5FA',
+        brightMagenta: '#A78BFA',
+        brightCyan: '#22D3EE',
+        brightWhite: '#FFFFFF',
       },
     })
     const fitAddon = new FitAddon()
@@ -94,37 +103,6 @@ export function TerminalOutput({ sessionKey, output, onInput, onResize }: Termin
 
     terminal.onData((data) => emitInput(data))
 
-    const handleNativeKeyDown = (event: KeyboardEvent) => {
-      if (event.ctrlKey || event.metaKey || event.altKey) {
-        return
-      }
-
-      if (event.key === 'Enter') {
-        event.preventDefault()
-        emitInput('\r')
-        return
-      }
-
-      if (event.key === 'Backspace') {
-        event.preventDefault()
-        emitInput('\u007f')
-        return
-      }
-
-      if (event.key === 'Tab') {
-        event.preventDefault()
-        emitInput('\t')
-        return
-      }
-
-      if (event.key.length === 1) {
-        event.preventDefault()
-        emitInput(event.key)
-      }
-    }
-
-    helperTextarea?.addEventListener('keydown', handleNativeKeyDown)
-
     const handleResize = () => {
       fitAddon.fit()
       onResizeRef.current(terminal.cols, terminal.rows)
@@ -135,7 +113,6 @@ export function TerminalOutput({ sessionKey, output, onInput, onResize }: Termin
     fitAddonRef.current = fitAddon
 
     return () => {
-      helperTextarea?.removeEventListener('keydown', handleNativeKeyDown)
       window.removeEventListener('resize', handleResize)
       terminal.dispose()
       terminalRef.current = null
@@ -170,6 +147,7 @@ export function TerminalOutput({ sessionKey, output, onInput, onResize }: Termin
       
       requestAnimationFrame(() => {
         fitAddon.fit()
+        onResizeRef.current(terminal.cols, terminal.rows)
       })
       return
     }
@@ -185,15 +163,14 @@ export function TerminalOutput({ sessionKey, output, onInput, onResize }: Termin
     if (nextChunk.length > 0) {
       terminal.write(nextChunk)
       writtenLengthRef.current = output.length
-      fitAddon.fit()
     }
   }, [sessionKey, output])
 
   return (
     <div
       ref={containerRef}
-      className="relative flex-1 w-full overflow-hidden bg-[#050807] p-2 focus:outline-none"
-      aria-label="终端输出"
+      className="relative flex-1 w-full overflow-hidden bg-ops-bg p-3 focus:outline-none"
+      aria-label="Terminal Session"
       onMouseDown={() => {
         terminalRef.current?.focus()
       }}

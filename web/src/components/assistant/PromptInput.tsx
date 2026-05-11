@@ -15,8 +15,8 @@ type PromptInputProps = {
 }
 
 const MODE_DESCRIPTION: Record<RunMode, string> = {
-  agent: '由 Agent 按需调用命令直接执行，边执行边推进任务。适合探索性排查和动态处理。',
-  plan: '先生成任务步骤，再逐步交给 Agent 执行；每完成一步都会更新计划状态。适合流程明确的任务。',
+  agent: 'Dynamic task execution with realtime tool invocation. Best for exploration.',
+  plan: 'Structured multi-step planning with sequential execution and state tracking.',
 }
 
 const MODE_LABEL: Record<RunMode, string> = {
@@ -53,82 +53,89 @@ export function PromptInput({
   }
 
   return (
-    <div className="m-4 flex shrink-0 flex-col overflow-hidden rounded-md border border-ops-border/50 bg-[#090d0b] shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
-      <div className="inline-flex w-fit border-b border-r border-ops-border/35 bg-ops-green/10 px-3 py-1 text-[11px] text-ops-green" aria-label="当前主机上下文">
-        @{selectedAsset.host || selectedAsset.name}
+    <div className="relative mx-6 mb-4 mt-2 flex shrink-0 flex-col overflow-hidden rounded-2xl border border-ops-border/40 bg-ops-panel/80 shadow-2xl backdrop-blur-md transition-all duration-200 focus-within:border-ops-cyan/50 focus-within:shadow-glow">
+      <div className="inline-flex w-fit items-center gap-2 border-b border-r border-ops-border/20 bg-ops-cyan/5 px-4 py-2 text-[10px] font-bold tracking-[0.1em] text-ops-cyan" aria-label="Context">
+        <span className="h-1.5 w-1.5 rounded-full bg-ops-cyan shadow-glow animate-pulse"></span>
+        Target Node: {selectedAsset.name} / {selectedAsset.host}
       </div>
       <label className="sr-only" htmlFor="prompt-input">
-        指令输入
+        Command Input
       </label>
-      <textarea
-        id="prompt-input"
-        className="min-h-[92px] w-full resize-none bg-transparent p-3 text-sm leading-6 text-ops-text focus:outline-none placeholder:text-ops-muted/50"
-        value={prompt}
-        onChange={(event) => onPromptChange(event.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' && !e.shiftKey) {
-            e.preventDefault()
-            void submitPrompt()
-          }
-        }}
-        placeholder="到任意主机执行命令查询、排查错误和任务处理等任何事情"
-      />
-      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-ops-border/10 px-2.5 pb-2 pt-2">
-        <div className="flex flex-wrap items-center gap-2">
+      <div className="relative w-full">
+        <textarea
+          id="prompt-input"
+          className="min-h-[72px] w-full resize-none bg-transparent py-4 pl-5 pr-16 text-[14px] leading-relaxed text-ops-text focus:outline-none placeholder:text-ops-muted/30 font-medium scrollbar-thin"
+          value={prompt}
+          onChange={(event) => onPromptChange(event.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault()
+              void submitPrompt()
+            }
+          }}
+          placeholder="Enter mission objectives or system commands..."
+        />
+        <div className="absolute bottom-2.5 right-2.5 flex items-center justify-center">
+          <button
+            className={`flex h-10 w-12 shrink-0 items-center justify-center rounded-xl border transition-all duration-200 active:scale-95 ${prompt.trim()
+              ? 'border-ops-cyan/40 bg-ops-cyan/15 text-ops-cyan shadow-glow hover:bg-ops-cyan/25 hover:border-ops-cyan/60'
+              : 'cursor-not-allowed border-ops-border/20 bg-ops-deep text-ops-muted/30'
+              }`}
+            type="button"
+            onClick={() => {
+              void submitPrompt()
+            }}
+            disabled={!prompt.trim()}
+            aria-label="Run Mission"
+          >
+            <svg aria-hidden="true" viewBox="0 0 24 24" focusable="false" className="h-5 w-5 fill-current"><path d="M5 3.8 20.2 12 5 20.2v-6.1L13.4 12 5 9.9z" /></svg>
+          </button>
+        </div>
+      </div>
+      <div className="flex items-center gap-4 border-t border-ops-border/10 bg-ops-deep/30 px-4 py-2.5">
+        <div className="flex flex-1 items-center gap-4 overflow-x-auto scrollbar-none">
           <ModelSelector models={models} selectedModel={selectedModel} onModelChange={onModelChange} />
 
           <div
-            className="inline-flex items-center rounded-md border border-ops-border/40 bg-ops-panel p-0.5"
-            role="radiogroup"
-            aria-label="执行模式"
+            className="group flex items-center gap-4"
           >
-            {(Object.keys(MODE_LABEL) as RunMode[]).map((mode) => {
-              const isActive = runMode === mode
-              return (
-                <button
-                  key={mode}
-                  type="button"
-                  role="radio"
-                  aria-checked={isActive}
-                  title={MODE_DESCRIPTION[mode]}
-                  onClick={() => onRunModeChange(mode)}
-                  className={`inline-flex items-center gap-1 rounded px-2 py-1 text-[11px] font-medium transition-colors ${
-                    isActive
+            <div
+              className="inline-flex items-center rounded-xl border border-ops-border/20 bg-ops-deep p-1"
+              role="radiogroup"
+              aria-label="Mode"
+            >
+              {(Object.keys(MODE_LABEL) as RunMode[]).map((mode) => {
+                const isActive = runMode === mode
+                return (
+                  <button
+                    key={mode}
+                    type="button"
+                    role="radio"
+                    aria-checked={isActive}
+                    title={MODE_DESCRIPTION[mode]}
+                    onClick={() => onRunModeChange(mode)}
+                    className={`inline-flex items-center gap-2 rounded-lg px-4 py-1.5 text-[10px] font-bold tracking-[0.1em] transition-all duration-200 active:scale-95 ${isActive
                       ? mode === 'plan'
-                        ? 'bg-ops-cyan/15 text-ops-cyan shadow-[inset_0_0_0_1px_rgba(34,211,238,0.35)]'
-                        : 'bg-ops-green/15 text-ops-green shadow-[inset_0_0_0_1px_rgba(34,197,94,0.35)]'
-                      : 'text-ops-muted hover:text-ops-text'
-                  }`}
-                >
-                  {mode === 'plan' ? (
-                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"></rect><path d="M7 11V7a5 5 0 0110 0v4"></path></svg>
-                  ) : (
-                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3" /><path d="M12 1v6M12 17v6M4.22 4.22l4.24 4.24M15.54 15.54l4.24 4.24M1 12h6M17 12h6M4.22 19.78l4.24-4.24M15.54 8.46l4.24-4.24" /></svg>
-                  )}
-                  {MODE_LABEL[mode]}
-                </button>
-              )
-            })}
+                        ? 'bg-ops-cyan/15 text-ops-cyan border border-ops-cyan/30 shadow-glow'
+                        : 'bg-ops-emerald/15 text-ops-emerald border border-ops-emerald/30 shadow-glow'
+                      : 'text-ops-muted hover:text-ops-text hover:bg-ops-panel border border-transparent'
+                      }`}
+                  >
+                    {mode === 'plan' ? (
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><rect x="3" y="11" width="18" height="11" rx="2"></rect><path d="M7 11V7a5 5 0 0110 0v4"></path></svg>
+                    ) : (
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><circle cx="12" cy="12" r="3" /><path d="M12 1v6M12 17v6M4.22 4.22l4.24 4.24M15.54 15.54l4.24 4.24M1 12h6M17 12h6M4.22 19.78l4.24-4.24M15.54 8.46l4.24-4.24" /></svg>
+                    )}
+                    {MODE_LABEL[mode]}
+                  </button>
+                )
+              })}
+            </div>
+            <span className="hidden max-w-[280px] truncate text-[10px] font-bold tracking-[0.1em] text-ops-muted/40 transition-all duration-300 opacity-0 group-hover:opacity-100 sm:inline">
+              {MODE_DESCRIPTION[runMode]}
+            </span>
           </div>
-          <span className="hidden max-w-[260px] truncate text-[11px] text-ops-muted/85 sm:inline" title={MODE_DESCRIPTION[runMode]}>
-            {MODE_DESCRIPTION[runMode]}
-          </span>
         </div>
-        <button
-          className={`flex h-9 min-w-9 shrink-0 items-center justify-center rounded-md border transition-colors ${
-            prompt.trim()
-              ? 'border-ops-green/60 bg-ops-green/12 text-ops-green hover:bg-ops-green/18'
-              : 'cursor-not-allowed border-ops-border/40 bg-ops-panel text-ops-muted'
-          }`}
-          type="button"
-          onClick={() => {
-            void submitPrompt()
-          }}
-          disabled={!prompt.trim()}
-          aria-label="执行任务"
-        >
-          <svg aria-hidden="true" viewBox="0 0 24 24" focusable="false" className="h-4 w-4 fill-current"><path d="M5 3.8 20.2 12 5 20.2v-6.1L13.4 12 5 9.9z" /></svg>
-        </button>
       </div>
     </div>
   )

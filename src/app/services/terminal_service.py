@@ -3,6 +3,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from functools import partial
 import re
+import logging
 from typing import Any, Awaitable, Callable, TypeVar, cast
 
 import anyio
@@ -18,6 +19,10 @@ run_sync = cast(RunSyncCallable[Any], getattr(anyio.to_thread, "run_sync"))
 
 
 import uuid
+
+
+ANSI_PATTERN = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -117,11 +122,12 @@ class TerminalService:
             async with anyio.create_task_group() as task_group:
                 task_group.start_soon(self._receive_websocket_input, terminal_id, runtime, websocket, closed, send_lock)
                 task_group.start_soon(self._send_terminal_output, terminal_id, runtime, websocket, closed, send_lock)
-        except WebSocketDisconnect:
+        except (WebSocketDisconnect, RuntimeError):
             pass
         except Exception as exc:
+            logger.exception("TaskGroup failed for terminal_id=%s: %s", terminal_id, str(exc))
             try:
-                await websocket.send_json({"type": "error", "message": str(exc)})
+                await websocket.send_json({"type": "error", "message": f"Terminal session error: {str(exc)}"})
             except Exception:
                 pass
         finally:
@@ -142,14 +148,20 @@ class TerminalService:
                         cols = int(message.get("cols", 80))
                         rows = int(message.get("rows", 24))
                     except (TypeError, ValueError):
-                        async with send_lock:
-                            await websocket.send_json({"type": "error", "message": "invalid terminal size"})
+                        try:
+                            async with send_lock:
+                                await websocket.send_json({"type": "error", "message": "invalid terminal size"})
+                        except (WebSocketDisconnect, RuntimeError):
+                            pass
                         continue
                     await run_sync(runtime.session_manager.resize, cols, rows)
                 elif message_type == "ping":
-                    async with send_lock:
-                        await websocket.send_json({"type": "pong"})
-        except WebSocketDisconnect:
+                    try:
+                        async with send_lock:
+                            await websocket.send_json({"type": "pong"})
+                    except (WebSocketDisconnect, RuntimeError):
+                        pass
+        except (WebSocketDisconnect, RuntimeError):
             return
         finally:
             closed.set()
@@ -163,16 +175,13 @@ class TerminalService:
                     if filtered_output:
                         async with send_lock:
                             await websocket.send_json({"type": "output", "data": filtered_output})
-                except WebSocketDisconnect:
+                except (WebSocketDisconnect, RuntimeError):
                     closed.set()
                     return
             if closed.is_set():
                 final_output = await run_sync(runtime.session_manager.read)
                 if final_output:
-                    filtered_output = await run_sync(self._append_output, terminal_id, final_output)
-                    if filtered_output:
-                        async with send_lock:
-                            await websocket.send_json({"type": "output", "data": filtered_output})
+                    await run_sync(self._append_output, terminal_id, final_output)
                 return
             await anyio.sleep(0.02)
 
@@ -288,13 +297,18 @@ class TerminalService:
     def _append_output(self, terminal_id: str, output: str) -> str:
         if not output:
             return ""
-        filtered_output = self._filter_output(terminal_id, output)
-        if not filtered_output:
-            return ""
+            
+        # We still perform filtering to trigger side effects (like command events)
+        # but we ignore the filtered return value for the actual terminal UI.
+        # This ensures the user gets a "Normal Terminal" experience with raw fidelity.
+        self._filter_output(terminal_id, output)
+        
         sequence = self._output_sequences.get(terminal_id, 0) + 1
         self._output_sequences[terminal_id] = sequence
-        self._output_buffers.setdefault(terminal_id, deque(maxlen=4000)).append((sequence, filtered_output))
-        return filtered_output
+        
+        # Store the raw output in the buffer to ensure consistent replay on reconnection
+        self._output_buffers.setdefault(terminal_id, deque(maxlen=4000)).append((sequence, output))
+        return output
 
     def _append_command_event(self, terminal_id: str, event: dict[str, Any]) -> None:
         sequence = self._command_event_sequences.get(terminal_id, 0) + 1
@@ -303,8 +317,10 @@ class TerminalService:
         self._command_event_buffers.setdefault(terminal_id, deque(maxlen=8000)).append((sequence, payload))
 
     def _normalize_output_text(self, output: str) -> str:
-        normalized = ANSI_PATTERN.sub("", output).replace("\r\n", "\n").replace("\r", "")
-        return normalized
+        # We return the raw output to preserve ANSI escape codes and carriage returns.
+        # This ensures that the terminal emulator on the frontend (xterm.js) can
+        # correctly render colors, cursor movements, and other formatting.
+        return output
 
     def _advance_filter_queue(self, terminal_id: str, completed_command_id: str) -> None:
         filters = self._output_filters.get(terminal_id, {})

@@ -7,7 +7,9 @@ from typing import Any
 
 from sqlmodel import Session
 
-from app.core.graph import GraphRuntimeManager, build_initial_state, new_runtime_id
+from app.core.loop.loop_state import LoopContext
+from app.core.loop.runtime_manager import LoopRuntimeManager, new_runtime_id
+from app.core.tool.execute_command import ExecuteCommandHandler
 from app.db.repositories.assets import get_asset
 from app.db.repositories.models import get_default_model_config
 from app.services.model_service import ModelService
@@ -18,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 
 class _TerminalSessionAdapter:
-    def __init__(self, terminal_service: TerminalService, runtime_manager: GraphRuntimeManager) -> None:
+    def __init__(self, terminal_service: TerminalService, runtime_manager: LoopRuntimeManager) -> None:
         self._terminal_service = terminal_service
         self._runtime_manager = runtime_manager
 
@@ -26,22 +28,10 @@ class _TerminalSessionAdapter:
         return self._terminal_service.get_session(terminal_id)
 
     def acquire_terminal_slot(self, runtime_id: str, terminal_id: str) -> bool:
-        rt = self._runtime_manager.get_runtime(runtime_id)
-        if rt is None:
-            return False
-        holder = getattr(self._runtime_manager, "_terminal_slots", {})
-        current = holder.get(terminal_id)
-        if current is not None and current != runtime_id:
-            return False
-        holder[terminal_id] = runtime_id
-        setattr(self._runtime_manager, "_terminal_slots", holder)
-        return True
+        return self._runtime_manager.acquire_terminal_slot(runtime_id, terminal_id)
 
     def release_terminal_slot(self, runtime_id: str, terminal_id: str) -> None:
-        holder = getattr(self._runtime_manager, "_terminal_slots", {})
-        if holder.get(terminal_id) == runtime_id:
-            holder.pop(terminal_id, None)
-            setattr(self._runtime_manager, "_terminal_slots", holder)
+        self._runtime_manager.release_terminal_slot(runtime_id, terminal_id)
 
 
 class TaskOrchestrator:
@@ -88,7 +78,9 @@ class ConsoleAppService:
         model_service: ModelService | None = None,
     ) -> None:
         self._model_service = model_service or ModelService()
-        self.runtime_manager = GraphRuntimeManager(terminal_adapter_factory=lambda ts: _TerminalSessionAdapter(ts, self.runtime_manager))
+        self.runtime_manager = LoopRuntimeManager(
+            tools_factory=lambda ts: [ExecuteCommandHandler(_TerminalSessionAdapter(ts, self.runtime_manager))]
+        )
 
     def build_orchestrator(self, terminal_service: TerminalService) -> TaskOrchestrator:
         return TaskOrchestrator(self, terminal_service)
@@ -105,7 +97,6 @@ class ConsoleAppService:
         mode: str = "agent",
         terminal_service: TerminalService,
     ) -> Iterator[dict]:
-        _ = mode
         asset = self._resolve_asset(session, asset_id)
         model_config = self._resolve_model_config(session, model_name)
         asset_summary = (
@@ -116,22 +107,24 @@ class ConsoleAppService:
         os_type = self._infer_os_type(shell_type)
 
         runtime_id = new_runtime_id()
-        initial_state = build_initial_state(
+        context = LoopContext(
             runtime_id=runtime_id,
             conversation_id=conversation_id,
             asset_id=asset_id,
             terminal_id=terminal_id,
-            model_config=model_config,
             asset_summary=asset_summary,
             shell_type=shell_type,
             os_type=os_type,
             user_prompt=prompt,
+            model_config=model_config,
+            mode=mode, # type: ignore
         )
+        
         self.runtime_manager.create_runtime(
             conversation_id=conversation_id,
             asset_id=asset_id,
             terminal_id=terminal_id,
-            initial_state=initial_state,
+            context=context,
         )
 
         try:

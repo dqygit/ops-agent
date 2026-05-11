@@ -270,20 +270,29 @@ export function App() {
               />
             ) : loadError ? (
               <section className={centerFallbackClassName}>
-                <p className="text-ops-danger text-sm">{loadError}</p>
+                <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_50%,rgba(239,68,68,0.05),transparent_80%)] pointer-events-none" />
+                <p className="text-ops-danger font-bold tracking-[0.1em] text-[11px] shadow-glow">{loadError}</p>
               </section>
             ) : (
               <section className={centerFallbackClassName}>
-                <p className="text-ops-muted text-sm">暂无目标连接，请先在左侧选择或添加资产。</p>
+                <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_50%,rgba(6,182,212,0.03),transparent_80%)] pointer-events-none" />
+                <div className="flex flex-col items-center gap-4">
+                  <div className="h-12 w-12 rounded-2xl border border-ops-border/20 bg-ops-panel/40 flex items-center justify-center text-ops-muted/30">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /><path d="M9 10a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z" /></svg>
+                  </div>
+                  <p className="text-ops-muted/40 font-bold tracking-[0.1em] text-[10px]">Awaiting Target Selection</p>
+                </div>
               </section>
             )}
           </Panel>
 
           {selectedAsset ? (
             <>
-              <PanelResizeHandle className="w-1 bg-transparent group cursor-col-resize flex flex-col items-center justify-center relative">
-                <div className="absolute inset-y-0 -left-1 -right-1 z-10" />
-                <div className="w-px h-16 bg-ops-border/50 group-hover:bg-ops-cyan group-active:bg-ops-cyan transition-colors" />
+              <PanelResizeHandle className="w-1.5 bg-transparent group cursor-col-resize flex flex-col items-center justify-center relative z-10">
+                <div className="absolute inset-y-0 -left-1 -right-1" />
+                <div className="w-px h-full bg-ops-border/10 group-hover:bg-ops-cyan/50 group-active:bg-ops-cyan transition-all duration-300 relative">
+                  <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-1 h-12 rounded-full bg-ops-border/30 group-hover:bg-ops-cyan shadow-glow" />
+                </div>
               </PanelResizeHandle>
 
               <Panel defaultSize={34} minSize={24}>

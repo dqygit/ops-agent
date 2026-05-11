@@ -421,3 +421,17 @@ class PendingApprovalView(BaseModel):
     message: str
     latest_decision: str | None = None
     steps: list[PendingApprovalStepView]
+
+
+class SerialPortView(BaseModel):
+    device: str
+    description: str
+    hwid: str
+    name: str | None = None
+    vid: int | None = None
+    pid: int | None = None
+    serial_number: str | None = None
+    location: str | None = None
+    manufacturer: str | None = None
+    product: str | None = None
+    interface: str | None = None

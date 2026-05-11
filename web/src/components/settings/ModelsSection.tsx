@@ -18,83 +18,104 @@ export function ModelsSection({
   onTest,
 }: ModelsSectionProps) {
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex items-center justify-between">
+    <div className="flex flex-col gap-8">
+      <div className="flex items-center justify-between pb-4 border-b border-ops-border/20">
         <div>
-          <h4 className="text-ops-text font-medium">模型</h4>
-          <p className="text-sm text-ops-muted mt-1">当前选择：{selectedModel || '未选择'}</p>
+          <h4 className="text-[14px] font-bold  tracking-[0.15em] text-ops-text">AI Model Orchestration</h4>
+          <p className="text-[10px] font-medium text-ops-muted mt-1 tracking-wider opacity-60">Active Model: <span className="text-ops-cyan">{selectedModel || 'Undefined'}</span></p>
         </div>
-        <button type="button" className="px-4 py-2 text-sm rounded-md bg-ops-cyan text-ops-bg hover:bg-ops-cyan/90 transition-colors font-medium" onClick={onStartCreate}>新增模型</button>
+        <button type="button" className="button button-primary" onClick={onStartCreate}>Deploy New Model</button>
       </div>
 
       {showModelForm ? (
-        <form className="bg-ops-deep/30 p-5 rounded-lg border border-ops-border/20 grid grid-cols-2 gap-4 mt-2" onSubmit={onSave}>
-          <label className="flex flex-col gap-1.5 text-sm text-ops-muted">
-            名称
-            <input className="bg-ops-panel text-ops-text border border-ops-border/30 rounded px-3 py-2 outline-none focus:border-ops-cyan transition-colors" value={modelForm.name} onChange={(event) => onFormChange({ ...modelForm, name: event.target.value })} required />
+        <form className="bg-ops-deep/40 p-6 rounded-2xl border border-ops-border/20 grid grid-cols-2 gap-5 mt-2 animate-in slide-in-from-top-4 duration-300" onSubmit={onSave}>
+          <label className="flex flex-col gap-2 text-[11px] font-bold  tracking-widest text-ops-muted/70">
+            Internal Name
+            <input className="field-control" value={modelForm.name} onChange={(event) => onFormChange({ ...modelForm, name: event.target.value })} placeholder="e.g. Production Claude" required />
           </label>
-          <label className="flex flex-col gap-1.5 text-sm text-ops-muted">
-            供应商
-            <select className="bg-ops-panel text-ops-text border border-ops-border/30 rounded px-3 py-2 outline-none focus:border-ops-cyan transition-colors" value={modelForm.provider} onChange={(event) => onFormChange({ ...modelForm, provider: event.target.value })}>
-              <option value="anthropic">anthropic</option>
-              <option value="openai_compatible">openai_compatible</option>
+          <label className="flex flex-col gap-2 text-[11px] font-bold  tracking-widest text-ops-muted/70">
+            Provider Identity
+            <select className="field-control" value={modelForm.provider} onChange={(event) => onFormChange({ ...modelForm, provider: event.target.value })}>
+              <option value="anthropic">Anthropic Claude</option>
+              <option value="openai_compatible">OpenAI Compatible</option>
             </select>
           </label>
-          <label className="flex flex-col gap-1.5 text-sm text-ops-muted col-span-2">
-            Base URL
-            <input className="bg-ops-panel text-ops-text border border-ops-border/30 rounded px-3 py-2 outline-none focus:border-ops-cyan transition-colors" value={modelForm.baseUrl} onChange={(event) => onFormChange({ ...modelForm, baseUrl: event.target.value })} required />
+          <label className="flex flex-col gap-2 text-[11px] font-bold  tracking-widest text-ops-muted/70 col-span-2">
+            Endpoint Base URL
+            <input className="field-control font-mono" value={modelForm.baseUrl} onChange={(event) => onFormChange({ ...modelForm, baseUrl: event.target.value })} placeholder="https://api.anthropic.com" required />
           </label>
-          <label className="flex flex-col gap-1.5 text-sm text-ops-muted col-span-2">
-            API Key
-            <input className="bg-ops-panel text-ops-text border border-ops-border/30 rounded px-3 py-2 outline-none focus:border-ops-cyan transition-colors" type="password" value={modelForm.apiKey} onChange={(event) => onFormChange({ ...modelForm, apiKey: event.target.value })} placeholder={editingModel ? '留空则保持不变' : ''} required={!editingModel} />
+          <label className="flex flex-col gap-2 text-[11px] font-bold  tracking-widest text-ops-muted/70 col-span-2">
+            Authorization Token (API Key)
+            <input className="field-control font-mono" type="password" value={modelForm.apiKey} onChange={(event) => onFormChange({ ...modelForm, apiKey: event.target.value })} placeholder={editingModel ? 'Unmodified' : 'sk-••••••••••••••••'} required={!editingModel} />
           </label>
-          <label className="flex flex-col gap-1.5 text-sm text-ops-muted col-span-2">
-            模型名称
-            <input className="bg-ops-panel text-ops-text border border-ops-border/30 rounded px-3 py-2 outline-none focus:border-ops-cyan transition-colors" value={modelForm.modelName} onChange={(event) => onFormChange({ ...modelForm, modelName: event.target.value })} required />
+          <label className="flex flex-col gap-2 text-[11px] font-bold  tracking-widest text-ops-muted/70 col-span-2">
+            Target Model Identifier
+            <input className="field-control font-mono" value={modelForm.modelName} onChange={(event) => onFormChange({ ...modelForm, modelName: event.target.value })} placeholder="claude-3-5-sonnet-20240620" required />
           </label>
-          <label className="flex flex-col gap-1.5 text-sm text-ops-muted">
-            超时时间
-            <input className="bg-ops-panel text-ops-text border border-ops-border/30 rounded px-3 py-2 outline-none focus:border-ops-cyan transition-colors" type="number" min="1" value={modelForm.timeoutSeconds} onChange={(event) => onFormChange({ ...modelForm, timeoutSeconds: event.target.value })} required />
+          <label className="flex flex-col gap-2 text-[11px] font-bold  tracking-widest text-ops-muted/70">
+            Request Timeout (s)
+            <input className="field-control font-mono" type="number" min="1" value={modelForm.timeoutSeconds} onChange={(event) => onFormChange({ ...modelForm, timeoutSeconds: event.target.value })} required />
           </label>
-          <label className="flex flex-col gap-1.5 text-sm text-ops-muted">
-            Temperature
-            <input className="bg-ops-panel text-ops-text border border-ops-border/30 rounded px-3 py-2 outline-none focus:border-ops-cyan transition-colors" type="number" step="0.1" value={modelForm.temperature} onChange={(event) => onFormChange({ ...modelForm, temperature: event.target.value })} required />
+          <label className="flex flex-col gap-2 text-[11px] font-bold  tracking-widest text-ops-muted/70">
+            Temperature (0-1)
+            <input className="field-control font-mono" type="number" step="0.1" value={modelForm.temperature} onChange={(event) => onFormChange({ ...modelForm, temperature: event.target.value })} required />
           </label>
-          <label className="flex flex-col gap-1.5 text-sm text-ops-muted">
-            Max Tokens
-            <input className="bg-ops-panel text-ops-text border border-ops-border/30 rounded px-3 py-2 outline-none focus:border-ops-cyan transition-colors" type="number" min="1" value={modelForm.maxTokens} onChange={(event) => onFormChange({ ...modelForm, maxTokens: event.target.value })} required />
+          <label className="flex flex-col gap-2 text-[11px] font-bold  tracking-widest text-ops-muted/70 col-span-2 sm:col-span-1">
+            Max Token Output
+            <input className="field-control font-mono" type="number" min="1" value={modelForm.maxTokens} onChange={(event) => onFormChange({ ...modelForm, maxTokens: event.target.value })} required />
           </label>
-          <label className="flex items-center gap-2 text-sm text-ops-text col-span-2 mt-2">
-            <input type="checkbox" className="accent-ops-cyan w-4 h-4" checked={modelForm.isDefault} disabled={editingModel?.isDefault} onChange={(event) => onFormChange({ ...modelForm, isDefault: event.target.checked })} />
-            {editingModel?.isDefault ? '当前默认模型' : '设为默认'}
+          <label className="flex items-center gap-3 text-[11px] font-bold  tracking-widest text-ops-text col-span-2 mt-2">
+            <input type="checkbox" className="accent-ops-cyan w-4 h-4 rounded-md" checked={modelForm.isDefault} disabled={editingModel?.isDefault} onChange={(event) => onFormChange({ ...modelForm, isDefault: event.target.checked })} />
+            {editingModel?.isDefault ? 'Primary Default Deployment' : 'Set as Primary Default'}
           </label>
-          <label className="flex flex-col gap-1.5 text-sm text-ops-muted col-span-2">
-            描述
-            <textarea className="bg-ops-panel text-ops-text border border-ops-border/30 rounded px-3 py-2 outline-none focus:border-ops-cyan transition-colors" value={modelForm.description} onChange={(event) => onFormChange({ ...modelForm, description: event.target.value })} rows={3} />
+          <label className="flex flex-col gap-2 text-[11px] font-bold  tracking-widest text-ops-muted/70 col-span-2">
+            Instance Description
+            <textarea className="field-control min-h-[80px]" value={modelForm.description} onChange={(event) => onFormChange({ ...modelForm, description: event.target.value })} placeholder="Deployment details..." rows={3} />
           </label>
-          {testResult ? <div className="col-span-2 p-3 text-sm text-ops-text bg-ops-panel border border-ops-border/20 rounded font-mono break-all">{testResult}</div> : null}
-          <div className="flex items-center justify-between gap-3 mt-4 pt-4 border-t border-ops-border/20 col-span-2">
-            <button type="button" className="px-4 py-2 text-sm rounded-md border border-ops-border/30 text-ops-text hover:bg-ops-border/20 transition-colors disabled:opacity-50" onClick={onTest} disabled={saving || !modelForm.apiKey.trim()} title={editingModel && !modelForm.apiKey.trim() ? '请输入新的 API Key 后再测试连接' : undefined}>测试连接</button>
+          {testResult ? <div className="col-span-2 p-4 text-[11px] font-mono text-ops-cyan bg-ops-cyan/10 border border-ops-cyan/20 rounded-xl break-all animate-in fade-in duration-300">{testResult}</div> : null}
+          <div className="flex items-center justify-between gap-3 mt-4 pt-6 border-t border-ops-border/20 col-span-2">
+            <button type="button" className="button px-6" onClick={onTest} disabled={saving || !modelForm.apiKey.trim()} title={editingModel && !modelForm.apiKey.trim() ? 'Enter API Key to test' : undefined}>Ping Endpoint</button>
             <div className="flex items-center gap-3">
-              <button type="button" className="px-4 py-2 text-sm rounded-md hover:bg-ops-border/20 text-ops-muted transition-colors" onClick={onCancelForm}>取消</button>
-              <button type="submit" className="px-4 py-2 text-sm rounded-md bg-ops-cyan text-ops-bg hover:bg-ops-cyan/90 transition-colors font-medium disabled:opacity-50" disabled={saving}>{saving ? '保存中...' : '保存'}</button>
+              <button type="button" className="button px-6" onClick={onCancelForm}>Cancel</button>
+              <button type="submit" className="button button-primary px-8" disabled={saving}>{saving ? 'Processing...' : 'Authorize'}</button>
             </div>
           </div>
         </form>
       ) : null}
 
-      {modelConfigs.length === 0 ? <div className="text-center py-10 text-ops-muted text-sm bg-ops-panel/20 rounded-lg border border-ops-border/10 border-dashed">暂无模型配置</div> : null}
-      <div className="flex flex-col gap-2">
+      {modelConfigs.length === 0 ? (
+        <div className="flex flex-col gap-3">
+          <div className="text-center py-6 text-ops-muted text-sm bg-ops-panel/20 rounded-lg border border-ops-border/10 border-dashed mb-2">
+            No database-backed model configurations found.
+          </div>
+          {selectedModel && (
+            <article className="flex items-center justify-between p-5 rounded-2xl bg-ops-panel/40 border border-ops-cyan/30 bg-ops-cyan/5 shadow-sm">
+              <div className="flex flex-col gap-1.5">
+                <div className="flex items-center gap-3">
+                  <strong className="text-[13px] font-bold text-ops-text tracking-tight">Environment Default</strong>
+                  <span className="px-2 py-0.5 text-[9px] font-bold  tracking-widest rounded-md text-ops-cyan bg-ops-cyan/10 border border-ops-cyan/20 shadow-glow">Active</span>
+                </div>
+                <span className="text-[10px] text-ops-muted font-bold  tracking-[0.1em] opacity-60">System Fallback / {selectedModel}</span>
+              </div>
+              <div className="text-[10px] text-ops-muted italic">Managed via .env</div>
+            </article>
+          )}
+        </div>
+      ) : null}
+      <div className="flex flex-col gap-3">
         {modelConfigs.map((config) => (
-          <article key={config.id} className="flex items-center justify-between p-4 rounded-lg bg-ops-panel border border-ops-border/20 hover:border-ops-border/50 transition-colors group">
-            <div className="flex flex-col gap-1">
-              <strong className="text-ops-text font-medium flex items-center gap-2">{config.name} {config.isDefault ? <span className="px-1.5 py-0.5 text-[10px] rounded text-ops-green bg-ops-green/10 border border-ops-green/20">默认</span> : null}</strong>
-              <span className="text-xs text-ops-muted font-mono">{config.provider} · {config.modelName} · {config.apiKeyMasked}</span>
+          <article key={config.id} className="flex items-center justify-between p-5 rounded-2xl bg-ops-panel/40 border border-ops-border/20 hover:border-ops-cyan/30 hover:bg-ops-panel/60 transition-all duration-300 group shadow-sm">
+            <div className="flex flex-col gap-1.5">
+              <div className="flex items-center gap-3">
+                <strong className="text-[13px] font-bold text-ops-text tracking-tight">{config.name}</strong>
+                {config.isDefault ? <span className="px-2 py-0.5 text-[9px] font-bold  tracking-widest rounded-md text-ops-emerald bg-ops-emerald/10 border border-ops-emerald/20 shadow-glow">Primary</span> : null}
+              </div>
+              <span className="text-[10px] text-ops-muted font-bold  tracking-[0.1em] opacity-60">{config.provider} / {config.modelName} / {config.apiKeyMasked}</span>
             </div>
-            <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-              {!config.isDefault ? <button type="button" className="px-3 py-1.5 text-xs rounded border border-ops-border/30 text-ops-muted hover:text-ops-text hover:bg-ops-border/20 transition-colors" onClick={() => onSetDefault(config)} disabled={saving}>设为默认</button> : null}
-              <button type="button" className="px-3 py-1.5 text-xs rounded border border-ops-border/30 text-ops-muted hover:text-ops-text hover:bg-ops-border/20 transition-colors" onClick={() => onStartEdit(config)}>编辑</button>
-              <button type="button" className="px-3 py-1.5 text-xs rounded border border-red-500/30 text-red-500 hover:bg-red-500/10 transition-colors disabled:opacity-30 disabled:hover:bg-transparent" onClick={() => onStartDelete(config)} disabled={config.isDefault} title={config.isDefault ? '请先设置其他默认模型' : undefined}>删除</button>
+            <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-all duration-200">
+              {!config.isDefault ? <button type="button" className="button h-8 px-4 text-[10px]" onClick={() => onSetDefault(config)} disabled={saving}>Set Primary</button> : null}
+              <button type="button" className="button h-8 px-4 text-[10px]" onClick={() => onStartEdit(config)}>Edit</button>
+              <button type="button" className="button button-danger h-8 px-4 text-[10px]" onClick={() => onStartDelete(config)} disabled={config.isDefault} title={config.isDefault ? 'Set another primary first' : undefined}>Delete</button>
             </div>
           </article>
         ))}

@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from app.shared.schemas import ModelConfig, PlanStep
-from app.core.llm.base import LLMMessage
+from app.core.llm.types import LLMMessage
 
 LoopMode = Literal["agent", "plan"]
 

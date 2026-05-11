@@ -6,7 +6,7 @@ export const PENDING_ASSISTANT_MESSAGE_ID = '__pending_assistant__'
 export const defaultLocalTerminalAsset: Asset = {
   id: LOCAL_TERMINAL_ASSET_ID,
   groupId: null,
-  name: '本地终端',
+  name: 'Local Terminal',
   assetType: 'local_terminal',
   host: '',
   port: 0,
@@ -14,7 +14,7 @@ export const defaultLocalTerminalAsset: Asset = {
   authType: '',
   tags: [],
   vendor: '',
-  description: '默认本地终端',
+  description: 'Default local terminal',
   sshKeyId: null,
 }
 

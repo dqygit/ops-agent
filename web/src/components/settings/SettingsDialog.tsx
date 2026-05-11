@@ -110,7 +110,7 @@ export function SettingsDialog({ initialGroups, selectedModel, sshKeys: initialS
       setSSHKeys(nextSSHKeys)
       onSSHKeysChange(nextSSHKeys)
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : '加载设置失败')
+      setError(loadError instanceof Error ? loadError.message : 'Failed to load settings')
     } finally {
       setLoading(false)
     }
@@ -156,7 +156,7 @@ export function SettingsDialog({ initialGroups, selectedModel, sshKeys: initialS
       onGroupsChange(nextGroups)
       cancelGroupForm()
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : '保存分组失败')
+      setError(saveError instanceof Error ? saveError.message : 'Failed to save group')
     } finally {
       setSaving(false)
     }
@@ -175,7 +175,7 @@ export function SettingsDialog({ initialGroups, selectedModel, sshKeys: initialS
       onGroupsChange(nextGroups)
       setDeletingGroup(null)
     } catch (deleteError) {
-      setError(deleteError instanceof Error ? deleteError.message : '删除分组失败')
+      setError(deleteError instanceof Error ? deleteError.message : 'Failed to delete group')
     } finally {
       setSaving(false)
     }
@@ -255,7 +255,7 @@ export function SettingsDialog({ initialGroups, selectedModel, sshKeys: initialS
       }
       cancelModelForm()
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : '保存模型失败')
+      setError(saveError instanceof Error ? saveError.message : 'Failed to save model')
     } finally {
       setSaving(false)
     }
@@ -271,7 +271,7 @@ export function SettingsDialog({ initialGroups, selectedModel, sshKeys: initialS
       onModelOptionsChange(getModelOptions(nextModels))
       onSelectedModelChange(defaultConfig.modelName)
     } catch (defaultError) {
-      setError(defaultError instanceof Error ? defaultError.message : '设置默认模型失败')
+      setError(defaultError instanceof Error ? defaultError.message : 'Failed to set default model')
     } finally {
       setSaving(false)
     }
@@ -290,7 +290,7 @@ export function SettingsDialog({ initialGroups, selectedModel, sshKeys: initialS
       onModelOptionsChange(getModelOptions(nextModels))
       setDeletingModel(null)
     } catch (deleteError) {
-      setError(deleteError instanceof Error ? deleteError.message : '删除模型失败')
+      setError(deleteError instanceof Error ? deleteError.message : 'Failed to delete model')
     } finally {
       setSaving(false)
     }
@@ -312,7 +312,7 @@ export function SettingsDialog({ initialGroups, selectedModel, sshKeys: initialS
       })
       setTestResult(result.message)
     } catch (testError) {
-      setError(testError instanceof Error ? testError.message : '测试连接失败')
+      setError(testError instanceof Error ? testError.message : 'Connection test failed')
     } finally {
       setSaving(false)
     }
@@ -332,11 +332,11 @@ export function SettingsDialog({ initialGroups, selectedModel, sshKeys: initialS
       const savedSSHKey = editingSSHKey
         ? await updateSSHKey(editingSSHKey.id, payload)
         : await createSSHKey({
-            name: payload.name,
-            public_key: payload.public_key,
-            private_key: sshKeyForm.privateKey.trim(),
-            passphrase: payload.passphrase,
-          })
+          name: payload.name,
+          public_key: payload.public_key,
+          private_key: sshKeyForm.privateKey.trim(),
+          passphrase: payload.passphrase,
+        })
       const nextSSHKeys = editingSSHKey
         ? sshKeys.map((item) => (item.id === savedSSHKey.id ? savedSSHKey : item))
         : [savedSSHKey, ...sshKeys]
@@ -344,7 +344,7 @@ export function SettingsDialog({ initialGroups, selectedModel, sshKeys: initialS
       onSSHKeysChange(nextSSHKeys)
       cancelSSHKeyForm()
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : '保存 SSH 密钥失败')
+      setError(saveError instanceof Error ? saveError.message : 'Failed to save SSH key')
     } finally {
       setSaving(false)
     }
@@ -363,33 +363,33 @@ export function SettingsDialog({ initialGroups, selectedModel, sshKeys: initialS
       onSSHKeysChange(nextSSHKeys)
       setDeletingSSHKey(null)
     } catch (deleteError) {
-      setError(deleteError instanceof Error ? deleteError.message : '删除 SSH 密钥失败')
+      setError(deleteError instanceof Error ? deleteError.message : 'Failed to delete SSH key')
     } finally {
       setSaving(false)
     }
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" role="presentation">
-      <section className="w-[800px] max-w-[90vw] h-[600px] max-h-[90vh] bg-ops-strong border border-ops-border/50 rounded-xl shadow-2xl flex flex-col overflow-hidden" role="dialog" aria-modal="true" aria-labelledby="settings-title">
-        <div className="flex items-center justify-between p-5 border-b border-ops-border/30 bg-ops-panel shrink-0">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ops-bg/60 backdrop-blur-md animate-in fade-in duration-300" role="presentation">
+      <section className="w-[880px] max-w-[95vw] h-[640px] max-h-[90vh] bg-ops-panel/90 border border-ops-border/40 rounded-2xl shadow-2xl flex flex-col overflow-hidden backdrop-blur-xl animate-in zoom-in-95 duration-300" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+        <div className="flex items-center justify-between p-6 border-b border-ops-border/20 bg-ops-panel shrink-0">
           <div>
-            <h3 id="settings-title" className="text-lg font-medium text-ops-text">设置</h3>
-            <p className="text-sm text-ops-muted mt-1">管理分组和模型配置。</p>
+            <h3 id="settings-title" className="text-[16px] font-bold  tracking-[0.15em] text-ops-cyan">System Configuration</h3>
+            <p className="text-[11px] font-medium text-ops-muted mt-1 tracking-wider opacity-60">Manage your workspace environments and AI models.</p>
           </div>
-          <button type="button" className="px-4 py-2 text-sm rounded-md transition-colors text-ops-muted hover:text-ops-text hover:bg-ops-border/20" onClick={onClose}>关闭</button>
+          <button type="button" className="h-8 px-4 text-[11px] font-bold  tracking-widest rounded-lg transition-all duration-200 text-ops-muted hover:text-ops-text hover:bg-ops-border/30 active:scale-95" onClick={onClose}>Close</button>
         </div>
         <div className="flex flex-1 overflow-hidden">
-          <nav className="w-[200px] border-r border-ops-border/20 bg-ops-deep p-4 flex flex-col gap-1 shrink-0 overflow-y-auto" aria-label="设置导航">
-             <button type="button" className={`w-full text-left px-3 py-2 rounded-md transition-colors text-sm font-medium ${activeSection === 'groups' ? 'bg-ops-border/20 text-ops-cyan' : 'text-ops-muted hover:text-ops-text hover:bg-ops-border/10'}`} onClick={() => setActiveSection('groups')}>分组</button>
-             <button type="button" className={`w-full text-left px-3 py-2 rounded-md transition-colors text-sm font-medium ${activeSection === 'models' ? 'bg-ops-border/20 text-ops-cyan' : 'text-ops-muted hover:text-ops-text hover:bg-ops-border/10'}`} onClick={() => setActiveSection('models')}>模型</button>
-             <button type="button" className={`w-full text-left px-3 py-2 rounded-md transition-colors text-sm font-medium ${activeSection === 'sshKeys' ? 'bg-ops-border/20 text-ops-cyan' : 'text-ops-muted hover:text-ops-text hover:bg-ops-border/10'}`} onClick={() => setActiveSection('sshKeys')}>SSH 密钥</button>
-           </nav>
-           <div className="flex-1 p-6 overflow-y-auto bg-ops-panel/50 relative">
-             {error ? <div className="p-4 mb-6 rounded-md bg-red-500/10 border border-red-500/20 text-red-500 text-sm flex items-center justify-between">{error}<button type="button" className="px-3 py-1.5 rounded-md bg-ops-border/20 hover:bg-ops-border/30 transition-colors text-ops-text text-sm" onClick={() => void loadSettings()}>重试</button></div> : null}
-             {loading ? (
-               <div className="flex items-center justify-center h-40 text-ops-muted text-sm">加载中...</div>
-             ) : activeSection === 'groups' ? (
+          <nav className="w-[220px] border-r border-ops-border/20 bg-ops-deep/40 p-4 flex flex-col gap-2 shrink-0 overflow-y-auto" aria-label="Settings Navigation">
+            <button type="button" className={`w-full text-left px-4 py-3 rounded-xl transition-all duration-200 text-[11px] font-bold tracking-widest active:scale-[0.98] ${activeSection === 'groups' ? 'bg-ops-cyan/15 text-ops-cyan shadow-glow border border-ops-cyan/30' : 'text-ops-muted hover:text-ops-text hover:bg-ops-panel/60 border border-transparent'}`} onClick={() => setActiveSection('groups')}>Infrastructure Groups</button>
+            <button type="button" className={`w-full text-left px-4 py-3 rounded-xl transition-all duration-200 text-[11px] font-bold tracking-widest active:scale-[0.98] ${activeSection === 'models' ? 'bg-ops-cyan/15 text-ops-cyan shadow-glow border border-ops-cyan/30' : 'text-ops-muted hover:text-ops-text hover:bg-ops-panel/60 border border-transparent'}`} onClick={() => setActiveSection('models')}>AI Model Configs</button>
+            <button type="button" className={`w-full text-left px-4 py-3 rounded-xl transition-all duration-200 text-[11px] font-bold tracking-widest active:scale-[0.98] ${activeSection === 'sshKeys' ? 'bg-ops-cyan/15 text-ops-cyan shadow-glow border border-ops-cyan/30' : 'text-ops-muted hover:text-ops-text hover:bg-ops-panel/60 border border-transparent'}`} onClick={() => setActiveSection('sshKeys')}>Identity Keys (SSH)</button>
+          </nav>
+          <div className="flex-1 p-6 overflow-y-auto bg-ops-panel/50 relative">
+            {error ? <div className="p-4 mb-6 rounded-md bg-red-500/10 border border-red-500/20 text-red-500 text-sm flex items-center justify-between">{error}<button type="button" className="px-3 py-1.5 rounded-md bg-ops-border/20 hover:bg-ops-border/30 transition-colors text-ops-text text-sm" onClick={() => void loadSettings()}>Retry</button></div> : null}
+            {loading ? (
+              <div className="flex items-center justify-center h-40 text-ops-muted text-sm">Loading...</div>
+            ) : activeSection === 'groups' ? (
               <GroupsSection
                 groups={groups}
                 groupForm={groupForm}
@@ -440,7 +440,7 @@ export function SettingsDialog({ initialGroups, selectedModel, sshKeys: initialS
         {deletingGroup ? (
           <DeleteConfirmDialog
             titleId="delete-group-title"
-            title="确认删除分组？"
+            title="Confirm Group Deletion?"
             message={deletingGroup.name}
             saving={saving}
             onCancel={() => setDeletingGroup(null)}
@@ -450,8 +450,8 @@ export function SettingsDialog({ initialGroups, selectedModel, sshKeys: initialS
         {deletingModel ? (
           <DeleteConfirmDialog
             titleId="delete-model-title"
-            title="确认删除模型？"
-            message={deletingModel.isDefault ? '默认模型不能删除，请先设置其他默认模型。' : deletingModel.name}
+            title="Confirm Model Deletion?"
+            message={deletingModel.isDefault ? 'The default model cannot be deleted. Please set another model as default first.' : deletingModel.name}
             saving={saving}
             confirmDisabled={deletingModel.isDefault}
             onCancel={() => setDeletingModel(null)}
@@ -461,7 +461,7 @@ export function SettingsDialog({ initialGroups, selectedModel, sshKeys: initialS
         {deletingSSHKey ? (
           <DeleteConfirmDialog
             titleId="delete-ssh-key-title"
-            title="确认删除 SSH 密钥？"
+            title="Confirm SSH Key Deletion?"
             message={deletingSSHKey.name}
             saving={saving}
             onCancel={() => setDeletingSSHKey(null)}
