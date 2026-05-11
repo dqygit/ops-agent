@@ -95,7 +95,7 @@ export function AssistantPanel({
                     ? 'border-ops-cyan/35 bg-ops-cyan/10 text-ops-cyan'
                     : 'border-ops-green/35 bg-ops-green/10 text-ops-green'
                 }`}
-                title={runMode === 'plan' ? '锁定全部步骤后逐条执行；中高风险逐条审批' : '边规划边执行，可重试或重规划'}
+                title={runMode === 'plan' ? '先生成任务步骤，再逐步交给 Agent 执行；每完成一步都会更新计划状态' : '由 Agent 按需调用命令直接执行，边执行边推进任务'}
               >
                 {runMode === 'plan' ? (
                   <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"></rect><path d="M7 11V7a5 5 0 0110 0v4"></path></svg>

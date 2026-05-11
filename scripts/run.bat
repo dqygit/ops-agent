@@ -5,6 +5,10 @@ cd /d "%~dp0.."
 
 set PYTHONPATH=%PYTHONPATH%;%~dp0..\src
 
+if not exist logs (
+    mkdir logs
+)
+
 if exist .venv\Scripts\activate.bat (
     call .venv\Scripts\activate.bat
 )
@@ -30,15 +34,14 @@ for /f "tokens=5" %%a in ('netstat -aon ^| findstr ":5173" ^| findstr "LISTENING
 )
 
 echo Starting Ops Agent Backend...
-start "Ops Agent Backend" python src\app\main.py
+start /b python src\app\main.py >logs\backend.log 2>&1
 
 echo Starting Ops Agent Frontend...
 cd web
-start "Ops Agent Frontend" npm run dev
+npm run dev
 
 echo.
-echo Both servers are starting...
-echo Press Ctrl+C to stop all servers
+echo Frontend server started. Backend running in background.
+echo Check logs\backend.log for backend logs.
+echo Press Ctrl+C to stop servers
 echo.
-
-pause

@@ -314,6 +314,7 @@ class ConsoleRunRequest(BaseModel):
 class ConsoleApprovalRequest(BaseModel):
     runtime_id: str
     approved: bool
+    approval_token: str | None = None
 
 
 class RuntimeStepView(BaseModel):

@@ -32,7 +32,11 @@ class AnthropicLLMProvider:
             for chunk in stream.text_stream:
                 if isinstance(chunk, str) and chunk:
                     yield LLMCompletionChunk(delta=chunk)
-            yield LLMCompletionChunk(finish_reason=getattr(stream.get_final_message(), "stop_reason", None))
+            final_message = stream.get_final_message()
+            yield LLMCompletionChunk(
+                tool_calls=self._extract_tool_calls(getattr(final_message, "content", []) or []),
+                finish_reason=getattr(final_message, "stop_reason", None),
+            )
 
     def complete(
         self,
@@ -113,3 +117,18 @@ class AnthropicLLMProvider:
         if request.tool_choice.mode == "none":
             return None
         return {"type": "auto"}
+
+    def _extract_tool_calls(self, blocks: list[Any]) -> list[LLMToolCall]:
+        tool_calls: list[LLMToolCall] = []
+        for block in blocks:
+            if getattr(block, "type", None) != "tool_use":
+                continue
+            raw_input = getattr(block, "input", {})
+            tool_calls.append(
+                LLMToolCall(
+                    id=getattr(block, "id", ""),
+                    name=getattr(block, "name", ""),
+                    arguments=raw_input if isinstance(raw_input, dict) else {},
+                )
+            )
+        return tool_calls

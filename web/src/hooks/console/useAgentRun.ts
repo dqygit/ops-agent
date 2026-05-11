@@ -2,7 +2,7 @@ import { useCallback, useState, type RefObject } from 'react'
 import { appendConversationEvents, streamApproveAgent, streamRunAgent } from '../../api'
 import type { RunMode } from '../../types/api'
 import type { Asset, EventItem, RuntimeSummary } from '../../types/ops'
-import { flushDeltaBuffer, LOCAL_TERMINAL_ASSET_ID, mergeDeltaEvent } from './consoleShared'
+import { flushDeltaBuffer, LOCAL_TERMINAL_ASSET_ID, mergeDeltaEvent, mergePersistedEventsWithTransient, PENDING_ASSISTANT_MESSAGE_ID } from './consoleShared'
 
 interface UseAgentRunProps {
   // 会话域依赖
@@ -36,6 +36,10 @@ interface UseAgentRunProps {
   setLoadError: (error: string | null) => void
 }
 
+function shouldSyncRuntimeForEvent(event: EventItem) {
+  return event.kind === 'approval_required' || event.kind === 'approval_decision' || event.kind === 'command_end' || event.kind === 'final' || event.kind === 'error'
+}
+
 export function useAgentRun({
   activeConversationId,
   activeConversationIdRef,
@@ -53,6 +57,7 @@ export function useAgentRun({
   setLoadError,
 }: UseAgentRunProps) {
   const [pendingApprovalRuntimeId, setPendingApprovalRuntimeId] = useState<string | null>(null)
+  const [pendingApprovalToken, setPendingApprovalToken] = useState<string | null>(null)
 
   const runAgent = useCallback(async (runPrompt: string) => {
     setLoadError(null)
@@ -74,17 +79,23 @@ export function useAgentRun({
         text: runPrompt,
       }
 
-      const persisted = await appendConversationEvents(conversationId, [userEvent])
-      const persistedEvents = persisted.events
-      upsertConversationSummary(persisted)
+      const pendingStatusEvent: EventItem = {
+        id: PENDING_ASSISTANT_MESSAGE_ID,
+        kind: 'delta',
+        messageId: PENDING_ASSISTANT_MESSAGE_ID,
+        stage: 'assistant',
+        text: '正在发送请求并等待模型响应…',
+      }
+
       if (activeConversationIdRef.current === conversationId) {
-        setEvents(persistedEvents)
+        setEvents((currentEvents: EventItem[]) => [...currentEvents, userEvent, pendingStatusEvent])
         setPendingApprovalRuntimeId(null)
+        setPendingApprovalToken(null)
       }
 
       const stream = await streamRunAgent(
         runPrompt,
-        persistedEvents,
+        [...events, userEvent],
         selectedAsset?.id === LOCAL_TERMINAL_ASSET_ID ? undefined : selectedAsset?.id,
         activeTerminalTab?.sessionId ?? null,
         selectedModel,
@@ -113,10 +124,21 @@ export function useAgentRun({
 
         const detail = await appendConversationEvents(conversationId, [event])
         upsertConversationSummary(detail)
-        applyConversationDetailIfActive(conversationId, detail)
-        await syncConversationRuntimes(conversationId)
-        if (event.kind === 'approval' && activeConversationIdRef.current === conversationId) {
+        if (activeConversationIdRef.current === conversationId) {
+          setEvents((currentEvents: EventItem[]) => mergePersistedEventsWithTransient(detail.events, currentEvents))
+        } else {
+          applyConversationDetailIfActive(conversationId, detail)
+        }
+        if (shouldSyncRuntimeForEvent(event)) {
+          await syncConversationRuntimes(conversationId)
+        }
+        if (event.kind === 'approval_required' && activeConversationIdRef.current === conversationId) {
           setPendingApprovalRuntimeId(event.runtimeId ?? null)
+          setPendingApprovalToken(event.approvalToken ?? null)
+        }
+        if (event.kind === 'approval_decision' && activeConversationIdRef.current === conversationId) {
+          setPendingApprovalRuntimeId(null)
+          setPendingApprovalToken(null)
         }
       }
 
@@ -141,7 +163,11 @@ export function useAgentRun({
           }
           const detail = await appendConversationEvents(conversationId, [errorEvent])
           upsertConversationSummary(detail)
-          applyConversationDetailIfActive(conversationId, detail)
+          if (activeConversationIdRef.current === conversationId) {
+            setEvents((currentEvents: EventItem[]) => mergePersistedEventsWithTransient(detail.events, currentEvents))
+          } else {
+            applyConversationDetailIfActive(conversationId, detail)
+          }
           await syncConversationRuntimes(conversationId)
         } catch {
           // Fall back to loadError if persisting the error event also fails.
@@ -178,11 +204,26 @@ export function useAgentRun({
       }
 
       const runId = pendingApprovalRuntimeId
+      const approvalToken = pendingApprovalToken
       const conversationId = activeConversationId
       setPendingApprovalRuntimeId(null)
+      setPendingApprovalToken(null)
+
+      if (activeConversationIdRef.current === conversationId) {
+        setEvents((currentEvents: EventItem[]) => [
+          ...currentEvents,
+          {
+            id: PENDING_ASSISTANT_MESSAGE_ID,
+            kind: 'delta',
+            messageId: PENDING_ASSISTANT_MESSAGE_ID,
+            stage: 'assistant',
+            text: approved ? '已提交批准，等待模型继续…' : '已提交拒绝，等待模型继续…',
+          },
+        ])
+      }
 
       try {
-        const stream = await streamApproveAgent(runId, approved)
+        const stream = await streamApproveAgent(runId, approved, approvalToken ?? undefined)
         const deltaBuffer = new Map<string, string>()
 
         for await (const event of stream) {
@@ -204,10 +245,21 @@ export function useAgentRun({
 
           const detail = await appendConversationEvents(conversationId, [event])
           upsertConversationSummary(detail)
-          applyConversationDetailIfActive(conversationId, detail)
-          await syncConversationRuntimes(conversationId)
-          if (event.kind === 'approval' && activeConversationIdRef.current === conversationId) {
+          if (activeConversationIdRef.current === conversationId) {
+            setEvents((currentEvents: EventItem[]) => mergePersistedEventsWithTransient(detail.events, currentEvents))
+          } else {
+            applyConversationDetailIfActive(conversationId, detail)
+          }
+          if (shouldSyncRuntimeForEvent(event)) {
+            await syncConversationRuntimes(conversationId)
+          }
+          if (event.kind === 'approval_required' && activeConversationIdRef.current === conversationId) {
             setPendingApprovalRuntimeId(event.runtimeId ?? null)
+            setPendingApprovalToken(event.approvalToken ?? null)
+          }
+          if (event.kind === 'approval_decision' && activeConversationIdRef.current === conversationId) {
+            setPendingApprovalRuntimeId(null)
+            setPendingApprovalToken(null)
           }
         }
 
@@ -229,7 +281,11 @@ export function useAgentRun({
           }
           const detail = await appendConversationEvents(conversationId, [errorEvent])
           upsertConversationSummary(detail)
-          applyConversationDetailIfActive(conversationId, detail)
+          if (activeConversationIdRef.current === conversationId) {
+            setEvents((currentEvents: EventItem[]) => mergePersistedEventsWithTransient(detail.events, currentEvents))
+          } else {
+            applyConversationDetailIfActive(conversationId, detail)
+          }
           await syncConversationRuntimes(conversationId)
         } catch {
           // Fall back to loadError if persisting the error event also fails.
@@ -237,6 +293,7 @@ export function useAgentRun({
 
         if (activeConversationIdRef.current === conversationId) {
           setPendingApprovalRuntimeId(runId)
+          setPendingApprovalToken(approvalToken ?? null)
         }
       } finally {
         try {

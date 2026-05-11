@@ -14,6 +14,7 @@ class LLMMessage:
     content: str
     tool_call_id: str | None = None
     name: str | None = None
+    tool_calls: list[LLMToolCall] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -23,7 +24,7 @@ class LLMCompletionRequest:
     tool_choice: LLMToolChoice | None = None
     temperature: float | None = None
     max_tokens: int | None = None
-    json_mode: bool = True
+    json_mode: bool = False
 
 
 @dataclass(frozen=True)
@@ -36,7 +37,9 @@ class LLMCompletionResponse:
 @dataclass(frozen=True)
 class LLMCompletionChunk:
     delta: str = ""
+    tool_calls: list[LLMToolCall] = field(default_factory=list)
     finish_reason: str | None = None
+    tool_arguments_delta: str = ""
 
 
 @runtime_checkable

@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from app.api.assets import router as assets_router
+from app.api.approval import router as approval_router
 from app.api.groups import router as groups_router
 from app.api.health import router as health_router
 from app.api.models import router as models_router
@@ -27,6 +28,7 @@ app = FastAPI(title="Ops Agent API", lifespan=lifespan)
 app.include_router(health_router)
 app.include_router(models_router)
 app.include_router(assets_router)
+app.include_router(approval_router)
 app.include_router(terminal_router)
 app.include_router(groups_router)
 app.include_router(console_router)
@@ -37,6 +39,7 @@ app.include_router(ssh_keys_router)
 __all__ = [
     "app",
     "assets_router",
+    "approval_router",
     "get_terminal_service",
     "groups_router",
     "health_router",

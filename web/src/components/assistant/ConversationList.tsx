@@ -1,4 +1,4 @@
-import type { ConversationSummary } from '../../types/ops'
+import type { ConversationSummary, EventItem } from '../../types/ops'
 
 type ConversationListProps = {
   items: ConversationSummary[]
@@ -24,22 +24,61 @@ function formatUpdatedTime(value: string) {
 
 type StatusMeta = { label: string; color: string }
 
-function getStatusMeta(kind: string | null): StatusMeta {
+type EventKind = EventItem['kind']
+type KnownEventKind = EventKind | 'approval' | 'output' | 'status'
+
+const KNOWN_EVENT_KIND_SET: ReadonlySet<KnownEventKind> = new Set<KnownEventKind>([
+  'delta',
+  'plan',
+  'approval_required',
+  'approval_decision',
+  'command_start',
+  'command_chunk',
+  'command_end',
+  'terminal_status',
+  'final',
+  'error',
+  'user',
+  'approval',
+  'output',
+  'status',
+])
+
+function normalizeStatusKind(kind: string | null): KnownEventKind | null {
+  if (!kind) {
+    return null
+  }
+  return KNOWN_EVENT_KIND_SET.has(kind as KnownEventKind) ? (kind as KnownEventKind) : null
+}
+
+function getStatusMeta(kind: KnownEventKind | null): StatusMeta {
   switch (kind) {
-    case 'approval':
+    case 'approval_required':
       return { label: '待审批', color: 'text-amber-400 border-amber-400/40 bg-amber-400/10' }
+    case 'approval_decision':
+      return { label: '已决策', color: 'text-ops-cyan border-ops-cyan/30 bg-ops-cyan/10' }
     case 'error':
       return { label: '错误', color: 'text-ops-red border-ops-danger/45 bg-ops-danger/10' }
     case 'final':
       return { label: '完成', color: 'text-ops-green border-ops-green/40 bg-ops-green/10' }
     case 'plan':
       return { label: '规划中', color: 'text-ops-cyan border-ops-cyan/40 bg-ops-cyan/10' }
-    case 'output':
+    case 'command_start':
+    case 'command_chunk':
+      return { label: '执行中', color: 'text-ops-cyan border-ops-cyan/30 bg-ops-cyan/10' }
     case 'command_end':
-      return { label: '已执行', color: 'text-ops-text/80 border-ops-border/30 bg-black/20' }
+      return { label: '命令结束', color: 'text-ops-text/80 border-ops-border/30 bg-black/20' }
+    case 'terminal_status':
+      return { label: '终端状态', color: 'text-ops-text/80 border-ops-border/30 bg-black/20' }
     case 'user':
       return { label: '已发起', color: 'text-ops-text/80 border-ops-border/30 bg-black/20' }
     case 'delta':
+      return { label: '处理中', color: 'text-ops-cyan border-ops-cyan/30 bg-ops-cyan/10' }
+    case 'approval':
+      return { label: '待审批', color: 'text-amber-400 border-amber-400/40 bg-amber-400/10' }
+    case 'output':
+      return { label: '已执行', color: 'text-ops-text/80 border-ops-border/30 bg-black/20' }
+    case 'status':
       return { label: '处理中', color: 'text-ops-cyan border-ops-cyan/30 bg-ops-cyan/10' }
     default:
       return { label: '空会话', color: 'text-ops-muted border-ops-border/30 bg-black/15' }
@@ -62,7 +101,7 @@ export function ConversationList({ items, activeConversationId, onSelect, onDele
           <ul className="flex flex-col gap-1.5" role="list">
             {items.map((item) => {
               const isActive = item.id === activeConversationId
-              const status = getStatusMeta(item.lastEventKind)
+              const status = getStatusMeta(normalizeStatusKind(item.lastEventKind))
               const isUntitled = !item.title || item.title.trim() === '' || item.title.trim() === 'New'
               const displayTitle = isUntitled ? '未命名会话' : item.title
 

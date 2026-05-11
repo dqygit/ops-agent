@@ -1,6 +1,7 @@
 import type { Asset, ConversationSummary, EventItem, PlanStepStatus } from '../../types/ops'
 
 export const LOCAL_TERMINAL_ASSET_ID = 0
+export const PENDING_ASSISTANT_MESSAGE_ID = '__pending_assistant__'
 
 export const defaultLocalTerminalAsset: Asset = {
   id: LOCAL_TERMINAL_ASSET_ID,
@@ -112,7 +113,8 @@ export function mergeDeltaEvent(
   deltaText: string,
   stage?: string
 ): EventItem[] {
-  const existingIndex = currentEvents.findIndex((e) => e.id === messageId)
+  const filteredEvents = currentEvents.filter((event) => event.id !== PENDING_ASSISTANT_MESSAGE_ID)
+  const existingIndex = filteredEvents.findIndex((e) => e.id === messageId)
   
   const mergedEvent: EventItem = {
     id: messageId,
@@ -123,12 +125,12 @@ export function mergeDeltaEvent(
   }
 
   if (existingIndex >= 0) {
-    const updated = [...currentEvents]
+    const updated = [...filteredEvents]
     updated[existingIndex] = mergedEvent
     return normalizePlanEvents(updated)
   }
   
-  return normalizePlanEvents([...currentEvents, mergedEvent])
+  return normalizePlanEvents([...filteredEvents, mergedEvent])
 }
 
 /**
@@ -153,4 +155,32 @@ export function flushDeltaBuffer(
   }
   
   return finalEvents
+}
+
+export function mergePersistedEventsWithTransient(
+  persistedEvents: EventItem[],
+  currentEvents: EventItem[]
+): EventItem[] {
+  const pendingAssistantEvent = currentEvents.find((event) => event.id === PENDING_ASSISTANT_MESSAGE_ID)
+  const transientEvents = currentEvents.filter((event) => event.kind === 'delta' && event.id !== PENDING_ASSISTANT_MESSAGE_ID)
+  const hasAssistantDelta = persistedEvents.some((event) => event.kind === 'delta') || transientEvents.length > 0
+  const nextEvents = [...persistedEvents]
+
+  if (pendingAssistantEvent && !hasAssistantDelta) {
+    nextEvents.push(pendingAssistantEvent)
+  }
+
+  if (transientEvents.length === 0) {
+    return normalizePlanEvents(nextEvents)
+  }
+
+  const persistedIds = new Set(nextEvents.map((event) => event.id))
+
+  for (const event of transientEvents) {
+    if (!persistedIds.has(event.id)) {
+      nextEvents.push(event)
+    }
+  }
+
+  return normalizePlanEvents(nextEvents)
 }

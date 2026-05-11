@@ -15,8 +15,8 @@ type PromptInputProps = {
 }
 
 const MODE_DESCRIPTION: Record<RunMode, string> = {
-  agent: '边规划边执行，每步可重试或重规划。适合探索性、不确定结果的任务。',
-  plan: '一次锁定全部步骤，按顺序执行；中高风险逐条审批。适合规范化、可预知的流程。',
+  agent: '由 Agent 按需调用命令直接执行，边执行边推进任务。适合探索性排查和动态处理。',
+  plan: '先生成任务步骤，再逐步交给 Agent 执行；每完成一步都会更新计划状态。适合流程明确的任务。',
 }
 
 const MODE_LABEL: Record<RunMode, string> = {

@@ -4,19 +4,15 @@ from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from app.shared.schemas import ModelConfig, PlanStep
-
+from app.core.llm.base import LLMMessage
 
 LoopMode = Literal["agent", "plan"]
 
 
 LoopPhase = Literal[
     "planning",
-    "refining",
     "approving",
     "executing",
-    "reviewing",
-    "replan_pending_approval",
-    "replanning",
     "completed",
     "failed",
 ]
@@ -104,6 +100,10 @@ class LoopRuntimeStep:
 class LoopState:
     phase: LoopPhase
     context: LoopContext
+    messages: list[LLMMessage] = field(default_factory=list)
+    pending_tool_call_id: str | None = None
+    pending_tool_name: str | None = None
+    pending_tool_args: dict[str, Any] | None = None
     steps: list[LoopRuntimeStep] = field(default_factory=list)
     cursor: int = 0
     plan_version: int = 1

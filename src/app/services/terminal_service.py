@@ -38,10 +38,6 @@ class TerminalSessionRuntime:
     connection_ids: set[str] = field(default_factory=set)
     last_detached_at: datetime | None = None
 
-
-ANSI_PATTERN = re.compile(r"[][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]")
-
-
 class TerminalService:
     SESSION_TTL = timedelta(minutes=15)
 

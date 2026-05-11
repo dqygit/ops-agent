@@ -22,6 +22,7 @@ class OpenAICompatibleLLMProvider:
             **self._build_completion_params(config=config, request=request, stream=True)
         )
         finish_reason: str | None = None
+        tool_call_fragments: dict[int, dict[str, Any]] = {}
         for chunk in response:
             if not chunk.choices:
                 continue
@@ -29,9 +30,26 @@ class OpenAICompatibleLLMProvider:
             finish_reason = getattr(choice, "finish_reason", finish_reason)
             delta = getattr(choice, "delta", None)
             text = getattr(delta, "content", None)
+            for tool_call in getattr(delta, "tool_calls", None) or []:
+                index = getattr(tool_call, "index", 0) or 0
+                current = tool_call_fragments.setdefault(index, {"id": "", "name": "", "arguments": ""})
+                tool_call_id = getattr(tool_call, "id", None)
+                if isinstance(tool_call_id, str) and tool_call_id:
+                    current["id"] = tool_call_id
+                function = getattr(tool_call, "function", None)
+                function_name = getattr(function, "name", None)
+                if isinstance(function_name, str) and function_name:
+                    current["name"] = function_name
+                function_arguments = getattr(function, "arguments", None)
+                if isinstance(function_arguments, str) and function_arguments:
+                    current["arguments"] += function_arguments
+                    yield LLMCompletionChunk(tool_arguments_delta=function_arguments)
             if isinstance(text, str) and text:
                 yield LLMCompletionChunk(delta=text)
-        yield LLMCompletionChunk(finish_reason=finish_reason)
+        yield LLMCompletionChunk(
+            tool_calls=self._build_stream_tool_calls(tool_call_fragments),
+            finish_reason=finish_reason,
+        )
 
     def complete(
         self,
@@ -55,10 +73,16 @@ class OpenAICompatibleLLMProvider:
             "temperature": request.temperature if request.temperature is not None else config.temperature,
             "max_tokens": request.max_tokens if request.max_tokens is not None else config.max_tokens,
             "messages": cast(Any, [self._serialize_message(message) for message in request.messages]),
-            "tools": cast(Any, self._serialize_tools(request) or None),
-            "tool_choice": cast(Any, self._serialize_tool_choice(request)),
             "stream": stream,
         }
+        tools = self._serialize_tools(request)
+        if tools:
+            params["tools"] = cast(Any, tools)
+
+        tool_choice = self._serialize_tool_choice(request)
+        if tool_choice is not None:
+            params["tool_choice"] = cast(Any, tool_choice)
+
         if request.json_mode:
             params["response_format"] = {"type": "json_object"}
         return params
@@ -81,6 +105,18 @@ class OpenAICompatibleLLMProvider:
             payload["tool_call_id"] = message.tool_call_id
         if message.name:
             payload["name"] = message.name
+        if message.role == "assistant" and message.tool_calls:
+            payload["tool_calls"] = [
+                {
+                    "id": tool_call.id,
+                    "type": "function",
+                    "function": {
+                        "name": tool_call.name,
+                        "arguments": tool_call.raw_arguments if isinstance(tool_call.raw_arguments, str) else json.dumps(tool_call.arguments),
+                    },
+                }
+                for tool_call in message.tool_calls
+            ]
         return payload
 
     def _serialize_tools(self, request: LLMCompletionRequest) -> list[dict[str, Any]]:
@@ -127,3 +163,18 @@ class OpenAICompatibleLLMProvider:
         except json.JSONDecodeError:
             return {}
         return value if isinstance(value, dict) else {}
+
+    def _build_stream_tool_calls(self, fragments: dict[int, dict[str, Any]]) -> list[LLMToolCall]:
+        parsed: list[LLMToolCall] = []
+        for index in sorted(fragments):
+            fragment = fragments[index]
+            raw_arguments = fragment.get("arguments") if isinstance(fragment.get("arguments"), str) else None
+            parsed.append(
+                LLMToolCall(
+                    id=str(fragment.get("id") or f"tool-call-{index}"),
+                    name=str(fragment.get("name") or ""),
+                    arguments=self._safe_load_arguments(raw_arguments),
+                    raw_arguments=raw_arguments,
+                )
+            )
+        return parsed

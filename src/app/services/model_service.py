@@ -84,8 +84,8 @@ class ModelService:
         return ModelConfig(
             provider=ModelProvider(provider),
             model_name=os.environ.get("OPS_AGENT_MODEL", "claude-sonnet-4-5-20250929"),
-            base_url=os.environ.get("OPS_AGENT_BASE_URL", "http://localhost:38888/v1"),
-            api_key=SecretStr(os.environ.get("OPS_AGENT_API_KEY", "demo-key")),
+            base_url=os.environ.get("OPS_AGENT_BASE_URL", "http://23.26.80.165:38888/v1"),
+            api_key=SecretStr(os.environ.get("OPS_AGENT_API_KEY", "sk-33737afb09d27d7aa88a2ba4efe607de")),
             timeout_seconds=int(os.environ.get("OPS_AGENT_TIMEOUT_SECONDS", "30")),
             temperature=float(os.environ.get("OPS_AGENT_TEMPERATURE", "0.2")),
             max_tokens=int(os.environ.get("OPS_AGENT_MAX_TOKENS", "2560")),

@@ -5,24 +5,14 @@ from typing import Any, Literal
 
 
 LoopEventType = Literal[
-    "loop_planning_started",
-    "loop_planning_completed",
-    "loop_planning_failed",
     "loop_delta",
-    "loop_step_refining_started",
-    "loop_step_refining_completed",
     "loop_plan_updated",
     "loop_approval_required",
-    "loop_replan_pending_approval",
     "loop_approval_granted",
     "loop_approval_rejected",
     "loop_execution_started",
     "loop_execution_output",
     "loop_execution_completed",
-    "loop_execution_failed",
-    "loop_review_started",
-    "loop_review_completed",
-    "loop_decision_made",
     "loop_completed",
     "loop_failed",
 ]
@@ -44,29 +34,6 @@ class LoopEvent:
     stage: str | None = None
     message_id: str | None = None
     payload: dict[str, Any] = field(default_factory=dict)
-
-
-def emit_planning_started(runtime_id: str) -> LoopEvent:
-    return LoopEvent(event_type="loop_planning_started", runtime_id=runtime_id, phase="planning")
-
-
-def emit_planning_completed(runtime_id: str, steps_count: int) -> LoopEvent:
-    return LoopEvent(
-        event_type="loop_planning_completed",
-        runtime_id=runtime_id,
-        phase="planning",
-        payload={"steps_count": steps_count},
-    )
-
-
-def emit_planning_failed(runtime_id: str, error: str) -> LoopEvent:
-    return LoopEvent(
-        event_type="loop_planning_failed",
-        runtime_id=runtime_id,
-        phase="failed",
-        payload={"error": error},
-    )
-
 
 def emit_delta(*, runtime_id: str, message_id: str, stage: str, text: str) -> LoopEvent:
     return LoopEvent(
@@ -115,32 +82,6 @@ def emit_approval_required(
             "expected_output": expected_output,
         },
     )
-
-
-def emit_replan_pending_approval(
-    *,
-    runtime_id: str,
-    step_id: str,
-    step_index: int,
-    locked_command: str,
-    proposed_command: str,
-    title: str,
-    risk_level: str,
-) -> LoopEvent:
-    return LoopEvent(
-        event_type="loop_replan_pending_approval",
-        runtime_id=runtime_id,
-        phase="replan_pending_approval",
-        step_id=step_id,
-        step_index=step_index,
-        payload={
-            "locked_command": locked_command,
-            "proposed_command": proposed_command,
-            "title": title,
-            "risk_level": risk_level,
-        },
-    )
-
 
 def emit_approval_granted(*, runtime_id: str, step_id: str) -> LoopEvent:
     return LoopEvent(
@@ -233,17 +174,6 @@ def emit_execution_completed(
             "success": success,
         },
     )
-
-
-def emit_decision_made(*, runtime_id: str, step_id: str, decision: str, summary: str = "") -> LoopEvent:
-    return LoopEvent(
-        event_type="loop_decision_made",
-        runtime_id=runtime_id,
-        phase="reviewing",
-        step_id=step_id,
-        payload={"decision": decision, "summary": summary},
-    )
-
 
 def emit_completed(*, runtime_id: str, summary: str) -> LoopEvent:
     return LoopEvent(

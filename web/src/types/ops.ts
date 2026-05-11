@@ -87,6 +87,8 @@ export type CommandStartEvent = {
   id: string
   kind: 'command_start'
   commandId: string
+  runtimeId?: string
+  stepId?: string
   terminalId?: string | null
   command: string
   title?: string
@@ -96,6 +98,8 @@ export type CommandChunkEvent = {
   id: string
   kind: 'command_chunk'
   commandId: string
+  runtimeId?: string
+  stepId?: string
   terminalId?: string | null
   stream: TerminalStreamKind
   text: string
@@ -106,9 +110,24 @@ export type CommandEndEvent = {
   id: string
   kind: 'command_end'
   commandId: string
+  runtimeId?: string
+  stepId?: string
   terminalId?: string | null
   exitCode: number | null
   summary?: string
+}
+
+export type ApprovalEvent = {
+  id: string
+  kind: 'approval_required' | 'approval_decision'
+  text: string
+  command: string
+  runtimeId?: string
+  stepId?: string
+  approvalToken?: string
+  approved?: boolean
+  status?: 'pending' | 'approved' | 'rejected'
+  reason?: string
 }
 
 export type RuntimeStep = {
@@ -170,11 +189,9 @@ export type TerminalStatusEvent = {
 }
 
 export type EventItem =
-  | { id: string; kind: 'status'; text: string }
   | { id: string; kind: 'delta'; text: string; messageId: string; stage?: string }
   | PlanEvent
-  | { id: string; kind: 'approval'; text: string; command: string; runtimeId?: string; stepId?: string }
-  | { id: string; kind: 'output'; text: string }
+  | ApprovalEvent
   | CommandStartEvent
   | CommandChunkEvent
   | CommandEndEvent

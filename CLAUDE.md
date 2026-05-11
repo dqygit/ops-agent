@@ -66,8 +66,6 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 ## 5. 注意
 **这个项目是运维工具产品，目的是要生产、稳定、专业性。**
 **不要写测试文件**
+**python虚拟环境目录为：.venv**
 **项目分层 api- sevice-repo，service可以调用core层，core中可能调用repo，但是不能调用service层**
-**给方案到用户需要给出详细理解流程**
-**每次编写后端之后和前端进行冒烟测试**
-**前端和后端你先检测，如果启动了，则不需要启动，如果没有启动，则需要根据不同的系统启动不同的脚本run.bat或run.sh**
-**冒烟测试需要通过mcp调用浏览器访问http://localhost:5173，然后与llm 对话，观察llm模型栏和终端会话栏展示，如果不符合预期，你可以提出建议或者直接编码**
+**重构，不保留现有的代码**

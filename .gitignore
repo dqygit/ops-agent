@@ -26,3 +26,5 @@ ops-agent-backend.spec
 
 # Desktop bundle resources
 web/bin/
+logs/
+.agents/

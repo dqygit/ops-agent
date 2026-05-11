@@ -7,6 +7,7 @@ from fastapi.responses import StreamingResponse
 from sqlmodel import Session
 
 from app.api.assets import to_asset_view
+from app.api.conversations import get_conversation_service
 from app.api.groups import to_asset_group_view
 from app.api.ssh_keys import to_ssh_key_view
 from app.api.schemas import ConsoleApprovalRequest, ConsoleBootstrapView, ConsoleRunRequest, RuntimeEventsResponse, RuntimeSnapshotView, RuntimeSummaryView
@@ -14,7 +15,7 @@ from app.services.ssh_key_service import list_ssh_key_records
 from app.api.terminal import get_terminal_service
 from app.db.repositories.models import get_default_model_config, list_model_configs
 from app.db.session import get_session
-from app.services.asset_service import get_asset_record, list_asset_group_records, list_asset_records
+from app.services.asset_service import list_asset_group_records, list_asset_records
 
 from app.services.model_service import ModelService
 from app.services.terminal_service import TerminalService
@@ -97,6 +98,17 @@ async def run_console_agent(
     orchestrator: TaskOrchestrator = Depends(get_task_orchestrator),
 ):
     payload = await _parse_request_model(request, ConsoleRunRequest)
+    if payload.conversation_id and payload.conversation_id != "console":
+        conversation_service = get_conversation_service()
+        user_event = {
+            "id": f"user-{payload.conversation_id}-{abs(hash(payload.prompt))}",
+            "kind": "user",
+            "text": payload.prompt,
+        }
+        try:
+            conversation_service.append_events(payload.conversation_id, [user_event])
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=404, detail="Conversation not found") from exc
     asset_id = payload.asset_id
     if asset_id is None:
         local_terminal_asset = next((asset for asset in list_asset_records(session) if asset.asset_type == AssetType.LOCAL_TERMINAL.value), None)
@@ -135,9 +147,9 @@ def list_conversation_runtimes(conversation_id: str) -> list[RuntimeSummaryView]
             conversation_id=runtime.conversation_id,
             asset_id=runtime.asset_id,
             terminal_id=runtime.terminal_id,
-            status=runtime.status,
-            current_step_id=runtime.current_step_id,
-            pending_approval_step_id=runtime.pending_approval_step_id,
+            status=runtime.state.get("status", "running"),
+            current_step_id=runtime.state.get("current_step"),
+            pending_approval_step_id=(runtime.state.get("pending_approval") or {}).get("step_id"),
             updated_at=runtime.updated_at,
         )
         for runtime in runtimes
@@ -156,17 +168,6 @@ def get_runtime_events(runtime_id: str, since: int = 0) -> RuntimeEventsResponse
     return RuntimeEventsResponse(latest_sequence=latest_sequence, events=[dict(event) for event in events])
 
 
-@router.get("/api/console/debug/runtimes")
-def debug_runtime_manager_state() -> dict:
-    conversations: dict[str, list[str]] = {}
-    for conversation_id, runtimes in _console_app_service.runtime_manager._runtimes_by_conversation.items():
-        conversations[conversation_id] = list(runtimes.keys())
-    return {
-        "conversation_count": len(conversations),
-        "conversations": conversations,
-    }
-
-
 @router.post("/api/console/approval")
 async def approve_console_agent(
     request: Request,
@@ -174,7 +175,12 @@ async def approve_console_agent(
     orchestrator: TaskOrchestrator = Depends(get_task_orchestrator),
 ):
     payload = await _parse_request_model(request, ConsoleApprovalRequest)
-    stream = orchestrator.stream_approve(session=session, runtime_id=payload.runtime_id, approved=payload.approved)
+    stream = orchestrator.stream_approve(
+        session=session,
+        runtime_id=payload.runtime_id,
+        approved=payload.approved,
+        approval_token=payload.approval_token,
+    )
 
     def event_stream():
         try:

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { EmptyState } from '../layout/EmptyState'
-import type { EventItem, PlanEvent } from '../../types/ops'
+import type { ApprovalEvent, EventItem, PlanEvent } from '../../types/ops'
 
 type ConversationViewProps = {
   events: EventItem[]
@@ -15,6 +15,7 @@ type DeltaEvent = Extract<EventItem, { kind: 'delta' }>
 type CommandStart = Extract<EventItem, { kind: 'command_start' }>
 type CommandChunk = Extract<EventItem, { kind: 'command_chunk' }>
 type CommandEnd = Extract<EventItem, { kind: 'command_end' }>
+type Approval = Extract<EventItem, { kind: 'approval_required' | 'approval_decision' }>
 
 type Group =
   | { type: 'event'; event: EventItem }
@@ -22,21 +23,25 @@ type Group =
   | {
       type: 'command'
       key: string
-      startEvent: CommandStart
+      approvalEvent?: Approval
+      startEvent?: CommandStart
       chunkEvents: CommandChunk[]
       endEvent?: CommandEnd
     }
 
-const STAGE_ORDER: Array<'planner' | 'executor' | 'review'> = ['planner', 'executor', 'review']
+function sortAssistantGroups(groups: Group[]): Group[] {
+  const thinkingGroups = groups.filter((group) => group.type === 'thinking')
+  const commandGroups = groups.filter((group) => group.type === 'command')
+  const eventGroups = groups.filter((group) => group.type === 'event')
+  return [...thinkingGroups, ...commandGroups, ...eventGroups]
+}
+
+const STAGE_ORDER = ['assistant'] as const
 const STAGE_LABEL: Record<string, string> = {
-  planner: '规划',
-  executor: '精炼',
-  review: '复核',
+  assistant: 'AI 输出',
 }
 const STAGE_ICON_COLOR: Record<string, string> = {
-  planner: 'text-violet-400',
-  executor: 'text-ops-cyan',
-  review: 'text-emerald-400',
+  assistant: 'text-ops-cyan',
 }
 
 function stripAnsi(text: string) {
@@ -52,7 +57,6 @@ function stripJsonBlocks(text: string) {
   }
 
   result = result.replace(/```json\s*[\s\S]*?```/gi, '')
-  result = result.replace(/```\s*[\s\S]*?```/g, '')
   result = result.replace(/\{\s*"(?:steps|decision|summary|title|reason|risk_level|expected_output|command)"[\s\S]*?\}/g, '')
 
   const jsonTailPatterns = [
@@ -138,86 +142,87 @@ function OutputBlock({ text, label = '命令输出' }: OutputBlockProps) {
 }
 
 type CommandExecutionCardProps = {
-  startEvent: CommandStart
+  approvalEvent?: Approval
+  startEvent?: CommandStart
   chunkEvents: CommandChunk[]
   endEvent?: CommandEnd
-}
-
-function CommandExecutionCard({ startEvent, chunkEvents, endEvent }: CommandExecutionCardProps) {
-  const outputText = chunkEvents.map((event) => event.text).join('')
-  const exitCode = endEvent?.exitCode
-  const statusLabel = endEvent
-    ? exitCode === null || exitCode === 0
-      ? '已完成'
-      : `失败（退出码 ${exitCode}）`
-    : '执行中'
-
-  return (
-    <article className="rounded-lg border border-ops-border/40 bg-gradient-to-br from-[#0a1014] to-[#0e161c] p-4 shadow-sm">
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <div>
-          <div className="text-[10px] font-bold uppercase tracking-wider text-ops-cyan/90">命令执行</div>
-          <div className="mt-1 text-sm font-semibold text-ops-text">{startEvent.title?.trim() || '终端命令'}</div>
-        </div>
-        <div className={`rounded px-2 py-1 text-[10px] font-bold ${endEvent ? (exitCode === null || exitCode === 0 ? 'bg-ops-green/15 text-ops-green' : 'bg-ops-danger/15 text-ops-red') : 'bg-ops-cyan/15 text-ops-cyan animate-pulse'}`}>
-          {statusLabel}
-        </div>
-      </div>
-      <code className="mb-3 block rounded-md border border-ops-border/20 bg-black/40 px-3 py-2 text-xs text-ops-text/90">
-        {startEvent.command}
-      </code>
-      {outputText ? <OutputBlock text={outputText} label="流式输出" /> : null}
-    </article>
-  )
-}
-
-type CommandCardProps = {
-  command: string
-  showActions: boolean
+  pendingApprovalRuntimeId: string | null
   onApprove?: () => void
   onReject?: () => void
 }
 
-function CommandCard({ command, showActions, onApprove, onReject }: CommandCardProps) {
+function CommandExecutionCard({ approvalEvent, startEvent, chunkEvents, endEvent, pendingApprovalRuntimeId, onApprove, onReject }: CommandExecutionCardProps) {
+  const outputText = chunkEvents.map((event) => event.text).join('')
+  const exitCode = endEvent?.exitCode
+  const command = startEvent?.command || approvalEvent?.command || ''
+  const title = startEvent?.title?.trim() || (approvalEvent ? '命令审批' : '终端命令')
+  const approvalStatus = approvalEvent?.status ?? (approvalEvent ? 'pending' : undefined)
+  const showApprovalActions = approvalStatus === 'pending' && approvalEvent?.runtimeId !== undefined && pendingApprovalRuntimeId !== null && approvalEvent.runtimeId === pendingApprovalRuntimeId
+  const statusLabel = endEvent
+    ? exitCode === null || exitCode === 0
+      ? '已完成'
+      : `失败（退出码 ${exitCode}）`
+    : approvalStatus === 'rejected'
+      ? '已拒绝'
+      : approvalStatus === 'approved'
+        ? '已批准'
+        : approvalStatus === 'pending'
+          ? '待审批'
+          : '执行中'
+  const statusClass = endEvent
+    ? exitCode === null || exitCode === 0
+      ? 'bg-ops-green/15 text-ops-green'
+      : 'bg-ops-danger/15 text-ops-red'
+    : approvalStatus === 'rejected'
+      ? 'bg-ops-danger/15 text-ops-red'
+      : approvalStatus === 'approved'
+        ? 'bg-ops-green/15 text-ops-green'
+        : approvalStatus === 'pending'
+          ? 'bg-amber-500/15 text-amber-300'
+          : 'bg-ops-cyan/15 text-ops-cyan animate-pulse'
+
   return (
-    <div className="group rounded-lg border border-amber-500/50 bg-gradient-to-br from-amber-500/15 to-amber-600/10 p-4 shadow-lg transition-all hover:shadow-xl">
-      <div className="mb-2 flex items-center gap-2">
-        <div className="flex h-5 w-5 items-center justify-center rounded bg-amber-500/30">
-          <svg className="h-3 w-3 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-          </svg>
+    <div className="my-1 rounded-md border border-ops-border/20 bg-black/20 p-3 shadow-inner">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div>
+          <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-ops-cyan/90">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line></svg>
+            命令执行
+          </div>
+          <div className="mt-1 text-sm font-semibold text-ops-text">{title}</div>
         </div>
-        <span className="text-[10px] font-bold uppercase tracking-wider text-amber-400/90">待审批命令</span>
+        <div className={`rounded px-2 py-1 text-[10px] font-bold ${statusClass}`}>
+          {statusLabel}
+        </div>
       </div>
-      <div className="flex items-center gap-3">
-        {showActions ? (
-          <button
-            type="button"
-            onClick={onApprove}
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-ops-green/25 text-ops-green shadow-sm transition-all hover:bg-ops-green/35 hover:scale-105 active:scale-95"
-            aria-label="批准执行"
-          >
-            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
-            </svg>
-          </button>
-        ) : null}
-        <code className="flex-1 rounded-md border border-amber-500/30 bg-black/40 px-3.5 py-2.5 text-xs font-mono leading-relaxed text-ops-text shadow-inner" title={command}>
+      {command ? (
+        <code className="mb-3 block rounded-md border border-ops-border/20 bg-black/40 px-3 py-2 text-xs text-ops-text/90">
           {command}
         </code>
-        {showActions ? (
-          <button
-            type="button"
-            onClick={onReject}
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-ops-red/25 text-ops-red shadow-sm transition-all hover:bg-ops-red/35 hover:scale-105 active:scale-95"
-            aria-label="拒绝执行"
-          >
-            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        ) : null}
-      </div>
+      ) : null}
+      {approvalEvent ? (
+        <div className="mb-3 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-ops-text/85">
+          <div className="mb-1 flex items-center justify-between gap-2">
+            <span className="text-[10px] uppercase tracking-wider text-amber-200/80">
+              {approvalStatus === 'approved' ? '已批准' : approvalStatus === 'rejected' ? '已拒绝' : '待处理'}
+            </span>
+          </div>
+          {approvalEvent.reason ? <div className="mb-2 text-ops-text/70">{approvalEvent.reason}</div> : null}
+          
+          {showApprovalActions ? (
+            <div className="flex items-center justify-between gap-3">
+              <button type="button" onClick={onApprove} className="rounded-md bg-ops-green/25 px-3 py-1.5 text-[11px] font-semibold text-ops-green transition hover:bg-ops-green/35">
+                批准
+              </button>
+
+              <button type="button" onClick={onReject} className="rounded-md bg-ops-red/25 px-3 py-1.5 text-[11px] font-semibold text-ops-red transition hover:bg-ops-red/35">
+                拒绝
+              </button>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+      {outputText ? <OutputBlock text={outputText} label="流式输出" /> : null}
     </div>
   )
 }
@@ -305,7 +310,7 @@ function ThinkingChain({ deltas, isStreaming }: ThinkingChainProps) {
   const stageContent = useMemo(() => {
     const out: Record<string, string> = {}
     for (const d of deltas) {
-      const stage = d.stage || 'planner'
+      const stage = d.stage || 'assistant'
       if (out[stage]) {
         out[stage] += '\n\n'
       } else {
@@ -317,90 +322,16 @@ function ThinkingChain({ deltas, isStreaming }: ThinkingChainProps) {
   }, [deltas])
 
   const visibleStages = STAGE_ORDER.filter((s) => (stageContent[s] || '').trim().length > 0)
-
-  const lastDeltaStage = (deltas[deltas.length - 1]?.stage || visibleStages[0] || 'planner') as string
-  const [activeStage, setActiveStage] = useState<string>(lastDeltaStage)
-  const [userInteracted, setUserInteracted] = useState(false)
-  const [isExpanded, setIsExpanded] = useState<boolean>(isStreaming)
-
-  // 流式过程中跟随最新 stage；用户主动切过则尊重用户
-  useEffect(() => {
-    if (isStreaming && !userInteracted) {
-      setActiveStage(lastDeltaStage)
-    }
-  }, [isStreaming, lastDeltaStage, userInteracted])
-
-  // 流式时自动展开
-  useEffect(() => {
-    if (isStreaming) {
-      setIsExpanded(true)
-    }
-  }, [isStreaming])
-
-  // 流式结束后默认收起一次（避免一次任务结束后还堆积一堆展开的卡）
-  const wasStreamingRef = useRef(isStreaming)
-  useEffect(() => {
-    if (wasStreamingRef.current && !isStreaming) {
-      setIsExpanded(false)
-    }
-    wasStreamingRef.current = isStreaming
-  }, [isStreaming])
-
   if (visibleStages.length === 0) return null
-  const activeKey = visibleStages.includes(activeStage as (typeof STAGE_ORDER)[number]) ? activeStage : visibleStages[0]
-  const activeText = stageContent[activeKey] || ''
+  
+  // 对于流式的组合卡片我们只需要展示纯 markdown
+  const activeText = visibleStages.map(stage => stageContent[stage]).join('\n\n')
 
   return (
-    <article className="rounded-lg border border-ops-border/35 bg-[linear-gradient(180deg,rgba(15,23,42,0.55),rgba(10,15,12,0.85))] shadow-sm">
-      <header className="flex items-center justify-between gap-3 border-b border-ops-border/20 px-3 py-2">
-        <div className="flex items-center gap-2 min-w-0">
-          <div className={`h-1.5 w-1.5 rounded-full ${isStreaming ? 'bg-ops-cyan animate-pulse' : 'bg-ops-border/60'}`} />
-          <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-ops-muted">AI 思考链</span>
-          <div className="ml-1 flex shrink-0 items-center gap-1">
-            {visibleStages.map((stage) => {
-              const isActive = stage === activeKey
-              return (
-                <button
-                  key={stage}
-                  type="button"
-                  onClick={() => {
-                    setUserInteracted(true)
-                    setActiveStage(stage)
-                    setIsExpanded(true)
-                  }}
-                  className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] transition-colors ${
-                    isActive
-                      ? 'bg-ops-cyan/15 text-ops-cyan border border-ops-cyan/35'
-                      : 'border border-ops-border/30 bg-black/25 text-ops-muted hover:text-ops-text hover:border-ops-border/55'
-                  }`}
-                >
-                  <span className={STAGE_ICON_COLOR[stage] || ''}>●</span>
-                  {STAGE_LABEL[stage] || stage}
-                </button>
-              )
-            })}
-          </div>
-        </div>
-        <button
-          type="button"
-          onClick={() => setIsExpanded((prev) => !prev)}
-          className="shrink-0 rounded p-1 text-ops-muted hover:bg-ops-border/15 hover:text-ops-text"
-          aria-label={isExpanded ? '收起思考链' : '展开思考链'}
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className={`transition-transform ${isExpanded ? 'rotate-180' : ''}`}>
-            <path d="M6 9l6 6 6-6" />
-          </svg>
-        </button>
-      </header>
-      {isExpanded ? (
-        <div className="px-4 py-3">
-          <div className={PROSE_CLASS}>
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{activeText}</ReactMarkdown>
-            {isStreaming ? <span className="ml-1 inline-block h-3.5 w-1.5 animate-pulse align-[-2px] rounded-sm bg-ops-cyan/85" /> : null}
-          </div>
-        </div>
-      ) : null}
-    </article>
+    <div className={PROSE_CLASS}>
+      <ReactMarkdown remarkPlugins={[remarkGfm]}>{activeText}</ReactMarkdown>
+      {isStreaming ? <span className="ml-1 inline-block h-3.5 w-1.5 animate-pulse align-[-2px] rounded-sm bg-ops-cyan/85" /> : null}
+    </div>
   )
 }
 
@@ -412,21 +343,13 @@ type EventCardProps = {
 }
 
 function EventCard({ event, pendingApprovalRuntimeId, onApprove, onReject }: EventCardProps) {
-  if (event.kind === 'status') {
-    return <div className="text-xs italic text-ops-muted">{event.text}</div>
-  }
-
   if (event.kind === 'error') {
     return (
-      <article className="rounded-md border border-ops-danger/40 bg-ops-danger/10 p-3">
+      <div className="my-1 rounded-md border border-ops-danger/40 bg-ops-danger/10 p-3">
         <div className="mb-1 text-[10px] font-bold uppercase text-ops-red">系统错误</div>
         <p className="m-0 font-mono text-xs text-ops-text/90">{event.text}</p>
-      </article>
+      </div>
     )
-  }
-
-  if (event.kind === 'output') {
-    return <OutputBlock text={event.text} />
   }
 
   if (event.kind === 'user') {
@@ -440,28 +363,26 @@ function EventCard({ event, pendingApprovalRuntimeId, onApprove, onReject }: Eve
     )
   }
 
-  if (event.kind === 'approval') {
-    const showActions = pendingApprovalRuntimeId !== null && event.runtimeId === pendingApprovalRuntimeId
-    return <CommandCard command={event.command} showActions={showActions} onApprove={onApprove} onReject={onReject} />
+  if ((event.kind === 'approval_required' || event.kind === 'approval_decision') && event.status === 'rejected') {
+    return (
+      <div className="my-1 rounded-md border border-ops-danger/40 bg-ops-danger/10 p-3">
+        <div className="mb-1 text-[10px] font-bold uppercase text-ops-red">审批已拒绝</div>
+        <p className="m-0 whitespace-pre-wrap font-mono text-xs text-ops-text/90">{event.command || event.text}</p>
+      </div>
+    )
   }
 
   if (event.kind === 'final') {
     return (
-      <article className="rounded-lg border border-ops-green/45 bg-gradient-to-br from-ops-green/12 to-emerald-500/8 p-4 shadow-sm">
-        <div className="mb-2 flex items-center gap-2">
-          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-ops-green/25 text-ops-green">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M5 13l4 4L19 7" /></svg>
-          </span>
-          <div className="text-[10px] font-bold uppercase tracking-wider text-ops-green/95">任务结论</div>
-        </div>
+      <div className="mt-2 text-ops-text/90">
         <div className={PROSE_CLASS}>
           <ReactMarkdown remarkPlugins={[remarkGfm]}>{stripJsonBlocks(event.text)}</ReactMarkdown>
         </div>
-      </article>
+      </div>
     )
   }
 
-  // 兜底（不应该走到这里 —— delta/plan/command_* 都已经被分组处理）
+  // 兜底（不应该走到这里 —— delta/plan/approval/command_* 都已经被分组处理）
   return null
 }
 
@@ -480,8 +401,26 @@ export function ConversationView({ events, pendingApprovalRuntimeId, onApprove, 
 
   const groups: Group[] = []
   const commandGroupMap = new Map<string, { index: number }>()
+  const approvalGroupMap = new Map<string, { index: number }>()
   let currentDeltaGroup: DeltaEvent[] = []
   let deltaGroupCounter = 0
+
+  const reindexGroupMaps = () => {
+    commandGroupMap.clear()
+    approvalGroupMap.clear()
+    groups.forEach((entry, index) => {
+      if (entry.type !== 'command') {
+        return
+      }
+      if (entry.startEvent?.commandId) {
+        commandGroupMap.set(entry.startEvent.commandId, { index })
+      }
+      const approvalKey = entry.approvalEvent?.stepId || (entry.approvalEvent ? `${entry.approvalEvent.runtimeId || 'runtime'}:${entry.approvalEvent.command}` : null)
+      if (approvalKey) {
+        approvalGroupMap.set(approvalKey, { index })
+      }
+    })
+  }
 
   const flushDeltaGroup = () => {
     if (currentDeltaGroup.length === 0) return
@@ -505,10 +444,42 @@ export function ConversationView({ events, pendingApprovalRuntimeId, onApprove, 
 
     flushDeltaGroup()
 
+    if (event.kind === 'approval_required' || event.kind === 'approval_decision') {
+      const key = event.stepId || `${event.runtimeId || 'runtime'}:${event.command}`
+      const existing = approvalGroupMap.get(key)
+      if (existing) {
+        const target = groups[existing.index]
+        if (target.type === 'command') {
+          target.approvalEvent = {
+            ...(target.approvalEvent ?? event),
+            ...event,
+            command: event.command || target.approvalEvent?.command || target.startEvent?.command || '',
+          }
+        }
+      } else {
+        const commandGroup = { type: 'command' as const, key: `approval-${key}`, approvalEvent: event, chunkEvents: [] as CommandChunk[] }
+        const insertIndex = groups.length
+        groups.push(commandGroup)
+        approvalGroupMap.set(key, { index: insertIndex })
+      }
+      continue
+    }
+
     if (event.kind === 'command_start') {
-      const group = { startEvent: event, chunkEvents: [] as CommandChunk[], endEvent: undefined as CommandEnd | undefined }
-      groups.push({ type: 'command', key: `cmd-${event.commandId}`, ...group })
-      commandGroupMap.set(event.commandId, { index: groups.length - 1 })
+      const approvalKey = event.stepId || `${event.runtimeId || 'runtime'}:${event.command}`
+      const existingApproval = approvalGroupMap.get(approvalKey)
+      if (existingApproval) {
+        const target = groups[existingApproval.index]
+        if (target.type === 'command') {
+          target.startEvent = event
+          commandGroupMap.set(event.commandId, { index: existingApproval.index })
+        }
+      } else {
+        const group = { type: 'command' as const, key: `cmd-${event.commandId}`, startEvent: event, chunkEvents: [] as CommandChunk[], endEvent: undefined as CommandEnd | undefined }
+        const insertIndex = groups.length
+        groups.push(group)
+        commandGroupMap.set(event.commandId, { index: insertIndex })
+      }
       continue
     }
     if (event.kind === 'command_chunk') {
@@ -532,6 +503,27 @@ export function ConversationView({ events, pendingApprovalRuntimeId, onApprove, 
   }
 
   flushDeltaGroup()
+
+  // 按对话轮次分组
+  type TurnData = { id: string; userEvent?: EventItem; assistantGroups: Group[] }
+  const turns: TurnData[] = []
+  let currentTurn: TurnData = { id: 'turn-0', assistantGroups: [] }
+  let turnCounter = 0
+
+  groups.forEach((entry) => {
+    if (entry.type === 'event' && entry.event.kind === 'user') {
+      if (currentTurn.userEvent || currentTurn.assistantGroups.length > 0) {
+        turns.push(currentTurn)
+        turnCounter++
+      }
+      currentTurn = { id: `turn-${turnCounter}`, userEvent: entry.event, assistantGroups: [] }
+    } else {
+      currentTurn.assistantGroups.push(entry)
+    }
+  })
+  if (currentTurn.userEvent || currentTurn.assistantGroups.length > 0) {
+    turns.push(currentTurn)
+  }
 
   useEffect(() => {
     const el = scrollContainerRef.current
@@ -569,41 +561,66 @@ export function ConversationView({ events, pendingApprovalRuntimeId, onApprove, 
     )
   }
 
-  // chain 是否流式：仅最后一个 group 是 thinking 时，结合 isStreamingNow 判断
-  const lastGroupIndex = groups.length - 1
+  // chain 是否流式：结合 isStreamingNow 判断
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden" aria-label="助手会话">
-      {showPlanCard && latestPlanEvent ? (
-        <div className="border-b border-ops-border/30 bg-ops-bg/95 px-4 py-3 backdrop-blur-sm">
-          <PlanSummaryCard event={latestPlanEvent} />
-        </div>
-      ) : null}
+      <div ref={scrollContainerRef} className="flex flex-1 flex-col gap-5 overflow-y-auto px-4 py-4">
+        {turns.map((turn, turnIndex) => {
+          const isLastTurn = turnIndex === turns.length - 1
+          const orderedAssistantGroups = sortAssistantGroups(turn.assistantGroups)
 
-      <div ref={scrollContainerRef} className="flex flex-1 flex-col gap-3 overflow-y-auto px-4 py-4">
-        {groups.map((entry, index) => {
-          if (entry.type === 'command') {
-            return (
-              <CommandExecutionCard
-                key={entry.key}
-                startEvent={entry.startEvent}
-                chunkEvents={entry.chunkEvents}
-                endEvent={entry.endEvent}
-              />
-            )
-          }
-          if (entry.type === 'thinking') {
-            const isLast = index === lastGroupIndex
-            return <ThinkingChain key={entry.key} deltas={entry.deltas} isStreaming={isLast && isStreamingNow} />
-          }
           return (
-            <EventCard
-              key={entry.event.id}
-              event={entry.event}
-              pendingApprovalRuntimeId={pendingApprovalRuntimeId}
-              onApprove={onApprove}
-              onReject={onReject}
-            />
+            <div key={turn.id} className="flex flex-col gap-4">
+              {turn.userEvent ? (
+                <EventCard
+                  event={turn.userEvent}
+                  pendingApprovalRuntimeId={pendingApprovalRuntimeId}
+                  onApprove={onApprove}
+                  onReject={onReject}
+                />
+              ) : null}
+
+              {orderedAssistantGroups.length > 0 ? (
+                <div className="flex justify-start">
+                  <article className="flex w-full max-w-[95%] flex-col gap-2 rounded-lg border border-ops-border/20 bg-[#0a0f12] p-4 shadow-sm">
+                    <div className="mb-1 flex items-center gap-2">
+                      <div className={`h-2 w-2 rounded-full ${isLastTurn && isStreamingNow ? 'bg-ops-cyan animate-pulse' : 'bg-ops-cyan/60'}`} />
+                      <span className="text-[11px] font-bold uppercase tracking-wider text-ops-cyan/80">Agent</span>
+                    </div>
+                    {orderedAssistantGroups.map((entry, index) => {
+                      const isLastGroupInTurn = index === orderedAssistantGroups.length - 1
+                      if (entry.type === 'command') {
+                        return (
+                          <CommandExecutionCard
+                            key={entry.key}
+                            approvalEvent={entry.approvalEvent}
+                            startEvent={entry.startEvent}
+                            chunkEvents={entry.chunkEvents}
+                            endEvent={entry.endEvent}
+                            pendingApprovalRuntimeId={pendingApprovalRuntimeId}
+                            onApprove={onApprove}
+                            onReject={onReject}
+                          />
+                        )
+                      }
+                      if (entry.type === 'thinking') {
+                        return <ThinkingChain key={entry.key} deltas={entry.deltas} isStreaming={isLastTurn && isLastGroupInTurn && isStreamingNow} />
+                      }
+                      return (
+                        <EventCard
+                          key={entry.event.id}
+                          event={entry.event}
+                          pendingApprovalRuntimeId={pendingApprovalRuntimeId}
+                          onApprove={onApprove}
+                          onReject={onReject}
+                        />
+                      )
+                    })}
+                  </article>
+                </div>
+              ) : null}
+            </div>
           )
         })}
       </div>
