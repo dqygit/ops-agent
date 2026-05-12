@@ -225,6 +225,25 @@ export type TerminalStatusEvent = {
   message?: string
 }
 
+export type AgentMessage = {
+  id: string
+  kind: 'message'
+  ts: number
+  type: 'say' | 'ask'
+  say?: 'text' | 'tool_use' | 'error'
+  ask?: 'command' | 'followup' | 'completion_result'
+  text?: string
+  partial: boolean
+  toolCall?: {
+    id: string
+    name: string
+    command?: string
+    args: Record<string, any>
+  }
+  toolOutput?: string
+  exitCode?: number
+}
+
 export type EventItem =
   | { id: string; kind: 'delta'; text: string; messageId: string; stage?: string }
   | PlanEvent
@@ -236,6 +255,8 @@ export type EventItem =
   | ExecutionOutputEvent
   | ExecutionCompletedEvent
   | TerminalStatusEvent
+  | AgentMessage
+  | { id: string; kind: 'message_update'; payload: AgentMessage } // For raw event wrapper if needed
   | { id: string; kind: 'final'; text: string }
   | { id: string; kind: 'error'; text: string }
   | { id: string; kind: 'user'; text: string }

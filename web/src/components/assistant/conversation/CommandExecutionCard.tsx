@@ -1,11 +1,13 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import type { AgentMessage } from '../../../types/ops'
 import type { Approval, CommandStart, CommandChunk, CommandEnd } from './types'
 import { OutputBlock } from './OutputBlock'
 
 type CommandExecutionCardProps = {
+  message?: AgentMessage
   approvalEvent?: Approval
   startEvent?: CommandStart
-  chunkEvents: CommandChunk[]
+  chunkEvents?: CommandChunk[]
   endEvent?: CommandEnd
   pendingApprovalRuntimeId: string | null
   onApprove?: () => void
@@ -13,23 +15,40 @@ type CommandExecutionCardProps = {
 }
 
 export function CommandExecutionCard({
+  message,
   approvalEvent,
   startEvent,
-  chunkEvents,
+  chunkEvents = [],
   endEvent,
   pendingApprovalRuntimeId,
   onApprove,
   onReject
 }: CommandExecutionCardProps) {
   const [isExpanded, setIsExpanded] = useState(false)
-  const outputText = chunkEvents.map((event) => event.text).join('')
-  const exitCode = (endEvent as any)?.exitCode ?? (endEvent as any)?.exit_code
-  const command = (startEvent as any)?.command || approvalEvent?.command || ''
-  const title = (startEvent as any)?.title?.trim() || (approvalEvent ? 'Security Clearance' : 'Remote Instruction')
-  const approvalStatus = approvalEvent?.status ?? (approvalEvent ? 'pending' : undefined)
-  const showApprovalActions = approvalStatus === 'pending' && approvalEvent?.runtimeId !== undefined && pendingApprovalRuntimeId !== null && approvalEvent.runtimeId === pendingApprovalRuntimeId
 
-  const isRunning = !endEvent && !approvalStatus
+  // Derived state from AgentMessage or Legacy events
+  const command = message?.toolCall?.command || (startEvent as any)?.command || approvalEvent?.command || ''
+  const outputText = message?.toolOutput || chunkEvents.map((event) => event.text).join('')
+  const exitCode = message ? message.exitCode : ((endEvent as any)?.exitCode ?? (endEvent as any)?.exit_code)
+  
+  const isMessageAsk = message?.type === 'ask'
+  const approvalStatus = isMessageAsk ? 'pending' : (message?.type === 'say' && message?.say === 'tool_use' && !message.partial ? 'approved' : (approvalEvent?.status ?? (approvalEvent ? 'pending' : undefined)))
+  
+  // For ask-type messages: show buttons when pendingApprovalRuntimeId is set (stream guarantees correctness)
+  // For legacy approval events: match on runtimeId
+  const showApprovalActions = pendingApprovalRuntimeId !== null && (
+    isMessageAsk || 
+    (approvalStatus === 'pending' && approvalEvent?.runtimeId === pendingApprovalRuntimeId)
+  )
+
+  const isRunning = message ? message.partial : (!endEvent && !approvalStatus)
+
+  // Auto-expand if it's an ask message
+  useEffect(() => {
+    if (isMessageAsk) {
+      setIsExpanded(true)
+    }
+  }, [isMessageAsk])
 
   return (
     <div className={`group/card my-2 rounded-xl border border-ops-border/30 bg-ops-panel/40 shadow-sm transition-all duration-300 ${isExpanded ? 'p-4' : 'p-2 px-3'}`}>
@@ -42,13 +61,13 @@ export function CommandExecutionCard({
           <div className="flex flex-1 items-center gap-3 min-w-0">
             <span className="shrink-0 text-[10px] font-bold tracking-[0.1em] text-ops-muted uppercase whitespace-nowrap">CMD</span>
             <code className={`flex-1 truncate font-mono text-[12px] ${isRunning ? 'text-ops-cyan' : 'text-ops-text/80'}`}>
-              {command}
+              {command || (message?.toolCall?.name ? `Call: ${message.toolCall.name}` : 'Unknown Command')}
             </code>
           </div>
         </div>
 
         <div className="flex items-center gap-3">
-          {endEvent ? (
+          {(message ? !message.partial : !!endEvent) ? (
             <div className={`flex items-center gap-1.5 rounded border px-2 py-0.5 text-[9px] font-bold tracking-[0.1em] ${exitCode === null || exitCode === 0 ? 'text-ops-emerald border-ops-emerald/30 bg-ops-emerald/5' : 'text-ops-danger border-ops-danger/30 bg-ops-danger/5'}`}>
               <div className={`h-1 w-1 rounded-full ${exitCode === null || exitCode === 0 ? 'bg-ops-emerald' : 'bg-ops-danger'}`} />
               {exitCode === null || exitCode === 0 ? 'Success' : `Error ${exitCode}`}
@@ -90,21 +109,19 @@ export function CommandExecutionCard({
             <span className="text-[9px] font-bold tracking-widest text-ops-muted/60 uppercase">Full Instruction</span>
             <div className="relative">
               <code className="block rounded-lg border border-ops-border/20 bg-ops-deep px-3 py-2 text-[12px] text-ops-text/90 font-mono shadow-inner border-l-2 border-l-ops-cyan/60 whitespace-pre-wrap break-all">
-                {command}
+                {command || JSON.stringify(message?.toolCall?.args)}
               </code>
             </div>
           </div>
 
-          {approvalEvent && approvalStatus === 'pending' && (
+          {showApprovalActions && approvalStatus === 'pending' && (
             <div className="rounded-lg border border-ops-warning/30 bg-ops-warning/5 p-3 border-l-2 border-l-ops-warning/60">
               <div className="mb-2 text-[10px] font-bold tracking-widest text-ops-warning uppercase">Authorization Required</div>
-              {approvalEvent.reason && <div className="mb-3 text-[12px] text-ops-text/80 italic border-l border-ops-warning/30 pl-3">{approvalEvent.reason}</div>}
-              {showApprovalActions && (
-                <div className="flex items-center justify-end gap-2">
-                  <button onClick={onReject} className="button-mini button-mini-danger">Reject</button>
-                  <button onClick={onApprove} className="button-mini button-mini-primary shadow-glow">Authorize</button>
-                </div>
-              )}
+              {(message?.text || approvalEvent?.reason) && <div className="mb-3 text-[12px] text-ops-text/80 italic border-l border-ops-warning/30 pl-3">{message?.text || approvalEvent?.reason}</div>}
+              <div className="flex items-center justify-end gap-2">
+                <button onClick={onReject} className="button-mini button-mini-danger">Reject</button>
+                <button onClick={onApprove} className="button-mini button-mini-primary shadow-glow">Authorize</button>
+              </div>
             </div>
           )}
 
@@ -121,11 +138,10 @@ export function CommandExecutionCard({
         <div className="mt-1.5 ml-9 flex items-center gap-2 overflow-hidden border-t border-ops-border/10 pt-1.5">
           <span className="shrink-0 text-[9px] font-bold tracking-[0.05em] text-ops-muted/40 uppercase">Output:</span>
           <span className="truncate font-mono text-[11px] text-ops-muted/60">
-            {outputText.split('\n')[0] || outputText.slice(0, 100)}
+            {outputText.split('\n').filter(l => l.trim()).pop() || outputText.slice(-100)}
           </span>
         </div>
       )}
     </div>
   )
 }
-

@@ -19,16 +19,14 @@ logger = logging.getLogger(__name__)
 from app.core.llm.types import LLMCompletionRequest, LLMCompletionResponse, LLMMessage
 from app.core.llm.factory import build_llm_provider
 from app.core.loop.loop_events import (
+    AgentMessage,
     LoopEvent,
-    emit_approval_granted,
-    emit_approval_rejected,
-    emit_approval_required,
     emit_completed,
-    emit_delta,
     emit_failed,
-    emit_plan_updated,
+    emit_message_update,
 )
 from app.core.loop.loop_state import LoopRuntimeStep, LoopState
+from app.core.loop.message_manager import MessageManager
 from app.core.tool.handler import ToolHandler
 
 
@@ -40,22 +38,32 @@ class AgentLoop:
         self._tools = {t.definition.name: t for t in tools}
 
     def run(self, state: LoopState) -> Iterator[LoopEvent]:
+        manager = MessageManager(runtime_id=state.context.runtime_id)
         if state.context.mode == "plan":
-            yield from self._run_plan_mode(state)
+            yield from self._run_plan_mode(state, manager=manager)
             return
-        yield from self._tool_calling_loop(state)
+        yield from self._tool_calling_loop(state, manager=manager)
 
     def resume_with_approval(self, state: LoopState, *, approved: bool) -> Iterator[LoopEvent]:
         if state.phase != "approving":
             return
 
+        manager = MessageManager(runtime_id=state.context.runtime_id)
         current_step = state.get_current_step()
         if current_step is None:
             return
 
+        # Reuse the ask message's ID so the frontend replaces the card in-place
+        reuse_id = state.pending_message_id
+
         if not approved:
             current_step.status = "failed"
-            yield emit_approval_rejected(runtime_id=state.context.runtime_id, step_id=current_step.step_id)
+            if reuse_id:
+                yield from manager.resume_message(message_id=reuse_id, message_type="say", say_type="error")
+            else:
+                yield from manager.begin_message(message_type="say", say_type="error")
+            yield from manager.finalize(text="Command execution rejected by user.")
+            
             state.messages.append(
                 LLMMessage(
                     role="tool",
@@ -67,22 +75,28 @@ class AgentLoop:
             state.pending_tool_call_id = None
             state.pending_tool_name = None
             state.pending_tool_args = None
-            yield emit_plan_updated(runtime_id=state.context.runtime_id, plan_payload=self._snapshot_plan(state))
-            yield from self._tool_calling_loop(state)
+            state.pending_message_id = None
+            yield from self._tool_calling_loop(state, manager=manager)
             return
 
-        yield emit_approval_granted(runtime_id=state.context.runtime_id, step_id=current_step.step_id)
         current_step.status = "running"
         state.phase = "executing"
-        yield emit_plan_updated(runtime_id=state.context.runtime_id, plan_payload=self._snapshot_plan(state))
 
         tool_name = state.pending_tool_name
         args = state.pending_tool_args or {}
         handler = self._tools.get(tool_name)
+        
+        # Resume the existing ask message as a say/tool_use (same ID, card replaces in-place)
+        if reuse_id:
+            yield from manager.resume_message(message_id=reuse_id, message_type="say", say_type="tool_use")
+        else:
+            yield from manager.begin_message(message_type="say", say_type="tool_use")
+        yield from manager.update(tool_call={"id": state.pending_tool_call_id, "name": tool_name, "args": args})
+
         if handler is None:
             ok, output = False, f"Unsupported tool: {tool_name}"
         else:
-            ok, output = yield from handler.execute(state=state, step_id=current_step.step_id, args=args)
+            ok, output = yield from handler.execute(state=state, step_id=current_step.step_id, args=args, manager=manager)
 
         current_step.status = "completed" if ok else "failed"
         state.messages.append(
@@ -96,21 +110,22 @@ class AgentLoop:
         state.pending_tool_call_id = None
         state.pending_tool_name = None
         state.pending_tool_args = None
-        yield emit_plan_updated(runtime_id=state.context.runtime_id, plan_payload=self._snapshot_plan(state))
+        state.pending_message_id = None
+        yield from manager.finalize(exit_code=0 if ok else 1)
         
         if state.context.mode == "plan":
             if ok:
-                yield from self._run_plan_mode(state, continue_existing=True)
+                yield from self._run_plan_mode(state, manager=manager, continue_existing=True)
                 return
             state.phase = "failed"
             state.error_message = output
             yield emit_failed(runtime_id=state.context.runtime_id, error=output or "Failed to execute plan step.")
             return
-        yield from self._tool_calling_loop(state)
+        yield from self._tool_calling_loop(state, manager=manager)
 
-    def _run_plan_mode(self, state: LoopState, *, continue_existing: bool = False) -> Iterator[LoopEvent]:
+    def _run_plan_mode(self, state: LoopState, *, manager: MessageManager, continue_existing: bool = False) -> Iterator[LoopEvent]:
         if not continue_existing and not state.steps:
-            yield from self._generate_plan(state)
+            yield from self._generate_plan(state, manager=manager)
             if state.phase == "failed":
                 return
 
@@ -126,9 +141,8 @@ class AgentLoop:
             step.status = "running"
             state.phase = "executing"
             state.messages = self._build_step_messages(state, step)
-            yield emit_plan_updated(runtime_id=state.context.runtime_id, plan_payload=self._snapshot_plan(state))
 
-            paused, _, summary = yield from self._tool_calling_loop(state, plan_step=step, finalize_on_complete=False)
+            paused, _, summary = yield from self._tool_calling_loop(state, manager=manager, plan_step=step, finalize_on_complete=False)
             if paused:
                 return
 
@@ -136,16 +150,19 @@ class AgentLoop:
             if summary:
                 step.output = summary
             state.messages = []
-            yield emit_plan_updated(runtime_id=state.context.runtime_id, plan_payload=self._snapshot_plan(state))
             state.cursor += 1
 
         state.phase = "completed"
         state.summary = "Plan execution completed."
         yield emit_completed(runtime_id=state.context.runtime_id, summary=state.summary)
 
-    def _generate_plan(self, state: LoopState) -> Iterator[LoopEvent]:
+    def _generate_plan(self, state: LoopState, *, manager: MessageManager) -> Iterator[LoopEvent]:
         provider = build_llm_provider(state.context.model_config)
         ctx = state.context
+        
+        yield from manager.begin_message(message_type="say", say_type="text")
+        yield from manager.update(text="Generating execution plan...")
+
         request = LLMCompletionRequest(
             messages=[
                 LLMMessage(
@@ -195,11 +212,12 @@ class AgentLoop:
                 )
 
             state.phase = "planning"
-            yield emit_plan_updated(runtime_id=ctx.runtime_id, plan_payload=self._snapshot_plan(state))
+            yield from manager.finalize(text="\nPlan generated successfully.")
         except Exception as exc:
             error = f"Task planning failed: {exc}"
             state.phase = "failed"
             state.error_message = error
+            yield from manager.finalize(text=f"\nError: {error}")
             yield emit_failed(runtime_id=ctx.runtime_id, error=error)
 
     def _build_step_messages(self, state: LoopState, step: LoopRuntimeStep) -> list[LLMMessage]:
@@ -228,6 +246,7 @@ class AgentLoop:
         self,
         state: LoopState,
         *,
+        manager: MessageManager,
         plan_step: LoopRuntimeStep | None = None,
         finalize_on_complete: bool = True,
     ) -> Iterator[LoopEvent]:
@@ -251,6 +270,9 @@ class AgentLoop:
                 "Always respond in English."
             )
             state.messages.append(LLMMessage(role="system", content=system_msg))
+            # Inject conversation history from previous turns (Roo Code style)
+            if ctx.conversation_history:
+                state.messages.extend(ctx.conversation_history)
             state.messages.append(LLMMessage(role="user", content=ctx.user_prompt))
 
         import time
@@ -259,7 +281,9 @@ class AgentLoop:
             response_text_parts: list[str] = []
             response_tool_calls = []
             finish_reason: str | None = None
-            message_id = f"msg-{uuid.uuid4()}"
+            
+            # Start a new assistant message for the LLM response
+            yield from manager.begin_message(message_type="say", say_type="text")
 
             t0 = time.monotonic()
             first_chunk_logged = False
@@ -273,14 +297,7 @@ class AgentLoop:
                     first_chunk_logged = True
                 if chunk.delta:
                     response_text_parts.append(chunk.delta)
-                    yield emit_delta(
-                        runtime_id=ctx.runtime_id,
-                        message_id=message_id,
-                        stage="assistant",
-                        text=chunk.delta,
-                    )
-                if chunk.tool_arguments_delta:
-                    pass
+                    yield from manager.update(text=chunk.delta)
                 if chunk.tool_calls:
                     response_tool_calls = chunk.tool_calls
                 if chunk.finish_reason:
@@ -300,13 +317,16 @@ class AgentLoop:
                         tool_calls=response.tool_calls,
                     )
                 )
+            
+            # Finalize the assistant's text message
+            yield from manager.finalize()
 
             if not response.tool_calls:
                 summary = response.text or "Task execution completed."
                 if finalize_on_complete:
                     state.phase = "completed"
                     state.summary = summary
-                    yield emit_completed(runtime_id=ctx.runtime_id, summary=summary)
+                    yield emit_completed(runtime_id=ctx.runtime_id, summary="")
                 return False, True, summary
 
             for index, tool_call in enumerate(response.tool_calls):
@@ -338,13 +358,11 @@ class AgentLoop:
                     )
                     state.steps.append(step)
                     state.cursor = len(state.steps) - 1
-                    yield emit_plan_updated(runtime_id=ctx.runtime_id, plan_payload=self._snapshot_plan(state))
                 else:
                     step = plan_step
                     if command:
                         step.command = command
                     step.working_directory = str(working_directory) if working_directory else None
-                    yield emit_plan_updated(runtime_id=ctx.runtime_id, plan_payload=self._snapshot_plan(state))
 
                 action, reason = handler.needs_approval(args)
                 if action == "deny":
@@ -357,7 +375,6 @@ class AgentLoop:
                             name=tool_call.name,
                         )
                     )
-                    yield emit_plan_updated(runtime_id=ctx.runtime_id, plan_payload=self._snapshot_plan(state))
                     continue
 
                 if action == "ask":
@@ -369,10 +386,8 @@ class AgentLoop:
                     state.pending_tool_args = args
                     
                     # Prevent HTTP 400 error by satisfying all remaining tool calls in the response
-                    # before returning to wait for approval.
-                    # The LLM can easily resubmit them if needed after the approval.
                     for remaining_tool_call in response.tool_calls[index + 1:]:
-                            state.messages.append(
+                        state.messages.append(
                             LLMMessage(
                                 role="tool",
                                 content="Cancelled because a previous command in the sequence required user approval.",
@@ -381,25 +396,39 @@ class AgentLoop:
                             )
                         )
                         
-                    yield emit_plan_updated(runtime_id=ctx.runtime_id, plan_payload=self._snapshot_plan(state))
-                    yield emit_approval_required(
-                        runtime_id=ctx.runtime_id,
-                        step_id=step.step_id,
-                        step_index=state.cursor,
-                        command=step.command,
-                        title="Action Requires Approval",
-                        reason=reason,
-                        risk_level="high",
-                        working_directory=step.working_directory,
-                        expected_output=None,
+                    # Emit an 'ask' message for approval
+                    yield from manager.begin_message(
+                        message_type="ask",
+                        ask_type="command",
                     )
+                    yield from manager.finalize(
+                        tool_call={
+                            "id": tool_call.id,
+                            "name": tool_call.name,
+                            "command": step.command,
+                            "args": args,
+                        }
+                    )
+                    # Save the message ID so resume_with_approval can reuse it
+                    state.pending_message_id = manager.last_finalized_id
                     return True, None, ""
 
                 step.status = "running"
                 state.phase = "executing"
-                yield emit_plan_updated(runtime_id=ctx.runtime_id, plan_payload=self._snapshot_plan(state))
                 
-                ok, output = yield from handler.execute(state=state, step_id=step.step_id, args=args)
+                # Emit a 'say' message for tool execution
+                yield from manager.begin_message(message_type="say", say_type="tool_use")
+                yield from manager.update(
+                    tool_call={
+                        "id": tool_call.id,
+                        "name": tool_call.name,
+                        "command": step.command,
+                        "args": args,
+                    }
+                )
+                
+                # handler.execute should yield output deltas to the manager
+                ok, output = yield from handler.execute(state=state, step_id=step.step_id, args=args, manager=manager)
                 
                 step.status = "completed" if ok else "failed"
                 state.messages.append(
@@ -410,30 +439,6 @@ class AgentLoop:
                         name=tool_call.name,
                     )
                 )
-                yield emit_plan_updated(runtime_id=ctx.runtime_id, plan_payload=self._snapshot_plan(state))
+                yield from manager.finalize(exit_code=0 if ok else 1)
 
         return False, True, ""
-
-    def _snapshot_plan(self, state: LoopState) -> dict[str, Any]:
-        return {
-            "id": f"plan-{state.context.runtime_id}-v{len(state.steps)}",
-            "kind": "plan",
-            "planId": f"runtime-{state.context.runtime_id}",
-            "title": "Task Plan",
-            "loading": False,
-            "version": len(state.steps),
-            "isLatest": True,
-            "updated": bool(state.steps),
-            "steps": [
-                {
-                    "id": step.step_id,
-                    "title": step.title,
-                    "summary": step.reason,
-                    "status": step.status,
-                }
-                for step in state.steps
-            ],
-            "runtimeId": state.context.runtime_id,
-            "mode": state.context.mode,
-            "lockedPlan": False,
-        }

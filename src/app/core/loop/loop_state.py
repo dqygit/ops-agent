@@ -41,6 +41,7 @@ class LoopContext:
     model_config: ModelConfig
     mode: LoopMode = "agent"
     recent_output: str = ""
+    conversation_history: list[LLMMessage] = field(default_factory=list)
 
 
 @dataclass(slots=True)
@@ -104,6 +105,7 @@ class LoopState:
     pending_tool_call_id: str | None = None
     pending_tool_name: str | None = None
     pending_tool_args: dict[str, Any] | None = None
+    pending_message_id: str | None = None
     steps: list[LoopRuntimeStep] = field(default_factory=list)
     cursor: int = 0
     plan_version: int = 1

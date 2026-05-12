@@ -97,7 +97,10 @@ async def run_console_agent(
     session: Session = Depends(get_session),
     orchestrator: TaskOrchestrator = Depends(get_task_orchestrator),
 ):
+    import time as _time
+    t_start = _time.monotonic()
     payload = await _parse_request_model(request, ConsoleRunRequest)
+    t_parse = _time.monotonic()
     if payload.conversation_id and payload.conversation_id != "console":
         conversation_service = get_conversation_service()
         user_event = {
@@ -109,6 +112,7 @@ async def run_console_agent(
             conversation_service.append_events(payload.conversation_id, [user_event])
         except FileNotFoundError as exc:
             raise HTTPException(status_code=404, detail="Conversation not found") from exc
+    t_persist = _time.monotonic()
     asset_id = payload.asset_id
     if asset_id is None:
         local_terminal_asset = next((asset for asset in list_asset_records(session) if asset.asset_type == AssetType.LOCAL_TERMINAL.value), None)
@@ -116,6 +120,9 @@ async def run_console_agent(
     if asset_id is None:
         raise HTTPException(status_code=400, detail="Asset id is required")
     
+    logger.warning("console.run setup: parse=%.3fs persist=%.3fs total=%.3fs",
+        t_parse - t_start, t_persist - t_parse, t_persist - t_start)
+
     stream = orchestrator.stream_run(
         session=session,
         prompt=payload.prompt,
@@ -127,9 +134,12 @@ async def run_console_agent(
     )
 
     def event_stream():
+        t_first_event = None
         try:
-            logger.warning("console.run stream opened conversation_id=%s asset_id=%s terminal_id=%s", payload.conversation_id, asset_id, payload.terminal_id)
             for event in stream:
+                if t_first_event is None:
+                    t_first_event = _time.monotonic()
+                    logger.warning("console.run first SSE event: %.3fs after request start", t_first_event - t_start)
                 yield _sse_event(event)
         except Exception as exc:
             logger.exception("console.run stream failed conversation_id=%s", payload.conversation_id)

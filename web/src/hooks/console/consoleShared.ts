@@ -1,4 +1,4 @@
-import type { Asset, ConversationSummary, EventItem, PlanStepStatus } from '../../types/ops'
+import type { AgentMessage, Asset, ConversationSummary, EventItem, PlanStepStatus } from '../../types/ops'
 
 export const LOCAL_TERMINAL_ASSET_ID = 0
 export const PENDING_ASSISTANT_MESSAGE_ID = '__pending_assistant__'
@@ -161,10 +161,30 @@ export function mergePersistedEventsWithTransient(
   persistedEvents: EventItem[],
   currentEvents: EventItem[]
 ): EventItem[] {
+  // Deduplicate persisted events: for AgentMessages (kind === 'message'), keep only the latest per ID
+  const deduped: EventItem[] = []
+  const seenMessageIds = new Map<string, number>()
+  
+  for (let i = 0; i < persistedEvents.length; i++) {
+    const event = persistedEvents[i]
+    if ('type' in event && (event.type === 'say' || event.type === 'ask') && event.kind === 'message') {
+      const prevIndex = seenMessageIds.get(event.id)
+      if (prevIndex !== undefined) {
+        // Replace the earlier snapshot with this later one
+        deduped[prevIndex] = event
+      } else {
+        seenMessageIds.set(event.id, deduped.length)
+        deduped.push(event)
+      }
+    } else {
+      deduped.push(event)
+    }
+  }
+
   const pendingAssistantEvent = currentEvents.find((event) => event.id === PENDING_ASSISTANT_MESSAGE_ID)
-  const transientEvents = currentEvents.filter((event) => event.kind === 'delta' && event.id !== PENDING_ASSISTANT_MESSAGE_ID)
-  const hasAssistantDelta = persistedEvents.some((event) => event.kind === 'delta') || transientEvents.length > 0
-  const nextEvents = [...persistedEvents]
+  const transientEvents = currentEvents.filter((event) => (event.kind === 'delta' || 'type' in event) && event.id !== PENDING_ASSISTANT_MESSAGE_ID)
+  const hasAssistantDelta = deduped.some((event) => event.kind === 'delta' || 'type' in event) || transientEvents.length > 0
+  const nextEvents = [...deduped]
 
   if (pendingAssistantEvent && !hasAssistantDelta) {
     nextEvents.push(pendingAssistantEvent)
@@ -183,4 +203,23 @@ export function mergePersistedEventsWithTransient(
   }
 
   return normalizePlanEvents(nextEvents)
+}
+
+/**
+ * 更新或插入 AgentMessage 到事件列表
+ */
+export function upsertMessageEvent(
+  currentEvents: EventItem[],
+  message: AgentMessage
+): EventItem[] {
+  const existingIndex = currentEvents.findIndex((e) => e.id === message.id)
+  if (existingIndex !== -1) {
+    const newEvents = [...currentEvents]
+    newEvents[existingIndex] = message
+    return normalizePlanEvents(newEvents)
+  }
+  
+  // If not found, filter out deltas and append
+  const filteredEvents = currentEvents.filter((e) => e.kind !== 'delta' && e.id !== PENDING_ASSISTANT_MESSAGE_ID)
+  return normalizePlanEvents([...filteredEvents, message])
 }

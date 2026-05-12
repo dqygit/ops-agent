@@ -50,6 +50,9 @@ export function EventCard({ event }: EventCardProps) {
   }
 
   if (event.kind === 'final') {
+    // In the new protocol, 'final' is just a lifecycle signal.
+    // Content is already shown via the AgentMessage snapshot.
+    if (!event.text) return null
     return (
       <div className="mt-2">
         <AssistantMessageContent content={event.text} />

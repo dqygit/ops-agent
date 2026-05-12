@@ -1,16 +1,34 @@
+import type { AgentMessage } from '../../../types/ops'
 import { useMemo, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { PROSE_CLASS } from './types'
 import { stripJsonBlocks } from './utils'
+import { CommandExecutionCard } from './CommandExecutionCard'
 
 type AssistantMessageContentProps = {
-  content: string
+  content?: string
+  message?: AgentMessage
   isStreaming?: boolean
+  onApprove?: () => void
+  onReject?: () => void
+  pendingApprovalRuntimeId?: string | null
 }
 
-export function AssistantMessageContent({ content, isStreaming }: AssistantMessageContentProps) {
-  const processedContent = useMemo(() => stripJsonBlocks(content), [content])
+export function AssistantMessageContent({ 
+  content, 
+  message, 
+  isStreaming, 
+  onApprove, 
+  onReject, 
+  pendingApprovalRuntimeId 
+}: AssistantMessageContentProps) {
+  const finalContent = useMemo(() => {
+    if (message) return message.text || ''
+    return content || ''
+  }, [content, message])
+
+  const processedContent = useMemo(() => stripJsonBlocks(finalContent), [finalContent])
 
   // Simple parser for <think>...</think>
   const parsed = useMemo(() => {
@@ -35,7 +53,22 @@ export function AssistantMessageContent({ content, isStreaming }: AssistantMessa
 
   const [isThinkExpanded, setIsThinkExpanded] = useState(true)
 
-  if (!parsed.thinking && !parsed.output) return null
+  if (!parsed.thinking && !parsed.output && !message?.toolCall) {
+    // Show a loading indicator when the message is partial (LLM hasn't produced tokens yet)
+    if (message?.partial || isStreaming) {
+      return (
+        <div className="flex items-center gap-2.5 py-2 text-ops-muted/70">
+          <div className="flex items-center gap-1">
+            <span className="h-1.5 w-1.5 rounded-full bg-ops-cyan/60 animate-pulse" style={{ animationDelay: '0ms' }} />
+            <span className="h-1.5 w-1.5 rounded-full bg-ops-cyan/60 animate-pulse" style={{ animationDelay: '200ms' }} />
+            <span className="h-1.5 w-1.5 rounded-full bg-ops-cyan/60 animate-pulse" style={{ animationDelay: '400ms' }} />
+          </div>
+          <span className="text-[11px] font-medium tracking-wide text-ops-muted/50">Thinking...</span>
+        </div>
+      )
+    }
+    return null
+  }
 
   return (
     <div className="flex flex-col gap-3 w-full">
@@ -67,10 +100,19 @@ export function AssistantMessageContent({ content, isStreaming }: AssistantMessa
       {parsed.output && (
         <div className={PROSE_CLASS}>
           <ReactMarkdown remarkPlugins={[remarkGfm]}>{parsed.output}</ReactMarkdown>
-          {isStreaming && !parsed.isStillThinking && (
+          {(isStreaming || (message?.partial && !message?.toolCall)) && !parsed.isStillThinking && (
             <span className="ml-1 inline-block h-3.5 w-1.5 animate-pulse align-[-2px] rounded-sm bg-ops-cyan/85" />
           )}
         </div>
+      )}
+
+      {message?.toolCall && (
+        <CommandExecutionCard
+          message={message}
+          pendingApprovalRuntimeId={pendingApprovalRuntimeId ?? null}
+          onApprove={onApprove}
+          onReject={onReject}
+        />
       )}
     </div>
   )

@@ -5,6 +5,7 @@ from typing import Any, Protocol
 
 from app.core.loop.loop_events import LoopEvent
 from app.core.loop.loop_state import LoopState
+from app.core.loop.message_manager import MessageManager
 from app.core.tool.schema import LLMToolDefinition
 
 
@@ -23,7 +24,7 @@ class ToolHandler(Protocol):
         """
         ...
 
-    def execute(self, *, state: LoopState, step_id: str, args: dict[str, Any]) -> Iterator[LoopEvent]:
+    def execute(self, *, state: LoopState, step_id: str, args: dict[str, Any], manager: MessageManager | None = None) -> Iterator[LoopEvent]:
         """
         Executes the tool and yields events to stream to the client.
         Must return a tuple of (success: bool, output: str) when complete.

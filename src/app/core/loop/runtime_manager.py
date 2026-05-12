@@ -130,14 +130,26 @@ class LoopRuntimeManager:
     def _to_ws_event(self, event: LoopEvent, rt: RuntimeState) -> dict:
         rt.sequence += 1
         rt.updated_at = datetime.now(UTC)
-        ws_event = {
-            "id": f"evt-{uuid.uuid4().hex[:12]}",
-            "kind": event.event_type.replace("loop_", ""),
-            "runtimeId": event.runtime_id,
-            "sequence": rt.sequence,
-            "ts": datetime.now(UTC).isoformat(),
-            **event.payload,
-        }
+        kind = event.event_type.replace("loop_", "")
+        
+        if kind == "message_update":
+            # For message_update events, use the message's own id and spread
+            # all message fields at the top level for the frontend to consume.
+            ws_event = {
+                **event.payload,           # id, ts, type, text, partial, toolCall, etc.
+                "kind": kind,              # Override kind to "message_update" for transport
+                "runtimeId": event.runtime_id,
+                "sequence": rt.sequence,
+            }
+        else:
+            ws_event = {
+                "id": f"evt-{uuid.uuid4().hex[:12]}",
+                "kind": kind,
+                "runtimeId": event.runtime_id,
+                "sequence": rt.sequence,
+                "ts": datetime.now(UTC).isoformat(),
+                **event.payload,
+            }
         
         if event.message_id:
             ws_event["messageId"] = event.message_id

@@ -1,8 +1,8 @@
 import { useCallback, useState, type RefObject } from 'react'
 import { appendConversationEvents, streamApproveAgent, streamRunAgent } from '../../api'
 import type { RunMode } from '../../types/api'
-import type { Asset, EventItem, RuntimeSummary } from '../../types/ops'
-import { flushDeltaBuffer, LOCAL_TERMINAL_ASSET_ID, mergeDeltaEvent, mergePersistedEventsWithTransient, PENDING_ASSISTANT_MESSAGE_ID } from './consoleShared'
+import type { AgentMessage, Asset, EventItem, RuntimeSummary } from '../../types/ops'
+import { flushDeltaBuffer, LOCAL_TERMINAL_ASSET_ID, mergeDeltaEvent, mergePersistedEventsWithTransient, PENDING_ASSISTANT_MESSAGE_ID, upsertMessageEvent } from './consoleShared'
 
 interface UseAgentRunProps {
   // Conversation dependencies
@@ -37,7 +37,8 @@ interface UseAgentRunProps {
 }
 
 function shouldSyncRuntimeForEvent(event: EventItem) {
-  return event.kind === 'approval_required' || event.kind === 'approval_decision' || event.kind === 'command_end' || event.kind === 'final' || event.kind === 'error'
+  if ('type' in event && event.type === 'ask') return true
+  return event.kind === 'approval_required' || event.kind === 'approval_decision' || event.kind === 'command_end' || event.kind === 'final' || event.kind === 'error' || event.kind === 'message_update'
 }
 
 export function useAgentRun({
@@ -105,8 +106,27 @@ export function useAgentRun({
 
       const deltaBuffer = new Map<string, string>()
       const pendingPersistEvents: EventItem[] = []
+      const latestMessageSnapshots = new Map<string, AgentMessage>()
 
       for await (const event of stream) {
+        if (event.kind === 'message_update') {
+          // In the new protocol, the message fields are spread into the event
+          const message = { ...event, kind: 'message' as const } as unknown as AgentMessage
+          setEvents((currentEvents: EventItem[]) => upsertMessageEvent(currentEvents, message))
+
+          if (message.type === 'ask' && activeConversationIdRef.current === conversationId) {
+            // Use the runtime ID from the event envelope, not the message ID
+            const runtimeId = (event as any).runtimeId
+            if (runtimeId) {
+              setPendingApprovalRuntimeId(runtimeId)
+            }
+          }
+          
+          // Track latest snapshot per message ID - only the final version will be persisted
+          latestMessageSnapshots.set(message.id, message)
+          continue
+        }
+
         if (event.kind === 'delta' && event.messageId) {
           const currentText = deltaBuffer.get(event.messageId) || ''
           const newText = currentText + event.text
@@ -141,9 +161,10 @@ export function useAgentRun({
         }
       }
 
-      // Batch persist all non-delta events + delta buffer after stream ends
+      // Batch persist: only the latest snapshot per message, plus non-delta events
+      const finalMessageSnapshots = Array.from(latestMessageSnapshots.values()) as EventItem[]
       const finalEvents = flushDeltaBuffer(deltaBuffer, events)
-      const allPersistEvents = [...pendingPersistEvents, ...finalEvents]
+      const allPersistEvents = [...pendingPersistEvents, ...finalMessageSnapshots, ...finalEvents]
       if (allPersistEvents.length > 0) {
         const detail = await appendConversationEvents(conversationId, allPersistEvents)
         upsertConversationSummary(detail)
@@ -232,8 +253,23 @@ export function useAgentRun({
         const stream = await streamApproveAgent(runId, approved, approvalToken ?? undefined)
         const deltaBuffer = new Map<string, string>()
         const pendingPersistEvents: EventItem[] = []
+        const latestMessageSnapshots = new Map<string, AgentMessage>()
 
         for await (const event of stream) {
+          if (event.kind === 'message_update') {
+            const message = { ...event, kind: 'message' as const } as unknown as AgentMessage
+            setEvents((currentEvents: EventItem[]) => upsertMessageEvent(currentEvents, message))
+
+            if (message.type === 'ask' && activeConversationIdRef.current === conversationId) {
+              const eventRuntimeId = (event as any).runtimeId
+              if (eventRuntimeId) {
+                setPendingApprovalRuntimeId(eventRuntimeId)
+              }
+            }
+            latestMessageSnapshots.set(message.id, message)
+            continue
+          }
+
           if (event.kind === 'delta' && event.messageId) {
             const currentText = deltaBuffer.get(event.messageId) || ''
             const newText = currentText + event.text
@@ -268,9 +304,10 @@ export function useAgentRun({
           }
         }
 
-        // Batch persist all non-delta events + delta buffer after stream ends
+        // Batch persist all non-delta events + message snapshots + delta buffer after stream ends
+        const finalMessageSnapshots = Array.from(latestMessageSnapshots.values()) as EventItem[]
         const finalEvents = flushDeltaBuffer(deltaBuffer, events)
-        const allPersistEvents = [...pendingPersistEvents, ...finalEvents]
+        const allPersistEvents = [...pendingPersistEvents, ...finalMessageSnapshots, ...finalEvents]
         if (allPersistEvents.length > 0) {
           const detail = await appendConversationEvents(conversationId, allPersistEvents)
           upsertConversationSummary(detail)

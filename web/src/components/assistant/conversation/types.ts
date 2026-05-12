@@ -1,4 +1,4 @@
-import type { EventItem, CommandStartEvent, CommandChunkEvent, CommandEndEvent, ApprovalEvent, ExecutionStartedEvent, ExecutionOutputEvent, ExecutionCompletedEvent } from '../../../types/ops'
+import type { EventItem, CommandStartEvent, CommandChunkEvent, CommandEndEvent, ApprovalEvent, ExecutionStartedEvent, ExecutionOutputEvent, ExecutionCompletedEvent, AgentMessage } from '../../../types/ops'
 
 export type DeltaEvent = Extract<EventItem, { kind: 'delta' }>
 export type CommandStart = CommandStartEvent | ExecutionStartedEvent
@@ -8,10 +8,11 @@ export type Approval = ApprovalEvent
 
 export type Group =
   | { type: 'event'; event: EventItem }
-  | { type: 'thinking'; deltas: DeltaEvent[]; key: string }
+  | { type: 'thinking'; deltas?: DeltaEvent[]; message?: AgentMessage; key: string }
   | {
     type: 'command'
     key: string
+    message?: AgentMessage
     approvalEvent?: Approval
     startEvent?: CommandStart
     chunkEvents: CommandChunk[]
