@@ -25,6 +25,7 @@ class AgentMessage:
     tool_call: dict[str, Any] | None = None
     tool_output: str | None = None
     exit_code: int | None = None
+    thinking: str = ""
 
 
 @dataclass(slots=True)

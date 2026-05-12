@@ -30,6 +30,7 @@ class OpenAICompatibleLLMProvider:
             finish_reason = getattr(choice, "finish_reason", finish_reason)
             delta = getattr(choice, "delta", None)
             text = getattr(delta, "content", None)
+            reasoning = getattr(delta, "reasoning_content", None)
             for tool_call in getattr(delta, "tool_calls", None) or []:
                 index = getattr(tool_call, "index", 0) or 0
                 current = tool_call_fragments.setdefault(index, {"id": "", "name": "", "arguments": ""})
@@ -44,6 +45,8 @@ class OpenAICompatibleLLMProvider:
                 if isinstance(function_arguments, str) and function_arguments:
                     current["arguments"] += function_arguments
                     yield LLMCompletionChunk(tool_arguments_delta=function_arguments)
+            if isinstance(reasoning, str) and reasoning:
+                yield LLMCompletionChunk(thinking_delta=reasoning)
             if isinstance(text, str) and text:
                 yield LLMCompletionChunk(delta=text)
         yield LLMCompletionChunk(
@@ -63,9 +66,10 @@ class OpenAICompatibleLLMProvider:
         choice = response.choices[0] if getattr(response, "choices", None) else None
         message = getattr(choice, "message", None)
         text = getattr(message, "content", "") or ""
+        thinking = getattr(message, "reasoning_content", "") or ""
         tool_calls = self._parse_tool_calls(getattr(message, "tool_calls", None))
         finish_reason = getattr(choice, "finish_reason", None)
-        return LLMCompletionResponse(text=text, tool_calls=tool_calls, finish_reason=finish_reason)
+        return LLMCompletionResponse(text=text, tool_calls=tool_calls, finish_reason=finish_reason, thinking=thinking)
 
     def _build_completion_params(self, *, config: ModelConfig, request: LLMCompletionRequest, stream: bool) -> dict[str, Any]:
         params: dict[str, Any] = {

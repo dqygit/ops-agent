@@ -36,6 +36,7 @@ class MessageManager:
         self,
         *,
         text: str | None = None,
+        thinking: str | None = None,
         tool_output: str | None = None,
         tool_call: dict[str, Any] | None = None,
         exit_code: int | None = None,
@@ -47,6 +48,8 @@ class MessageManager:
 
         if text is not None:
             self.current_message.text += text
+        if thinking is not None:
+            self.current_message.thinking += thinking
         if tool_output is not None:
             if self.current_message.tool_output is None:
                 self.current_message.tool_output = ""

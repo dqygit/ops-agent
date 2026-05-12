@@ -63,9 +63,3 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 ---
 
 **These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
-## 5. 注意
-**这个项目是运维工具产品，目的是要生产、稳定、专业性。**
-**不要写测试文件**
-**python虚拟环境目录为：.venv**
-**项目分层 api- sevice-repo，service可以调用core层，core中可能调用repo，但是不能调用service层**
-**重构，不保留现有的代码**

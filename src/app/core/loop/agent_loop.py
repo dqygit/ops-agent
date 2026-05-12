@@ -84,7 +84,9 @@ class AgentLoop:
 
         tool_name = state.pending_tool_name
         args = state.pending_tool_args or {}
-        handler = self._tools.get(tool_name)
+        handler = None
+        if tool_name is not None:
+            handler = self._tools.get(tool_name)
         
         # Resume the existing ask message as a say/tool_use (same ID, card replaces in-place)
         if reuse_id:
@@ -279,6 +281,7 @@ class AgentLoop:
 
         while True:
             response_text_parts: list[str] = []
+            response_thinking_parts: list[str] = []
             response_tool_calls = []
             finish_reason: str | None = None
             
@@ -295,6 +298,9 @@ class AgentLoop:
                     ttft = time.monotonic() - t0
                     logger.warning("LLM TTFT: %.2fs (runtime_id=%s, model=%s, msg_count=%d)", ttft, ctx.runtime_id, ctx.model_config.model_name, len(state.messages))
                     first_chunk_logged = True
+                if chunk.thinking_delta:
+                    response_thinking_parts.append(chunk.thinking_delta)
+                    yield from manager.update(thinking=chunk.thinking_delta)
                 if chunk.delta:
                     response_text_parts.append(chunk.delta)
                     yield from manager.update(text=chunk.delta)
@@ -303,10 +309,15 @@ class AgentLoop:
                 if chunk.finish_reason:
                     finish_reason = chunk.finish_reason
 
+            thinking_content = "".join(response_thinking_parts)
+            if thinking_content:
+                logger.info("LLM Thinking: %s (runtime_id=%s, model=%s)", thinking_content[:200], ctx.runtime_id, ctx.model_config.model_name)
+
             response = LLMCompletionResponse(
                 text="".join(response_text_parts),
                 tool_calls=response_tool_calls,
                 finish_reason=finish_reason,
+                thinking=thinking_content,
             )
 
             if response.text or response.tool_calls:

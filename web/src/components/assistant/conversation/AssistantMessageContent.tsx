@@ -30,8 +30,21 @@ export function AssistantMessageContent({
 
   const processedContent = useMemo(() => stripJsonBlocks(finalContent), [finalContent])
 
-  // Simple parser for <think>...</think>
+  // Extract thinking from message.thinking field or parse <think>...</think> tags
   const parsed = useMemo(() => {
+    // Priority 1: Use message.thinking if available (from reasoning models)
+    if (message?.thinking) {
+      const thinking = message.thinking
+      const isStillThinking = message.partial && thinking.length > 0
+      return {
+        thinking,
+        output: processedContent,
+        isThinkingOnly: false,
+        isStillThinking
+      }
+    }
+
+    // Priority 2: Parse <think>...</think> tags (legacy support)
     const thinkStart = processedContent.indexOf('<think>')
     const thinkEnd = processedContent.indexOf('</think>')
 
@@ -49,9 +62,9 @@ export function AssistantMessageContent({
     }
 
     return { thinking: '', output: processedContent, isThinkingOnly: false, isStillThinking: false }
-  }, [processedContent])
+  }, [processedContent, message])
 
-  const [isThinkExpanded, setIsThinkExpanded] = useState(true)
+  const [isThinkExpanded, setIsThinkExpanded] = useState(false)
 
   if (!parsed.thinking && !parsed.output && !message?.toolCall) {
     // Show a loading indicator when the message is partial (LLM hasn't produced tokens yet)
@@ -86,9 +99,11 @@ export function AssistantMessageContent({
           </button>
           
           {isThinkExpanded && (
-            <div className="relative overflow-hidden rounded-xl border border-ops-border/20 bg-ops-panel/40 px-4 py-3 text-[13px] leading-relaxed text-ops-muted italic animate-in fade-in slide-in-from-top-1 duration-200">
+            <div className="relative overflow-hidden rounded-xl border border-ops-border/20 bg-ops-panel/40 px-4 py-3 text-[13px] leading-relaxed text-ops-muted/80 animate-in fade-in slide-in-from-top-1 duration-200">
               <div className="absolute top-0 left-0 h-full w-0.5 bg-ops-cyan/30" />
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>{parsed.thinking}</ReactMarkdown>
+              <div className="prose prose-invert prose-sm max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&_p]:my-2 [&_code]:bg-ops-deep [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:rounded [&_code]:text-[11px] [&_pre]:bg-ops-deep [&_pre]:p-3 [&_pre]:rounded-lg [&_pre]:my-3 [&_pre>code]:text-[11px]">
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>{parsed.thinking}</ReactMarkdown>
+              </div>
               {parsed.isStillThinking && isStreaming && (
                 <span className="ml-1 inline-block h-3.5 w-1.5 animate-pulse align-[-2px] rounded-sm bg-ops-cyan/85" />
               )}

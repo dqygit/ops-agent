@@ -30,6 +30,7 @@ class LLMCompletionResponse:
     text: str = ""
     tool_calls: list[LLMToolCall] = field(default_factory=list)
     finish_reason: str | None = None
+    thinking: str = ""
 
 
 @dataclass(frozen=True)
@@ -38,3 +39,4 @@ class LLMCompletionChunk:
     tool_calls: list[LLMToolCall] = field(default_factory=list)
     finish_reason: str | None = None
     tool_arguments_delta: str = ""
+    thinking_delta: str = ""

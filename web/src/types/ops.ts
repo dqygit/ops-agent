@@ -242,6 +242,7 @@ export type AgentMessage = {
   }
   toolOutput?: string
   exitCode?: number
+  thinking?: string
 }
 
 export type EventItem =
