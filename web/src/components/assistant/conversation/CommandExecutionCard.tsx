@@ -27,7 +27,29 @@ export function CommandExecutionCard({
   const [isExpanded, setIsExpanded] = useState(false)
 
   // Derived state from AgentMessage or Legacy events
-  const command = message?.toolCall?.command || (startEvent as any)?.command || approvalEvent?.command || ''
+  const rawCommand = message?.toolCall?.command || (startEvent as any)?.command || approvalEvent?.command || ''
+  
+  // Parse command: if it's JSON like {"command":"lshw -short"}, extract the actual command
+  const { displayCommand, fullCommand } = (() => {
+    if (!rawCommand) return { displayCommand: '', fullCommand: '' }
+    
+    // Try to parse as JSON
+    try {
+      const parsed = JSON.parse(rawCommand)
+      if (parsed && typeof parsed === 'object' && 'command' in parsed) {
+        // It's a JSON object with a command field
+        return {
+          displayCommand: parsed.command,
+          fullCommand: rawCommand
+        }
+      }
+    } catch {
+      // Not JSON, use as-is
+    }
+    
+    return { displayCommand: rawCommand, fullCommand: rawCommand }
+  })()
+  
   const outputText = message?.toolOutput || chunkEvents.map((event) => event.text).join('')
   const exitCode = message ? message.exitCode : ((endEvent as any)?.exitCode ?? (endEvent as any)?.exit_code)
   
@@ -43,12 +65,19 @@ export function CommandExecutionCard({
 
   const isRunning = message ? message.partial : (!endEvent && !approvalStatus)
 
-  // Auto-expand if it's an ask message
+  // Auto-expand if it's an ask message or if command is running/has output
   useEffect(() => {
     if (isMessageAsk) {
       setIsExpanded(true)
     }
   }, [isMessageAsk])
+
+  // Auto-expand when command starts running or has output
+  useEffect(() => {
+    if (isRunning || outputText) {
+      setIsExpanded(true)
+    }
+  }, [isRunning, outputText])
 
   return (
     <div className={`group/card my-2 rounded-xl border border-ops-border/30 bg-ops-panel/40 shadow-sm transition-all duration-300 ${isExpanded ? 'p-4' : 'p-2 px-3'}`}>
@@ -61,7 +90,7 @@ export function CommandExecutionCard({
           <div className="flex flex-1 items-center gap-3 min-w-0">
             <span className="shrink-0 text-[10px] font-bold tracking-[0.1em] text-ops-muted uppercase whitespace-nowrap">CMD</span>
             <code className={`flex-1 truncate font-mono text-[12px] ${isRunning ? 'text-ops-cyan' : 'text-ops-text/80'}`}>
-              {command || (message?.toolCall?.name ? `Call: ${message.toolCall.name}` : 'Unknown Command')}
+              {displayCommand || (message?.toolCall?.name ? `Call: ${message.toolCall.name}` : 'Unknown Command')}
             </code>
           </div>
         </div>
@@ -106,10 +135,10 @@ export function CommandExecutionCard({
       {isExpanded && (
         <div className="mt-4 flex flex-col gap-4 animate-in fade-in slide-in-from-top-2 duration-200">
           <div className="flex flex-col gap-1.5">
-            <span className="text-[9px] font-bold tracking-widest text-ops-muted/60 uppercase">Full Instruction</span>
+            <span className="text-[9px] font-bold tracking-widest text-ops-muted/60 uppercase">Command</span>
             <div className="relative">
               <code className="block rounded-lg border border-ops-border/20 bg-ops-deep px-3 py-2 text-[12px] text-ops-text/90 font-mono shadow-inner border-l-2 border-l-ops-cyan/60 whitespace-pre-wrap break-all">
-                {command || JSON.stringify(message?.toolCall?.args)}
+                {displayCommand || JSON.stringify(message?.toolCall?.args)}
               </code>
             </div>
           </div>

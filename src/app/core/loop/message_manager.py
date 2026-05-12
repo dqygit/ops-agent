@@ -105,9 +105,24 @@ class MessageManager:
         )
         yield self._emit()
 
+    def mark_ask_as_processed(self, *, message_id: str) -> Iterator[LoopEvent]:
+        """Mark an ask message as processed by changing its type to 'asked'.
+        
+        This preserves the original ask message in the conversation history
+        but indicates it has been handled (approved or rejected).
+        """
+        processed_message = AgentMessage(
+            id=message_id,
+            ts=time.time(),
+            type="asked",  # type: ignore - 'asked' is a custom type for processed ask messages
+            partial=False,
+        )
+        yield emit_message_update(runtime_id=self.runtime_id, message=processed_message)
+
     @property
     def last_finalized_id(self) -> str | None:
         return getattr(self, "_last_finalized_id", None)
 
     def _emit(self) -> LoopEvent:
+        assert self.current_message is not None
         return emit_message_update(runtime_id=self.runtime_id, message=self.current_message)

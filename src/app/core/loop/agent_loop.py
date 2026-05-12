@@ -58,11 +58,15 @@ class AgentLoop:
 
         if not approved:
             current_step.status = "failed"
+            
+            # Reuse the ask message ID to replace it with a rejection message
             if reuse_id:
                 yield from manager.resume_message(message_id=reuse_id, message_type="say", say_type="error")
+                yield from manager.finalize(text="Command execution rejected by user.")
             else:
+                # Fallback: create a new message if no ID to reuse
                 yield from manager.begin_message(message_type="say", say_type="error")
-            yield from manager.finalize(text="Command execution rejected by user.")
+                yield from manager.finalize(text="Command execution rejected by user.")
             
             state.messages.append(
                 LLMMessage(
@@ -88,12 +92,15 @@ class AgentLoop:
         if tool_name is not None:
             handler = self._tools.get(tool_name)
         
-        # Resume the existing ask message as a say/tool_use (same ID, card replaces in-place)
+        # Reuse the ask message ID to replace it with tool execution message
+        command = args.get("command", "")
         if reuse_id:
             yield from manager.resume_message(message_id=reuse_id, message_type="say", say_type="tool_use")
+            yield from manager.update(tool_call={"id": state.pending_tool_call_id, "name": tool_name, "command": command, "args": args})
         else:
+            # Fallback: create a new message if no ID to reuse
             yield from manager.begin_message(message_type="say", say_type="tool_use")
-        yield from manager.update(tool_call={"id": state.pending_tool_call_id, "name": tool_name, "args": args})
+            yield from manager.update(tool_call={"id": state.pending_tool_call_id, "name": tool_name, "command": command, "args": args})
 
         if handler is None:
             ok, output = False, f"Unsupported tool: {tool_name}"
@@ -337,7 +344,6 @@ class AgentLoop:
                 if finalize_on_complete:
                     state.phase = "completed"
                     state.summary = summary
-                    yield emit_completed(runtime_id=ctx.runtime_id, summary="")
                 return False, True, summary
 
             for index, tool_call in enumerate(response.tool_calls):
@@ -416,7 +422,7 @@ class AgentLoop:
                         tool_call={
                             "id": tool_call.id,
                             "name": tool_call.name,
-                            "command": step.command,
+                            "command": args.get("command", step.command),
                             "args": args,
                         }
                     )
@@ -433,7 +439,7 @@ class AgentLoop:
                     tool_call={
                         "id": tool_call.id,
                         "name": tool_call.name,
-                        "command": step.command,
+                        "command": args.get("command", step.command),
                         "args": args,
                     }
                 )
