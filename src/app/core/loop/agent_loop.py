@@ -309,7 +309,7 @@ class AgentLoop:
                     yield emit_completed(runtime_id=ctx.runtime_id, summary=summary)
                 return False, True, summary
 
-            for tool_call in response.tool_calls:
+            for index, tool_call in enumerate(response.tool_calls):
                 handler = self._tools.get(tool_call.name)
                 if handler is None:
                     state.messages.append(
@@ -367,6 +367,20 @@ class AgentLoop:
                     state.pending_tool_call_id = tool_call.id
                     state.pending_tool_name = tool_call.name
                     state.pending_tool_args = args
+                    
+                    # Prevent HTTP 400 error by satisfying all remaining tool calls in the response
+                    # before returning to wait for approval.
+                    # The LLM can easily resubmit them if needed after the approval.
+                    for remaining_tool_call in response.tool_calls[index + 1:]:
+                            state.messages.append(
+                            LLMMessage(
+                                role="tool",
+                                content="Cancelled because a previous command in the sequence required user approval.",
+                                tool_call_id=remaining_tool_call.id,
+                                name=remaining_tool_call.name,
+                            )
+                        )
+                        
                     yield emit_plan_updated(runtime_id=ctx.runtime_id, plan_payload=self._snapshot_plan(state))
                     yield emit_approval_required(
                         runtime_id=ctx.runtime_id,

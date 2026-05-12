@@ -119,7 +119,7 @@ export type CommandEndEvent = {
 
 export type ApprovalEvent = {
   id: string
-  kind: 'approval_required' | 'approval_decision'
+  kind: 'approval_required' | 'approval_decision' | 'approval_granted' | 'approval_rejected'
   text: string
   command: string
   runtimeId?: string
@@ -128,6 +128,43 @@ export type ApprovalEvent = {
   approved?: boolean
   status?: 'pending' | 'approved' | 'rejected'
   reason?: string
+}
+
+export type ExecutionStartedEvent = {
+  id: string
+  kind: 'execution_started'
+  command_id: string
+  terminal_id?: string | null
+  command: string
+  title: string
+  step_id?: string
+  runtimeId?: string
+  stepId?: string
+}
+
+export type ExecutionOutputEvent = {
+  id: string
+  kind: 'execution_output'
+  command_id: string
+  terminal_id?: string | null
+  stream: TerminalStreamKind
+  text: string
+  step_id?: string
+  runtimeId?: string
+  stepId?: string
+}
+
+export type ExecutionCompletedEvent = {
+  id: string
+  kind: 'execution_completed'
+  command_id: string
+  terminal_id?: string | null
+  exit_code: number | null
+  completed: boolean
+  success: boolean
+  step_id?: string
+  runtimeId?: string
+  stepId?: string
 }
 
 export type RuntimeStep = {
@@ -195,6 +232,9 @@ export type EventItem =
   | CommandStartEvent
   | CommandChunkEvent
   | CommandEndEvent
+  | ExecutionStartedEvent
+  | ExecutionOutputEvent
+  | ExecutionCompletedEvent
   | TerminalStatusEvent
   | { id: string; kind: 'final'; text: string }
   | { id: string; kind: 'error'; text: string }

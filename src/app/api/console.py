@@ -115,6 +115,7 @@ async def run_console_agent(
         asset_id = local_terminal_asset.id if local_terminal_asset is not None and local_terminal_asset.id is not None else 0
     if asset_id is None:
         raise HTTPException(status_code=400, detail="Asset id is required")
+    
     stream = orchestrator.stream_run(
         session=session,
         prompt=payload.prompt,
@@ -129,7 +130,6 @@ async def run_console_agent(
         try:
             logger.warning("console.run stream opened conversation_id=%s asset_id=%s terminal_id=%s", payload.conversation_id, asset_id, payload.terminal_id)
             for event in stream:
-                logger.warning("console.run stream event conversation_id=%s kind=%s id=%s", payload.conversation_id, event.get("kind"), event.get("id"))
                 yield _sse_event(event)
         except Exception as exc:
             logger.exception("console.run stream failed conversation_id=%s", payload.conversation_id)

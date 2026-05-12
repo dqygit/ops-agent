@@ -68,7 +68,7 @@ class ConversationService:
         payload = json.loads(self._detail_path(conversation_id).read_text(encoding="utf-8"))
         return ConversationDetail(**payload)
 
-    def append_events(self, conversation_id: str, events: list[dict]) -> ConversationDetail:
+    def append_events(self, conversation_id: str, events: list[dict], *, async_title_generation: bool = True) -> ConversationDetail:
         detail = self.get_conversation(conversation_id)
         had_user_event = any(event.get("kind") == "user" for event in detail.events)
         detail.events.extend(events)
@@ -76,6 +76,7 @@ class ConversationService:
         detail.last_event_kind = detail.events[-1].get("kind") if detail.events else None
         detail.updated_at = self._utc_now()
 
+        generated_title_sync = None
         if not had_user_event:
             first_user_text = next(
                 (
@@ -85,16 +86,46 @@ class ConversationService:
                 ),
                 None,
             )
-            if first_user_text:
-                generated_title = self._generate_title(first_user_text, detail.selected_model)
-                if generated_title:
-                    detail.title = generated_title
+            if first_user_text and not async_title_generation:
+                generated_title_sync = self._generate_title(first_user_text, detail.selected_model)
+                if generated_title_sync:
+                    detail.title = generated_title_sync
 
         self._write_detail(detail)
         summaries = [item for item in self.list_conversations() if item.id != conversation_id]
         summaries.append(self._to_summary(detail))
         self._write_index(summaries)
+
+        if not had_user_event and first_user_text and async_title_generation:
+            import threading
+            threading.Thread(
+                target=self._update_conversation_title_sync,
+                args=(conversation_id, first_user_text),
+                daemon=True
+            ).start()
+
         return detail
+
+    def _update_conversation_title_sync(self, conversation_id: str, prompt: str) -> None:
+        """Background worker to update conversation title without blocking."""
+        try:
+            # Get model early to pass to title generator
+            initial_detail = self.get_conversation(conversation_id)
+            generated_title = self._generate_title(prompt, initial_detail.selected_model)
+            
+            if generated_title:
+                # Re-fetch detail to avoid overwriting events that were appended during generation
+                detail = self.get_conversation(conversation_id)
+                if generated_title != detail.title:
+                    detail.title = generated_title
+                    detail.updated_at = self._utc_now()
+                    self._write_detail(detail)
+                    summaries = [item for item in self.list_conversations() if item.id != conversation_id]
+                    summaries.append(self._to_summary(detail))
+                    self._write_index(summaries)
+        except Exception:
+            # Silent failure for background title update
+            pass
 
     def delete_conversation(self, conversation_id: str) -> None:
         detail_path = self._detail_path(conversation_id)

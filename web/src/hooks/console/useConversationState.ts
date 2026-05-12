@@ -73,6 +73,7 @@ export function useConversationState(selectedModel: string) {
       const nextItems = currentItems.filter((item) => item.id !== created.conversation.id)
       return [created.conversation, ...nextItems]
     })
+    activeConversationIdRef.current = created.conversation.id
     setActiveConversationId(created.conversation.id)
     setActiveConversationTitle(created.conversation.title)
     setEvents(normalizePlanEvents(created.events))

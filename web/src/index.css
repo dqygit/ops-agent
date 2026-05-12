@@ -39,7 +39,23 @@
   }
 
   .button-danger:hover {
-    background-color: rgba(239, 68, 68, 0.15);
+    @apply bg-ops-danger/15;
+  }
+
+  .button-mini {
+    @apply inline-flex items-center justify-center rounded-lg border border-ops-border/30
+      bg-ops-deep/40 px-2.5 py-1 text-[10px] font-bold tracking-tight text-ops-text transition-all duration-200
+      hover:border-ops-border/60 hover:bg-ops-panel/80 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40;
+  }
+
+  .button-mini-primary {
+    @apply border-ops-cyan/30 text-ops-cyan hover:border-ops-cyan/50 hover:shadow-glow;
+    background-color: rgba(6, 182, 212, 0.05);
+  }
+
+  .button-mini-danger {
+    @apply border-ops-danger/30 text-ops-danger hover:border-ops-danger/50;
+    background-color: rgba(239, 68, 68, 0.05);
   }
 
   .settings-error {

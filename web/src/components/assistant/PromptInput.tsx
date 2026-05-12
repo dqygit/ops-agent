@@ -56,7 +56,7 @@ export function PromptInput({
     <div className="relative mx-6 mb-4 mt-2 flex shrink-0 flex-col overflow-hidden rounded-2xl border border-ops-border/40 bg-ops-panel/80 shadow-2xl backdrop-blur-md transition-all duration-200 focus-within:border-ops-cyan/50 focus-within:shadow-glow">
       <div className="inline-flex w-fit items-center gap-2 border-b border-r border-ops-border/20 bg-ops-cyan/5 px-4 py-2 text-[10px] font-bold tracking-[0.1em] text-ops-cyan" aria-label="Context">
         <span className="h-1.5 w-1.5 rounded-full bg-ops-cyan shadow-glow animate-pulse"></span>
-        Target Node: {selectedAsset.name} / {selectedAsset.host}
+        {selectedAsset.name} / {selectedAsset.host}
       </div>
       <label className="sr-only" htmlFor="prompt-input">
         Command Input
@@ -115,7 +115,7 @@ export function PromptInput({
                     title={MODE_DESCRIPTION[mode]}
                     onClick={() => onRunModeChange(mode)}
                     className={`inline-flex items-center gap-2 rounded-lg px-4 py-1.5 text-[10px] font-bold tracking-[0.1em] transition-all duration-200 active:scale-95 ${isActive
-                      ? mode === 'plan'
+                      ? mode === 'agent'
                         ? 'bg-ops-cyan/15 text-ops-cyan border border-ops-cyan/30 shadow-glow'
                         : 'bg-ops-emerald/15 text-ops-emerald border border-ops-emerald/30 shadow-glow'
                       : 'text-ops-muted hover:text-ops-text hover:bg-ops-panel border border-transparent'

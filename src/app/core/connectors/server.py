@@ -89,11 +89,17 @@ class ServerConnector:
 
     def write(self, data: str) -> None:
         if self.channel is not None:
-            self.channel.send(data.encode('utf-8'))
+            try:
+                self.channel.send(data.encode('utf-8'))
+            except Exception:
+                pass
 
     def resize(self, cols: int, rows: int) -> None:
         if self.channel is not None:
-            self.channel.resize_pty(width=cols, height=rows)
+            try:
+                self.channel.resize_pty(width=cols, height=rows)
+            except Exception:
+                pass
 
     def close(self) -> None:
         if self.channel is not None:

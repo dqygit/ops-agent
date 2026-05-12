@@ -6,14 +6,14 @@ from typing import Any, Literal
 
 LoopEventType = Literal[
     "loop_delta",
-    "loop_plan_updated",
+    "loop_plan",
     "loop_approval_required",
     "loop_approval_granted",
     "loop_approval_rejected",
     "loop_execution_started",
     "loop_execution_output",
     "loop_execution_completed",
-    "loop_completed",
+    "loop_final",
     "loop_failed",
 ]
 
@@ -48,10 +48,10 @@ def emit_delta(*, runtime_id: str, message_id: str, stage: str, text: str) -> Lo
 
 def emit_plan_updated(*, runtime_id: str, plan_payload: dict[str, Any]) -> LoopEvent:
     return LoopEvent(
-        event_type="loop_plan_updated",
+        event_type="loop_plan",
         runtime_id=runtime_id,
         phase="planning",
-        payload={"plan": plan_payload},
+        payload=plan_payload,
     )
 
 
@@ -177,10 +177,10 @@ def emit_execution_completed(
 
 def emit_completed(*, runtime_id: str, summary: str) -> LoopEvent:
     return LoopEvent(
-        event_type="loop_completed",
+        event_type="loop_final",
         runtime_id=runtime_id,
         phase="completed",
-        payload={"summary": summary},
+        payload={"text": summary},
     )
 
 
