@@ -315,6 +315,7 @@ class ConsoleApprovalRequest(BaseModel):
     runtime_id: str
     approved: bool
     approval_token: str | None = None
+    allow_prefix: str | None = None
 
 
 class RuntimeStepView(BaseModel):

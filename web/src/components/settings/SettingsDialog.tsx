@@ -7,11 +7,13 @@ import {
   deleteGroup,
   deleteModelConfig,
   deleteSSHKey,
+  getApprovalPolicy,
   getGroups,
   getModelConfigs,
   getSSHKeys,
   setDefaultModelConfig,
   testModelConfig,
+  updateApprovalPolicy,
   updateGroup,
   updateModelConfig,
   updateSSHKey,
@@ -20,8 +22,9 @@ import type { AssetGroup, ModelConfig, SSHKey } from '../../types/ops'
 import { DeleteConfirmDialog } from './DeleteConfirmDialog'
 import { GroupsSection } from './GroupsSection'
 import { ModelsSection } from './ModelsSection'
+import { PermissionsSection } from './PermissionsSection'
 import { SSHKeysSection } from './SSHKeysSection'
-import type { GroupForm, ModelForm, SettingsDialogProps, SettingsSection, SSHKeyForm } from './settingsTypes'
+import type { GroupForm, ModelForm, PermissionsForm, SettingsDialogProps, SettingsSection, SSHKeyForm } from './settingsTypes'
 
 const emptyGroupForm: GroupForm = {
   name: '',
@@ -46,6 +49,13 @@ const emptySSHKeyForm: SSHKeyForm = {
   publicKey: '',
   privateKey: '',
   passphrase: '',
+}
+
+const emptyPermissionsForm: PermissionsForm = {
+  allow: [],
+  deny: [],
+  allowInput: '',
+  denyInput: '',
 }
 
 function sshKeyToForm(sshKey: SSHKey): SSHKeyForm {
@@ -95,6 +105,7 @@ export function SettingsDialog({ initialGroups, selectedModel, sshKeys: initialS
   const [showSSHKeyForm, setShowSSHKeyForm] = useState(false)
   const [editingSSHKey, setEditingSSHKey] = useState<SSHKey | null>(null)
   const [deletingSSHKey, setDeletingSSHKey] = useState<SSHKey | null>(null)
+  const [permissionsForm, setPermissionsForm] = useState<PermissionsForm>(emptyPermissionsForm)
   const [saving, setSaving] = useState(false)
   const [testResult, setTestResult] = useState<string | null>(null)
 
@@ -102,13 +113,14 @@ export function SettingsDialog({ initialGroups, selectedModel, sshKeys: initialS
     setLoading(true)
     setError(null)
     try {
-      const [nextGroups, nextModels, nextSSHKeys] = await Promise.all([getGroups(), getModelConfigs(), getSSHKeys()])
+      const [nextGroups, nextModels, nextSSHKeys, nextApprovalPolicy] = await Promise.all([getGroups(), getModelConfigs(), getSSHKeys(), getApprovalPolicy()])
       setGroups(nextGroups)
       onGroupsChange(nextGroups)
       setModelConfigs(nextModels)
       onModelOptionsChange(getModelOptions(nextModels))
       setSSHKeys(nextSSHKeys)
       onSSHKeysChange(nextSSHKeys)
+      setPermissionsForm({ allow: nextApprovalPolicy.permissions.allow, deny: nextApprovalPolicy.permissions.deny, allowInput: '', denyInput: '' })
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Failed to load settings')
     } finally {
@@ -369,6 +381,20 @@ export function SettingsDialog({ initialGroups, selectedModel, sshKeys: initialS
     }
   }
 
+  const savePermissions = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setSaving(true)
+    setError(null)
+    try {
+      await updateApprovalPolicy({ permissions: { allow: permissionsForm.allow, deny: permissionsForm.deny } })
+      setPermissionsForm({ ...permissionsForm, allowInput: '', denyInput: '' })
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : 'Failed to save permissions')
+    } finally {
+      setSaving(false)
+    }
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-ops-bg/60 backdrop-blur-md animate-in fade-in duration-300" role="presentation">
       <section className="w-[880px] max-w-[95vw] h-[640px] max-h-[90vh] bg-ops-panel/90 border border-ops-border/40 rounded-2xl shadow-2xl flex flex-col overflow-hidden backdrop-blur-xl animate-in zoom-in-95 duration-300" role="dialog" aria-modal="true" aria-labelledby="settings-title">
@@ -384,6 +410,7 @@ export function SettingsDialog({ initialGroups, selectedModel, sshKeys: initialS
             <button type="button" className={`w-full text-left px-4 py-3 rounded-xl transition-all duration-200 text-[11px] font-bold tracking-widest active:scale-[0.98] ${activeSection === 'groups' ? 'bg-ops-cyan/15 text-ops-cyan shadow-glow border border-ops-cyan/30' : 'text-ops-muted hover:text-ops-text hover:bg-ops-panel/60 border border-transparent'}`} onClick={() => setActiveSection('groups')}>Infrastructure Groups</button>
             <button type="button" className={`w-full text-left px-4 py-3 rounded-xl transition-all duration-200 text-[11px] font-bold tracking-widest active:scale-[0.98] ${activeSection === 'models' ? 'bg-ops-cyan/15 text-ops-cyan shadow-glow border border-ops-cyan/30' : 'text-ops-muted hover:text-ops-text hover:bg-ops-panel/60 border border-transparent'}`} onClick={() => setActiveSection('models')}>AI Model Configs</button>
             <button type="button" className={`w-full text-left px-4 py-3 rounded-xl transition-all duration-200 text-[11px] font-bold tracking-widest active:scale-[0.98] ${activeSection === 'sshKeys' ? 'bg-ops-cyan/15 text-ops-cyan shadow-glow border border-ops-cyan/30' : 'text-ops-muted hover:text-ops-text hover:bg-ops-panel/60 border border-transparent'}`} onClick={() => setActiveSection('sshKeys')}>Identity Keys (SSH)</button>
+            <button type="button" className={`w-full text-left px-4 py-3 rounded-xl transition-all duration-200 text-[11px] font-bold tracking-widest active:scale-[0.98] ${activeSection === 'permissions' ? 'bg-ops-cyan/15 text-ops-cyan shadow-glow border border-ops-cyan/30' : 'text-ops-muted hover:text-ops-text hover:bg-ops-panel/60 border border-transparent'}`} onClick={() => setActiveSection('permissions')}>Command Permissions</button>
           </nav>
           <div className="flex-1 p-6 overflow-y-auto bg-ops-panel/50 relative">
             {error ? <div className="p-4 mb-6 rounded-md bg-red-500/10 border border-red-500/20 text-red-500 text-sm flex items-center justify-between">{error}<button type="button" className="px-3 py-1.5 rounded-md bg-ops-border/20 hover:bg-ops-border/30 transition-colors text-ops-text text-sm" onClick={() => void loadSettings()}>Retry</button></div> : null}
@@ -420,7 +447,7 @@ export function SettingsDialog({ initialGroups, selectedModel, sshKeys: initialS
                 onSetDefault={(config) => void setDefaultModel(config)}
                 onTest={() => void testModel()}
               />
-            ) : (
+            ) : activeSection === 'sshKeys' ? (
               <SSHKeysSection
                 sshKeys={sshKeys}
                 sshKeyForm={sshKeyForm}
@@ -433,6 +460,13 @@ export function SettingsDialog({ initialGroups, selectedModel, sshKeys: initialS
                 onFormChange={setSSHKeyForm}
                 onCancelForm={cancelSSHKeyForm}
                 onSave={saveSSHKey}
+              />
+            ) : (
+              <PermissionsSection
+                permissionsForm={permissionsForm}
+                saving={saving}
+                onFormChange={setPermissionsForm}
+                onSave={savePermissions}
               />
             )}
           </div>

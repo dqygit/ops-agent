@@ -2,14 +2,14 @@
 
 from app.core.approval.policy import (
     ApprovalChecker,
+    ApprovalPermissions,
     ApprovalPolicy,
-    ApprovalRule,
     create_default_policy,
 )
 
 __all__ = [
     "ApprovalChecker",
+    "ApprovalPermissions",
     "ApprovalPolicy",
-    "ApprovalRule",
     "create_default_policy",
 ]

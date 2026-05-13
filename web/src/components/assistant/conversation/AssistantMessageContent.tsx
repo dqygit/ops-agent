@@ -10,7 +10,7 @@ type AssistantMessageContentProps = {
   content?: string
   message?: AgentMessage
   isStreaming?: boolean
-  onApprove?: () => void
+  onApprove?: (allowPrefix?: string) => void
   onReject?: () => void
   pendingApprovalRuntimeId?: string | null
 }

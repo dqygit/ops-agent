@@ -8,7 +8,7 @@ import { AssistantMessageContent } from './AssistantMessageContent'
 type EventCardProps = {
   event: EventItem
   pendingApprovalRuntimeId: string | null
-  onApprove?: () => void
+  onApprove?: (allowPrefix?: string) => void
   onReject?: () => void
 }
 

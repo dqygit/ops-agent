@@ -10,7 +10,7 @@ type CommandExecutionCardProps = {
   chunkEvents?: CommandChunk[]
   endEvent?: CommandEnd
   pendingApprovalRuntimeId: string | null
-  onApprove?: () => void
+  onApprove?: (allowPrefix?: string) => void
   onReject?: () => void
 }
 
@@ -25,6 +25,8 @@ export function CommandExecutionCard({
   onReject
 }: CommandExecutionCardProps) {
   const [isExpanded, setIsExpanded] = useState(false)
+  const [showWhitelistOptions, setShowWhitelistOptions] = useState(false)
+  const [allowPrefix, setAllowPrefix] = useState('')
 
   // Derived state from AgentMessage or Legacy events
   const rawCommand = message?.toolCall?.command || (startEvent as any)?.command || approvalEvent?.command || ''
@@ -52,6 +54,8 @@ export function CommandExecutionCard({
   
   const outputText = message?.toolOutput || chunkEvents.map((event) => event.text).join('')
   const exitCode = message ? message.exitCode : ((endEvent as any)?.exitCode ?? (endEvent as any)?.exit_code)
+  const commandTokens = displayCommand.trim().split(/\s+/).filter(Boolean)
+  const allowPrefixOptions = Array.from(new Set([displayCommand.trim(), commandTokens[0]].filter(Boolean)))
   
   const isMessageAsk = message?.type === 'ask'
   const approvalStatus = isMessageAsk ? 'pending' : (message?.type === 'say' && message?.say === 'tool_use' && !message.partial ? 'approved' : (approvalEvent?.status ?? (approvalEvent ? 'pending' : undefined)))
@@ -147,9 +151,47 @@ export function CommandExecutionCard({
             <div className="rounded-lg border border-ops-warning/30 bg-ops-warning/5 p-3 border-l-2 border-l-ops-warning/60">
               <div className="mb-2 text-[10px] font-bold tracking-widest text-ops-warning uppercase">Authorization Required</div>
               {(message?.text || approvalEvent?.reason) && <div className="mb-3 text-[12px] text-ops-text/80 italic border-l border-ops-warning/30 pl-3">{message?.text || approvalEvent?.reason}</div>}
+              {showWhitelistOptions ? (
+                <div className="mb-3 rounded-lg border border-ops-border/20 bg-ops-deep/50 p-3">
+                  <div className="mb-2 text-[10px] font-bold tracking-widest text-ops-muted/70">加入命令白名单</div>
+                  <div className="mb-3 flex flex-wrap gap-2">
+                    {allowPrefixOptions.map((option) => (
+                      <button
+                        key={option}
+                        type="button"
+                        className={`rounded-full border px-3 py-1 font-mono text-[11px] transition-colors ${allowPrefix === option ? 'border-ops-cyan/40 bg-ops-cyan/10 text-ops-cyan' : 'border-ops-border/30 bg-ops-panel/30 text-ops-muted hover:text-ops-text'}`}
+                        onClick={() => setAllowPrefix(option)}
+                      >
+                        {option}
+                      </button>
+                    ))}
+                  </div>
+                  <input
+                    className="field-control h-8 font-mono text-[12px]"
+                    value={allowPrefix}
+                    onChange={(event) => setAllowPrefix(event.target.value)}
+                    placeholder="输入要加入白名单的命令前缀"
+                  />
+                </div>
+              ) : null}
               <div className="flex items-center justify-end gap-2">
-                <button onClick={onReject} className="button-mini button-mini-danger">Reject</button>
-                <button onClick={onApprove} className="button-mini button-mini-primary shadow-glow">Authorize</button>
+                <button type="button" onClick={onReject} className="button-mini button-mini-danger">Reject</button>
+                <button type="button" onClick={() => onApprove?.()} className="button-mini">仅批准本次</button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!showWhitelistOptions) {
+                      setAllowPrefix(allowPrefixOptions[0] ?? '')
+                      setShowWhitelistOptions(true)
+                      return
+                    }
+                    onApprove?.(allowPrefix)
+                  }}
+                  className="button-mini button-mini-primary shadow-glow"
+                  disabled={showWhitelistOptions && !allowPrefix.trim()}
+                >
+                  {showWhitelistOptions ? '批准并加入白名单' : '加入白名单'}
+                </button>
               </div>
             </div>
           )}

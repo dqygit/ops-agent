@@ -12,6 +12,7 @@ from app.core.loop.runtime_manager import LoopRuntimeManager, new_runtime_id
 from app.core.tool.execute_command import ExecuteCommandHandler
 from app.db.repositories.assets import get_asset
 from app.db.repositories.models import get_default_model_config
+from app.services.approval_service import get_approval_service
 from app.services.model_service import ModelService
 from app.services.terminal_service import TerminalService
 
@@ -61,12 +62,13 @@ class TaskOrchestrator:
             terminal_service=self._terminal_service,
         )
 
-    def stream_approve(self, *, session: Session, runtime_id: str, approved: bool, approval_token: str | None = None) -> Iterator[dict]:
+    def stream_approve(self, *, session: Session, runtime_id: str, approved: bool, approval_token: str | None = None, allow_prefix: str | None = None) -> Iterator[dict]:
         return self._app_service.stream_approve(
             session=session,
             runtime_id=runtime_id,
             approved=approved,
             approval_token=approval_token,
+            allow_prefix=allow_prefix,
             terminal_service=self._terminal_service,
         )
 
@@ -164,6 +166,7 @@ class ConsoleAppService:
         runtime_id: str,
         approved: bool,
         approval_token: str | None,
+        allow_prefix: str | None,
         terminal_service: TerminalService,
     ) -> Iterator[dict]:
         _ = session
@@ -181,6 +184,8 @@ class ConsoleAppService:
             return
 
         try:
+            if approved and allow_prefix:
+                get_approval_service().add_allow_prefix(allow_prefix)
             events = self.runtime_manager.resume(
                 runtime_id=runtime_id,
                 approved=approved,

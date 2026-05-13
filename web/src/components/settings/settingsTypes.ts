@@ -1,7 +1,7 @@
 import type { FormEvent } from 'react'
 import type { AssetGroup, ModelConfig, SSHKey } from '../../types/ops'
 
-export type SettingsSection = 'groups' | 'models' | 'sshKeys'
+export type SettingsSection = 'groups' | 'models' | 'sshKeys' | 'permissions'
 
 export type GroupForm = {
   name: string
@@ -26,6 +26,13 @@ export type SSHKeyForm = {
   publicKey: string
   privateKey: string
   passphrase: string
+}
+
+export type PermissionsForm = {
+  allow: string[]
+  deny: string[]
+  allowInput: string
+  denyInput: string
 }
 
 export type SettingsDialogProps = {
@@ -81,5 +88,12 @@ export type SSHKeysSectionProps = {
   onStartDelete: (sshKey: SSHKey) => void
   onFormChange: (form: SSHKeyForm) => void
   onCancelForm: () => void
+  onSave: (event: FormEvent<HTMLFormElement>) => void
+}
+
+export type PermissionsSectionProps = {
+  permissionsForm: PermissionsForm
+  saving: boolean
+  onFormChange: (form: PermissionsForm) => void
   onSave: (event: FormEvent<HTMLFormElement>) => void
 }

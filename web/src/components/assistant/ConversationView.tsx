@@ -11,7 +11,7 @@ import { sortAssistantGroups } from './conversation/utils'
 type ConversationViewProps = {
   events: EventItem[]
   pendingApprovalRuntimeId: string | null
-  onApprove?: () => void
+  onApprove?: (allowPrefix?: string) => void
   onReject?: () => void
 }
 

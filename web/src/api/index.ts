@@ -8,6 +8,8 @@ export {
   streamApproveAgent,
   streamRunAgent,
 } from './console'
+export { getApprovalPolicy, updateApprovalPolicy } from './approval'
+export type { ApprovalPolicy } from './approval'
 export { appendConversationEvents, createConversation, deleteConversation, getConversation, getConversations } from './conversations'
 export { closeTerminalSession, createTerminalSession, reconnectTerminalSession } from './terminal'
 export { createGroup, deleteGroup, getGroups, mapAssetGroup, updateGroup } from './groups'

@@ -26,7 +26,7 @@ type AssistantPanelProps = {
   onSelectConversation: (conversationId: string) => void
   onDeleteConversation: (conversationId: string) => void
   onRun: (prompt: string) => Promise<void>
-  onApprove: () => void
+  onApprove: (allowPrefix?: string) => void
   onReject: () => void
 }
 

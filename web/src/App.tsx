@@ -261,8 +261,8 @@ export function App() {
                 onRun={(nextPrompt) => {
                   return runAgent(nextPrompt)
                 }}
-                onApprove={() => {
-                  void approveRun()
+                onApprove={(allowPrefix) => {
+                  void approveRun(allowPrefix)
                 }}
                 onReject={() => {
                   void rejectRun()

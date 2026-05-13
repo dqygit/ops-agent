@@ -225,7 +225,7 @@ export function useAgentRun({
   ])
 
   const submitApproval = useCallback(
-    async (approved: boolean) => {
+    async (approved: boolean, allowPrefix?: string) => {
       if (!pendingApprovalRuntimeId || !activeConversationId) {
         return
       }
@@ -250,7 +250,7 @@ export function useAgentRun({
       }
 
       try {
-        const stream = await streamApproveAgent(runId, approved, approvalToken ?? undefined)
+        const stream = await streamApproveAgent(runId, approved, approvalToken ?? undefined, allowPrefix)
         const deltaBuffer = new Map<string, string>()
         const pendingPersistEvents: EventItem[] = []
         const latestMessageSnapshots = new Map<string, AgentMessage>()
@@ -369,7 +369,7 @@ export function useAgentRun({
   return {
     pendingApprovalRuntimeId,
     runAgent,
-    approveRun: () => void submitApproval(true),
+    approveRun: (allowPrefix?: string) => void submitApproval(true, allowPrefix),
     rejectRun: () => void submitApproval(false),
   }
 }
