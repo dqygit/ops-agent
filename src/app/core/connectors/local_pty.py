@@ -7,6 +7,12 @@ from pathlib import Path
 from app.core.connectors.execution import ExecutionContext, ExecutionEvent, ExecutionResult
 
 
+def _resolve_working_directory(context: ExecutionContext | None) -> str | None:
+    if context is None or not context.working_directory:
+        return None
+    return os.path.expandvars(os.path.expanduser(context.working_directory))
+
+
 def _resolve_windows_shell() -> str:
     pwsh_path = os.environ.get("OPS_AGENT_PWSH_PATH")
     if pwsh_path:
@@ -75,14 +81,14 @@ class LocalPtyConnector:
                     [shell, "-NoLogo", "-NoProfile", "-Command", command],
                     capture_output=True,
                     text=True,
-                    cwd=context.working_directory if context and context.working_directory else None,
+                    cwd=_resolve_working_directory(context),
                 )
             else:
                 completed = subprocess.run(
                     [shell, "/c", command],
                     capture_output=True,
                     text=True,
-                    cwd=context.working_directory if context and context.working_directory else None,
+                    cwd=_resolve_working_directory(context),
                 )
             output = f"{completed.stdout}{completed.stderr}".strip()
             return ExecutionResult(
@@ -100,7 +106,7 @@ class LocalPtyConnector:
             shell=True,
             capture_output=True,
             text=True,
-            cwd=context.working_directory if context and context.working_directory else None,
+            cwd=_resolve_working_directory(context),
             executable=os.environ.get("SHELL") or "/bin/sh",
         )
         output = f"{completed.stdout}{completed.stderr}".strip()

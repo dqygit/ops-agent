@@ -415,8 +415,6 @@ class AgentLoop:
                 request=LLMCompletionRequest(messages=state.messages, tools=tools, json_mode=False),
             ):
                 if not first_chunk_logged:
-                    ttft = time.monotonic() - t0
-                    logger.warning("LLM TTFT: %.2fs (runtime_id=%s, model=%s, msg_count=%d)", ttft, ctx.runtime_id, ctx.model_config.model_name, len(state.messages))
                     first_chunk_logged = True
                 if chunk.thinking_delta:
                     response_thinking_parts.append(chunk.thinking_delta)

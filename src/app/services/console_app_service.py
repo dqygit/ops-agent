@@ -7,7 +7,7 @@ from typing import Any
 
 from sqlmodel import Session
 
-from app.core.loop.loop_state import LoopContext
+from app.core.loop.loop_state import LoopContext, LoopMode
 from app.core.loop.runtime_manager import LoopRuntimeManager, new_runtime_id
 from app.core.tool.execute_command import ExecuteCommandHandler
 from app.db.repositories.assets import get_asset
@@ -49,7 +49,7 @@ class TaskOrchestrator:
         terminal_id: str | None = None,
         model_name: str | None = None,
         conversation_id: str = "console",
-        mode: str = "agent",
+        mode: LoopMode = "agent",
     ) -> Iterator[dict]:
         return self._app_service.stream_run(
             session=session,
@@ -103,15 +103,11 @@ class ConsoleAppService:
         terminal_id: str | None = None,
         model_name: str | None = None,
         conversation_id: str = "console",
-        mode: str = "agent",
+        mode: LoopMode = "agent",
         terminal_service: TerminalService,
     ) -> Iterator[dict]:
-        import time as _time
-        t0 = _time.monotonic()
         asset = self._resolve_asset(session, asset_id)
-        t1 = _time.monotonic()
         model_config = self._resolve_model_config(session, model_name)
-        t2 = _time.monotonic()
         asset_summary = (
             f"asset={getattr(asset, 'name', '')}, type={getattr(asset, 'asset_type', '')}, "
             f"host={getattr(asset, 'host', '')}, user={getattr(asset, 'username', '')}"
@@ -142,11 +138,6 @@ class ConsoleAppService:
             asset_id=asset_id,
             terminal_id=terminal_id,
             context=context,
-        )
-        t3 = _time.monotonic()
-        logger.warning(
-            "stream_run setup: asset=%.3fs model=%.3fs runtime=%.3fs history_msgs=%d total=%.3fs",
-            t1 - t0, t2 - t1, t3 - t2, len(conversation_history), t3 - t0,
         )
 
         try:

@@ -120,9 +120,6 @@ async def run_console_agent(
     if asset_id is None:
         raise HTTPException(status_code=400, detail="Asset id is required")
     
-    logger.warning("console.run setup: parse=%.3fs persist=%.3fs total=%.3fs",
-        t_parse - t_start, t_persist - t_parse, t_persist - t_start)
-
     stream = orchestrator.stream_run(
         session=session,
         prompt=payload.prompt,
@@ -139,7 +136,6 @@ async def run_console_agent(
             for event in stream:
                 if t_first_event is None:
                     t_first_event = _time.monotonic()
-                    logger.warning("console.run first SSE event: %.3fs after request start", t_first_event - t_start)
                 yield _sse_event(event)
         except Exception as exc:
             logger.exception("console.run stream failed conversation_id=%s", payload.conversation_id)
@@ -161,8 +157,11 @@ def list_conversation_runtimes(conversation_id: str) -> list[RuntimeSummaryView]
                 asset_id=runtime.asset_id,
                 terminal_id=runtime.terminal_id,
                 status=runtime.state.phase,
+                mode=runtime.state.context.mode,
+                plan_version=runtime.state.plan_version,
+                locked_plan=runtime.state.locked_plan,
                 current_step_id=current_step.step_id if current_step else None,
-                pending_approval_step_id=runtime.state.pending_tool_call_id,
+                pending_approval_step_id=runtime.state.pending_approval_step_id,
                 updated_at=runtime.updated_at,
             )
         )

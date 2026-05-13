@@ -116,6 +116,12 @@ export function App() {
   const selectedAssetId = selectedAsset?.id ?? 0
   const [isConsoleInitialized, setIsConsoleInitialized] = useState(false)
 
+  useEffect(() => {
+    if (activeRuntimeSnapshot) {
+      setRunMode(activeRuntimeSnapshot.mode)
+    }
+  }, [activeRuntimeSnapshot?.runtimeId, activeRuntimeSnapshot?.mode])
+
   const busyCommand = useMemo(() => {
     const commandsInOrder: Array<{ id: string; cmd: string }> = []
     const ended = new Set<string>()

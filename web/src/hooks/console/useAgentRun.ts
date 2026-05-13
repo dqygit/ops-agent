@@ -1,4 +1,4 @@
-import { useCallback, useState, type RefObject } from 'react'
+import { useCallback, useEffect, useRef, useState, type RefObject } from 'react'
 import { appendConversationEvents, streamApproveAgent, streamApproveRuntimePlan, streamRunAgent, updateRuntimePlan } from '../../api'
 import type { RunMode } from '../../types/api'
 import type { AgentMessage, Asset, EventItem, PlanStep, RuntimeSummary } from '../../types/ops'
@@ -41,6 +41,55 @@ function shouldSyncRuntimeForEvent(event: EventItem) {
   return event.kind === 'approval_required' || event.kind === 'approval_decision' || event.kind === 'command_end' || event.kind === 'final' || event.kind === 'error' || event.kind === 'message_update'
 }
 
+type PendingApprovalState = {
+  runtimeId: string
+  approvalToken: string | null
+  approvalKey: string
+}
+
+function getApprovalKey(event: EventItem) {
+  if (event.kind === 'approval_required' || event.kind === 'approval_decision' || event.kind === 'approval_granted' || event.kind === 'approval_rejected') {
+    return event.stepId || `${event.runtimeId || 'runtime'}:${event.command}`
+  }
+  if ('type' in event && (event.type === 'ask' || (event.type === 'say' && event.say === 'tool_use'))) {
+    const runtimeId = (event as any).runtimeId
+    const command = event.toolCall?.command || (event.toolCall?.args ? JSON.stringify(event.toolCall.args) : event.text || '')
+    return `${runtimeId || 'runtime'}:${command}`
+  }
+  return null
+}
+
+function derivePendingApprovalState(events: EventItem[]): PendingApprovalState | null {
+  const settledApprovalKeys = new Set<string>()
+
+  for (let index = events.length - 1; index >= 0; index--) {
+    const event = events[index]
+    const approvalKey = getApprovalKey(event)
+
+    if (approvalKey && (event.kind === 'approval_decision' || event.kind === 'approval_granted' || event.kind === 'approval_rejected' || ('type' in event && event.type === 'say' && event.say === 'tool_use'))) {
+      settledApprovalKeys.add(approvalKey)
+      continue
+    }
+
+    if (approvalKey && settledApprovalKeys.has(approvalKey)) {
+      continue
+    }
+
+    if (approvalKey && event.kind === 'approval_required' && event.status !== 'approved' && event.status !== 'rejected' && event.runtimeId) {
+      return { runtimeId: event.runtimeId, approvalToken: event.approvalToken ?? null, approvalKey }
+    }
+
+    if (approvalKey && 'type' in event && event.type === 'ask') {
+      const runtimeId = (event as any).runtimeId
+      if (runtimeId) {
+        return { runtimeId, approvalToken: null, approvalKey }
+      }
+    }
+  }
+
+  return null
+}
+
 export function useAgentRun({
   activeConversationId,
   activeConversationIdRef,
@@ -59,6 +108,17 @@ export function useAgentRun({
 }: UseAgentRunProps) {
   const [pendingApprovalRuntimeId, setPendingApprovalRuntimeId] = useState<string | null>(null)
   const [pendingApprovalToken, setPendingApprovalToken] = useState<string | null>(null)
+  const submittedApprovalKeyRef = useRef<string | null>(null)
+
+  useEffect(() => {
+    const pendingApproval = derivePendingApprovalState(events)
+    if (submittedApprovalKeyRef.current && submittedApprovalKeyRef.current === pendingApproval?.approvalKey) {
+      return
+    }
+    submittedApprovalKeyRef.current = null
+    setPendingApprovalRuntimeId(pendingApproval?.runtimeId ?? null)
+    setPendingApprovalToken(pendingApproval?.approvalToken ?? null)
+  }, [events])
 
   const runAgent = useCallback(async (runPrompt: string) => {
     setLoadError(null)
@@ -233,6 +293,7 @@ export function useAgentRun({
       const runId = pendingApprovalRuntimeId
       const approvalToken = pendingApprovalToken
       const conversationId = activeConversationId
+      submittedApprovalKeyRef.current = derivePendingApprovalState(events)?.approvalKey ?? null
       setPendingApprovalRuntimeId(null)
       setPendingApprovalToken(null)
 
