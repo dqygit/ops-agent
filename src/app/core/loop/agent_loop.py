@@ -70,10 +70,11 @@ class AgentLoop:
                 yield from manager.begin_message(message_type="say", say_type="error")
                 yield from manager.finalize(text="Command execution rejected by user.")
             
+            current_step.output = "Command execution rejected by user."
             state.messages.append(
                 LLMMessage(
                     role="tool",
-                    content="Command execution rejected by user.",
+                    content=current_step.output,
                     tool_call_id=state.pending_tool_call_id,
                     name=state.pending_tool_name,
                 )
@@ -82,6 +83,9 @@ class AgentLoop:
             state.pending_tool_name = None
             state.pending_tool_args = None
             state.pending_message_id = None
+            if state.context.mode == "plan":
+                yield from self._run_plan_mode(state, manager=manager, continue_existing=True)
+                return
             yield from self._tool_calling_loop(state, manager=manager)
             return
 
@@ -110,10 +114,11 @@ class AgentLoop:
             ok, output = yield from handler.execute(state=state, step_id=current_step.step_id, args=args, manager=manager)
 
         current_step.status = "completed" if ok else "failed"
+        current_step.output = output if ok else f"Command Failed: {output}"
         state.messages.append(
             LLMMessage(
                 role="tool",
-                content=output if ok else f"Command Failed: {output}",
+                content=current_step.output,
                 tool_call_id=state.pending_tool_call_id,
                 name=state.pending_tool_name,
             )
@@ -125,8 +130,6 @@ class AgentLoop:
         yield from manager.finalize(exit_code=0 if ok else 1)
         
         if state.context.mode == "plan":
-            if not ok:
-                state.phase = "executing"
             yield from self._run_plan_mode(state, manager=manager, continue_existing=True)
             return
         yield from self._tool_calling_loop(state, manager=manager)
