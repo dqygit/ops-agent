@@ -179,6 +179,7 @@ class AgentLoop:
                     content=(
                         "You are an operations task planner. Please generate an executable task plan based on the user's goal."
                         "Return a JSON object in the format {\"steps\": [...]}."
+                        "The steps array must contain at least one executable step."
                         "Each step includes title, reason, command, working_directory, expected_output, and risk_level."
                         "Command must be a single executable command. Do not output anything other than JSON."
                     ),
@@ -193,14 +194,53 @@ class AgentLoop:
                     ),
                 ),
             ],
-            json_mode=True,
+            json_schema={
+                "name": "execution_plan",
+                "schema": {
+                    "type": "object",
+                    "properties": {
+                        "steps": {
+                            "type": "array",
+                            "minItems": 1,
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "title": {"type": "string"},
+                                    "reason": {"type": "string"},
+                                    "command": {"type": "string"},
+                                    "working_directory": {"type": "string"},
+                                    "expected_output": {"type": "string"},
+                                    "risk_level": {"type": "string"},
+                                },
+                                "required": ["title", "reason", "command", "working_directory", "expected_output", "risk_level"],
+                                "additionalProperties": False,
+                            },
+                        }
+                    },
+                    "required": ["steps"],
+                    "additionalProperties": False,
+                },
+                "strict": True,
+            },
         )
         try:
             response = provider.complete(config=ctx.model_config, request=request)
             payload = json.loads(response.text or "{}")
             raw_steps = payload.get("steps") or []
-            if not isinstance(raw_steps, list) or not raw_steps:
-                raise ValueError("planner returned empty steps")
+            if not isinstance(raw_steps, list):
+                raise ValueError("planner returned invalid steps")
+            if not raw_steps:
+                logger.warning("Planner returned empty steps; using fallback step (runtime_id=%s)", ctx.runtime_id)
+                raw_steps = [
+                    {
+                        "title": "Execute user task",
+                        "reason": "The planner returned no steps, so execute the user's request directly.",
+                        "command": "",
+                        "working_directory": "",
+                        "expected_output": "Complete the user's requested operations task.",
+                        "risk_level": "medium",
+                    }
+                ]
 
             state.steps = []
             state.cursor = 0

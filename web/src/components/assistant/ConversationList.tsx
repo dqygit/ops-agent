@@ -145,15 +145,9 @@ export function ConversationList({ items, activeConversationId, onSelect, onDele
                       </div>
 
                       <div className="mt-2 flex items-center gap-2 text-[10px] font-bold leading-none text-ops-muted">
-                        <span
-                          className={`inline-flex shrink-0 items-center rounded-md border px-1.5 py-0.5 text-[9px]  tracking-widest ${status.color}`}
-                        >
-                          {status.label}
-                        </span>
                         <span className="text-ops-border/40" aria-hidden="true">/</span>
                         <span className="shrink-0 opacity-60">{formatUpdatedTime(item.updatedAt)}</span>
-                        <span className="text-ops-border/40" aria-hidden="true">/</span>
-                        <span className="shrink-0 tabular-nums opacity-60">{item.eventCount} Events</span>
+          
                       </div>
                     </div>
                   </button>

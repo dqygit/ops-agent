@@ -87,7 +87,9 @@ class OpenAICompatibleLLMProvider:
         if tool_choice is not None:
             params["tool_choice"] = cast(Any, tool_choice)
 
-        if request.json_mode:
+        if request.json_schema is not None:
+            params["response_format"] = {"type": "json_schema", "json_schema": request.json_schema}
+        elif request.json_mode:
             params["response_format"] = {"type": "json_object"}
         return params
 

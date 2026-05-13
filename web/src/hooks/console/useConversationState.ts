@@ -119,6 +119,9 @@ export function useConversationState(selectedModel: string) {
       setConversationSummaries((currentItems) =>
         upsertConversationSummaryFromDetail(currentItems, detail)
       )
+      if (activeConversationIdRef.current === detail.id) {
+        setActiveConversationTitle(detail.title)
+      }
     },
     []
   )

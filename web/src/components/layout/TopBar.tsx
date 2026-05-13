@@ -17,16 +17,6 @@ export function TopBar({ onOpenSettings }: TopBarProps) {
         </div>
       </div>
       <div className="flex items-center gap-6" aria-label="System status">
-        <div className="flex items-center gap-6 pr-6 border-r border-ops-border/10">
-          <span className="inline-flex items-center gap-2 text-[9px] font-bold  tracking-[0.15em] text-ops-emerald/80">
-            <span className="h-1.5 w-1.5 rounded-full bg-ops-emerald shadow-glow animate-pulse" />
-            Core: Linked
-          </span>
-          <span className="hidden lg:inline-flex items-center gap-2 text-[9px] font-bold  tracking-[0.15em] text-ops-cyan/80">
-            <span className="h-1.5 w-1.5 rounded-full bg-ops-cyan shadow-glow animate-pulse" />
-            Neural: Active
-          </span>
-        </div>
         <button type="button" onClick={onOpenSettings} className="button h-8 px-4 text-[10px] font-bold  tracking-widest active:scale-95">Configuration</button>
       </div>
     </header>

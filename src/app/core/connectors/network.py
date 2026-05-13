@@ -5,7 +5,7 @@ from netmiko import ConnectHandler
 
 class NetworkConnector:
     def __init__(self, device_params: dict[str, Any]):
-        self.device_params = device_params
+        self.device_params = {"conn_timeout": 15, **device_params}
         self.shell_kind = "network"
         self.connection: Any | None = None
 

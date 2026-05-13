@@ -23,6 +23,7 @@ class LLMCompletionRequest:
     temperature: float | None = None
     max_tokens: int | None = None
     json_mode: bool = False
+    json_schema: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)

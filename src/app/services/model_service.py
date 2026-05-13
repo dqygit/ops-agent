@@ -1,5 +1,6 @@
 import json
 import os
+import re
 from pathlib import Path
 
 from pydantic import SecretStr
@@ -72,12 +73,20 @@ class ModelService:
             response = provider.complete(config=config, request=request)
             title = (response.text or "").strip()
         except Exception:
-            return ""
+            return self._fallback_conversation_title(prompt)
         title = title.splitlines()[0] if title else ""
         title = title.strip().strip("\"'`，。.,；;：:!?！？")
         if len(title) > 16:
             title = title[:16]
-        return title
+        return title or self._fallback_conversation_title(prompt)
+
+    def _fallback_conversation_title(self, prompt: str) -> str:
+        text = prompt.strip()
+        text = re.sub(r"^(请|麻烦|帮我|你帮我|请帮我|能不能|可以|是否)+", "", text)
+        text = re.sub(r"[，。,.；;：:!?！？\s]+", "", text)
+        text = re.sub(r"(有啥问题|有什么问题|吗|呢|吧)+$", "", text)
+        text = text.replace("一下", "")
+        return (text or "新会话")[:12]
 
     def build_default_config(self) -> ModelConfig:
         provider = os.environ.get("OPS_AGENT_PROVIDER", ModelProvider.OPENAI_COMPATIBLE.value)

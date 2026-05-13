@@ -77,6 +77,7 @@ class LoopRuntimeManager:
         if rt is None:
             raise ValueError("runtime not found")
         state = rt.state
+        current_step = state.get_current_step()
         return {
             "runtime_id": rt.runtime_id,
             "conversation_id": rt.conversation_id,
@@ -98,7 +99,7 @@ class LoopRuntimeManager:
                 }
                 for s in state.steps
             ],
-            "current_step_id": state.get_current_step().step_id if state.get_current_step() else None,
+            "current_step_id": current_step.step_id if current_step else None,
             "pending_approval_step_id": state.pending_approval_step_id,
             "last_output_excerpt": state.last_output_excerpt,
             "summary": state.summary,

@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { EmptyState } from '../layout/EmptyState'
-import type { EventItem, PlanEvent, AgentMessage } from '../../types/ops'
+import type { EventItem, AgentMessage } from '../../types/ops'
 import { CommandExecutionCard } from './conversation/CommandExecutionCard'
 import { PlanSummaryCard } from './conversation/PlanSummaryCard'
 import { AssistantMessageContent } from './conversation/AssistantMessageContent'
@@ -119,10 +119,6 @@ export function ConversationView({ events, pendingApprovalRuntimeId, onApprove, 
     }
 
     if ('type' in event && (event.type === 'say' || event.type === 'ask')) {
-      // Skip 'ask' messages - they will be shown as part of the 'say' message that follows
-      if (event.type === 'ask') {
-        continue
-      }
       groups.push({ type: 'thinking', message: event as AgentMessage, key: `msg-${event.id}` })
       continue
     }

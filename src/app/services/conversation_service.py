@@ -2,10 +2,13 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 import json
+import logging
 from datetime import UTC, datetime
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from uuid import uuid4
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -71,13 +74,15 @@ class ConversationService:
     def append_events(self, conversation_id: str, events: list[dict], *, async_title_generation: bool = True) -> ConversationDetail:
         detail = self.get_conversation(conversation_id)
         had_user_event = any(event.get("kind") == "user" for event in detail.events)
-        detail.events.extend(events)
+        self._merge_events(detail.events, events)
         detail.event_count = len(detail.events)
         detail.last_event_kind = detail.events[-1].get("kind") if detail.events else None
         detail.updated_at = self._utc_now()
 
         generated_title_sync = None
-        if not had_user_event:
+        first_user_text = None
+        should_generate_title = not had_user_event or self._is_default_title(detail.title)
+        if should_generate_title:
             first_user_text = next(
                 (
                     event.get("text")
@@ -96,7 +101,7 @@ class ConversationService:
         summaries.append(self._to_summary(detail))
         self._write_index(summaries)
 
-        if not had_user_event and first_user_text and async_title_generation:
+        if should_generate_title and first_user_text and async_title_generation:
             import threading
             threading.Thread(
                 target=self._update_conversation_title_sync,
@@ -124,8 +129,7 @@ class ConversationService:
                     summaries.append(self._to_summary(detail))
                     self._write_index(summaries)
         except Exception:
-            # Silent failure for background title update
-            pass
+            logger.exception("Failed to update conversation title conversation_id=%s", conversation_id)
 
     def delete_conversation(self, conversation_id: str) -> None:
         detail_path = self._detail_path(conversation_id)
@@ -134,6 +138,28 @@ class ConversationService:
         detail_path.unlink()
         summaries = [item for item in self.list_conversations() if item.id != conversation_id]
         self._write_index(summaries)
+
+    def _merge_events(self, existing_events: list[dict], new_events: list[dict]) -> None:
+        message_index_by_id = {
+            event.get("id"): index
+            for index, event in enumerate(existing_events)
+            if self._is_agent_message(event)
+        }
+        for event in new_events:
+            if self._is_agent_message(event):
+                message_id = event.get("id")
+                existing_index = message_index_by_id.get(message_id)
+                if existing_index is not None:
+                    existing_events[existing_index] = event
+                    continue
+                message_index_by_id[message_id] = len(existing_events)
+            existing_events.append(event)
+
+    def _is_agent_message(self, event: dict) -> bool:
+        return event.get("kind") == "message" and event.get("type") in {"say", "ask"} and isinstance(event.get("id"), str)
+
+    def _is_default_title(self, title: str) -> bool:
+        return title.strip() in {"", "New"}
 
     def _generate_title(self, prompt: str, model_name: str | None) -> str | None:
         if self._model_service is None:
