@@ -10,8 +10,9 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import uuid
-from collections.abc import Iterator
+from collections.abc import Generator, Iterator
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -24,6 +25,7 @@ from app.core.loop.loop_events import (
     emit_completed,
     emit_failed,
     emit_message_update,
+    emit_plan_update,
 )
 from app.core.loop.loop_state import LoopRuntimeStep, LoopState
 from app.core.loop.message_manager import MessageManager
@@ -123,12 +125,9 @@ class AgentLoop:
         yield from manager.finalize(exit_code=0 if ok else 1)
         
         if state.context.mode == "plan":
-            if ok:
-                yield from self._run_plan_mode(state, manager=manager, continue_existing=True)
-                return
-            state.phase = "failed"
-            state.error_message = output
-            yield emit_failed(runtime_id=state.context.runtime_id, error=output or "Failed to execute plan step.")
+            if not ok:
+                state.phase = "executing"
+            yield from self._run_plan_mode(state, manager=manager, continue_existing=True)
             return
         yield from self._tool_calling_loop(state, manager=manager)
 
@@ -147,12 +146,22 @@ class AgentLoop:
                 state.cursor += 1
                 continue
 
-            step.status = "running"
+            if not state.messages:
+                state.messages = self._build_step_messages(state, step)
+            if step.status != "failed":
+                step.status = "running"
             state.phase = "executing"
-            state.messages = self._build_step_messages(state, step)
 
             paused, _, summary = yield from self._tool_calling_loop(state, manager=manager, plan_step=step, finalize_on_complete=False)
             if paused:
+                return
+
+            if step.status == "failed":
+                if summary:
+                    step.output = summary
+                state.phase = "failed"
+                state.error_message = summary or "Failed to execute plan step."
+                yield emit_failed(runtime_id=state.context.runtime_id, error=state.error_message)
                 return
 
             step.status = "completed"
@@ -161,9 +170,60 @@ class AgentLoop:
             state.messages = []
             state.cursor += 1
 
+        summary = yield from self._summarize_plan_completion(state, manager=manager)
         state.phase = "completed"
-        state.summary = "Plan execution completed."
+        state.summary = summary
         yield emit_completed(runtime_id=state.context.runtime_id, summary=state.summary)
+
+    def _summarize_plan_completion(self, state: LoopState, *, manager: MessageManager) -> Generator[LoopEvent, None, str]:
+        provider = build_llm_provider(state.context.model_config)
+        ctx = state.context
+        step_lines = []
+        for index, step in enumerate(state.steps, start=1):
+            parts = [f"{index}. {step.title}", f"status={step.status}"]
+            if step.command:
+                parts.append(f"command={step.command}")
+            if step.output:
+                parts.append(f"output={step.output}")
+            step_lines.append(" | ".join(parts))
+
+        yield from manager.begin_message(message_type="say", say_type="text")
+        request = LLMCompletionRequest(
+            messages=[
+                LLMMessage(
+                    role="system",
+                    content=(
+                        "You are an operations assistant. Summarize the completed plan for the user. "
+                        "Be concise, mention what was done, important results, and any recommended next action. "
+                        "Always respond in English."
+                    ),
+                ),
+                LLMMessage(
+                    role="user",
+                    content=(
+                        f"Original task: {ctx.user_prompt}\n\n"
+                        "Completed plan steps:\n"
+                        + ("\n".join(step_lines) if step_lines else "No step details were recorded.")
+                    ),
+                ),
+            ],
+            json_mode=False,
+        )
+
+        summary_parts: list[str] = []
+        for chunk in provider.stream_complete(config=ctx.model_config, request=request):
+            if chunk.delta:
+                summary_parts.append(chunk.delta)
+                yield from manager.update(text=chunk.delta)
+            if chunk.thinking_delta:
+                yield from manager.update(thinking=chunk.thinking_delta)
+
+        summary = "".join(summary_parts).strip() or "Plan execution completed."
+        if summary_parts:
+            yield from manager.finalize()
+        else:
+            yield from manager.finalize(text=summary)
+        return summary
 
     def _generate_plan(self, state: LoopState, *, manager: MessageManager) -> Iterator[LoopEvent]:
         provider = build_llm_provider(state.context.model_config)
@@ -181,7 +241,7 @@ class AgentLoop:
                         "Return a JSON object in the format {\"steps\": [...]}."
                         "The steps array must contain at least one executable step."
                         "Each step includes title, reason, command, working_directory, expected_output, and risk_level."
-                        "Command must be a single executable command. Do not output anything other than JSON."
+                        "Command must be a single executable command. Output only raw JSON. Do not wrap it in markdown code fences or add any explanation."
                     ),
                 ),
                 LLMMessage(
@@ -194,38 +254,11 @@ class AgentLoop:
                     ),
                 ),
             ],
-            json_schema={
-                "name": "execution_plan",
-                "schema": {
-                    "type": "object",
-                    "properties": {
-                        "steps": {
-                            "type": "array",
-                            "minItems": 1,
-                            "items": {
-                                "type": "object",
-                                "properties": {
-                                    "title": {"type": "string"},
-                                    "reason": {"type": "string"},
-                                    "command": {"type": "string"},
-                                    "working_directory": {"type": "string"},
-                                    "expected_output": {"type": "string"},
-                                    "risk_level": {"type": "string"},
-                                },
-                                "required": ["title", "reason", "command", "working_directory", "expected_output", "risk_level"],
-                                "additionalProperties": False,
-                            },
-                        }
-                    },
-                    "required": ["steps"],
-                    "additionalProperties": False,
-                },
-                "strict": True,
-            },
+            json_mode=True,
         )
         try:
             response = provider.complete(config=ctx.model_config, request=request)
-            payload = json.loads(response.text or "{}")
+            payload = json.loads(self._extract_json_payload(response.text))
             raw_steps = payload.get("steps") or []
             if not isinstance(raw_steps, list):
                 raise ValueError("planner returned invalid steps")
@@ -261,6 +294,19 @@ class AgentLoop:
                 )
 
             state.phase = "planning"
+            state.locked_plan = True
+            yield emit_plan_update(
+                runtime_id=ctx.runtime_id,
+                plan_id=f"plan-{ctx.runtime_id}",
+                title="Task Plan",
+                steps=state.steps,
+                version=state.plan_version,
+                locked_plan=state.locked_plan,
+                is_latest=True,
+                updated=False,
+                loading=False,
+                mode=ctx.mode,
+            )
             yield from manager.finalize(text="\nPlan generated successfully.")
         except Exception as exc:
             error = f"Task planning failed: {exc}"
@@ -268,6 +314,13 @@ class AgentLoop:
             state.error_message = error
             yield from manager.finalize(text=f"\nError: {error}")
             yield emit_failed(runtime_id=ctx.runtime_id, error=error)
+
+    def _extract_json_payload(self, text: str) -> str:
+        stripped = text.strip()
+        if stripped.startswith("```"):
+            stripped = re.sub(r"^```(?:json)?\s*", "", stripped, flags=re.IGNORECASE)
+            stripped = re.sub(r"\s*```$", "", stripped)
+        return stripped
 
     def _build_step_messages(self, state: LoopState, step: LoopRuntimeStep) -> list[LLMMessage]:
         ctx = state.context
@@ -326,6 +379,8 @@ class AgentLoop:
 
         import time
 
+        unresolved_tool_failure = any(step.status == "failed" for step in state.steps)
+
         while True:
             response_text_parts: list[str] = []
             response_thinking_parts: list[str] = []
@@ -382,6 +437,11 @@ class AgentLoop:
             if not response.tool_calls:
                 summary = response.text or "Task execution completed."
                 if finalize_on_complete:
+                    if unresolved_tool_failure:
+                        state.phase = "failed"
+                        state.error_message = summary
+                        yield emit_failed(runtime_id=ctx.runtime_id, error=summary)
+                        return False, False, summary
                     state.phase = "completed"
                     state.summary = summary
                 return False, True, summary
@@ -472,7 +532,7 @@ class AgentLoop:
 
                 step.status = "running"
                 state.phase = "executing"
-                
+
                 # Emit a 'say' message for tool execution
                 yield from manager.begin_message(message_type="say", say_type="tool_use")
                 yield from manager.update(
@@ -488,6 +548,7 @@ class AgentLoop:
                 ok, output = yield from handler.execute(state=state, step_id=step.step_id, args=args, manager=manager)
                 
                 step.status = "completed" if ok else "failed"
+                unresolved_tool_failure = not ok
                 state.messages.append(
                     LLMMessage(
                         role="tool",

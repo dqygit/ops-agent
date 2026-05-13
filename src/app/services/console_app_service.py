@@ -311,6 +311,27 @@ class ConsoleAppService:
                         messages.append(LLMMessage(role="assistant", content=f"[Error: {text}]"))
                 continue
 
+            if kind == "plan":
+                title = event.get("title", "Task Plan").strip() or "Task Plan"
+                steps = event.get("steps") or []
+                if isinstance(steps, list) and steps:
+                    step_lines = []
+                    for index, step in enumerate(steps, start=1):
+                        if not isinstance(step, dict):
+                            continue
+                        step_title = str(step.get("title") or f"Step {index}").strip()
+                        command = str(step.get("command") or "").strip()
+                        reason = str(step.get("summary") or step.get("reason") or "").strip()
+                        line = f"{index}. {step_title}"
+                        if command:
+                            line += f" | Command: {command}"
+                        if reason:
+                            line += f" | Reason: {reason}"
+                        step_lines.append(line)
+                    if step_lines:
+                        messages.append(LLMMessage(role="assistant", content=f"{title}\n" + "\n".join(step_lines)))
+                continue
+
             # Legacy 'final' events (from older protocol)
             if kind == "final":
                 text = event.get("text", "").strip()

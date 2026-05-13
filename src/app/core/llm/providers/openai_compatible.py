@@ -1,6 +1,9 @@
 import json
+import logging
 from collections.abc import Iterator
 from typing import Any, cast
+
+logger = logging.getLogger(__name__)
 
 from app.core.llm.base import LLMCompletionChunk, LLMCompletionRequest, LLMCompletionResponse
 from app.core.tool import LLMToolCall
@@ -69,6 +72,14 @@ class OpenAICompatibleLLMProvider:
         thinking = getattr(message, "reasoning_content", "") or ""
         tool_calls = self._parse_tool_calls(getattr(message, "tool_calls", None))
         finish_reason = getattr(choice, "finish_reason", None)
+        if not text:
+            logger.warning(
+                "OpenAI-compatible completion returned empty content: finish_reason=%s refusal=%s tool_calls=%d message_type=%s",
+                finish_reason,
+                getattr(message, "refusal", None),
+                len(tool_calls),
+                getattr(message, "type", None),
+            )
         return LLMCompletionResponse(text=text, tool_calls=tool_calls, finish_reason=finish_reason, thinking=thinking)
 
     def _build_completion_params(self, *, config: ModelConfig, request: LLMCompletionRequest, stream: bool) -> dict[str, Any]:

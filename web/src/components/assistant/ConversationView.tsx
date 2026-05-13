@@ -35,7 +35,6 @@ export function ConversationView({ events, pendingApprovalRuntimeId, onApprove, 
   }
 
   for (const event of events) {
-    if (event.kind === 'plan') continue
     if (event.kind === 'terminal_status') continue
 
     if (event.kind === 'delta') {
