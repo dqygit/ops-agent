@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Literal
 
 from datetime import datetime
 
@@ -302,7 +302,7 @@ class ConsoleBootstrapView(BaseModel):
 
 class ConsoleRunRequest(BaseModel):
     prompt: str
-    mode: str = "agent"
+    mode: Literal["agent", "plan"] = "agent"
     currentEvents: list[dict] = Field(default_factory=list)
     asset_id: int | None = None
     terminal_id: str | None = None
@@ -316,6 +316,24 @@ class ConsoleApprovalRequest(BaseModel):
     approved: bool
     approval_token: str | None = None
     allow_prefix: str | None = None
+
+
+class ConsolePlanStepUpdate(BaseModel):
+    id: str | None = None
+    step_id: str | None = None
+    title: str = Field(min_length=1)
+    command: str = ""
+    reason: str = "Executing plan step"
+    riskLevel: str | None = None
+    risk_level: str | None = None
+    workingDirectory: str | None = None
+    working_directory: str | None = None
+    expectedOutput: str | None = None
+    expected_output: str | None = None
+
+
+class ConsolePlanUpdateRequest(BaseModel):
+    steps: list[ConsolePlanStepUpdate]
 
 
 class RuntimeStepView(BaseModel):
@@ -337,6 +355,9 @@ class RuntimeSummaryView(BaseModel):
     asset_id: int
     terminal_id: str | None = None
     status: str
+    mode: str = "agent"
+    plan_version: int = 1
+    locked_plan: bool = False
     current_step_id: str | None = None
     pending_approval_step_id: str | None = None
     updated_at: datetime
@@ -348,6 +369,9 @@ class RuntimeSnapshotView(BaseModel):
     asset_id: int
     terminal_id: str | None = None
     status: str
+    mode: str = "agent"
+    plan_version: int = 1
+    locked_plan: bool = False
     steps: list[RuntimeStepView] = Field(default_factory=list)
     current_step_id: str | None = None
     pending_approval_step_id: str | None = None

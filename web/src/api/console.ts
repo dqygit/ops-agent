@@ -2,7 +2,7 @@ import { mapAsset } from './assets'
 import { requestEventStream, requestJson } from './client'
 import { mapAssetGroup, type AssetGroupDto } from './groups'
 import type { ConsoleBootstrap, RunMode, RuntimeEventsResponseDto, RuntimeSnapshotDto, RuntimeSummaryDto } from '../types/api'
-import type { EventItem, RuntimeEventEnvelope, RuntimeSnapshot, RuntimeSummary } from '../types/ops'
+import type { EventItem, PlanStep, RuntimeEventEnvelope, RuntimeSnapshot, RuntimeSummary } from '../types/ops'
 
 type ConsoleBootstrapDto = Omit<ConsoleBootstrap, 'assets' | 'groups'> & {
   assets: Parameters<typeof mapAsset>[0][]
@@ -25,6 +25,9 @@ function mapRuntimeSummary(dto: RuntimeSummaryDto): RuntimeSummary {
     assetId: dto.asset_id,
     terminalId: dto.terminal_id,
     status: dto.status,
+    mode: dto.mode,
+    planVersion: dto.plan_version,
+    lockedPlan: dto.locked_plan,
     currentStepId: dto.current_step_id,
     pendingApprovalStepId: dto.pending_approval_step_id,
     updatedAt: dto.updated_at,
@@ -38,6 +41,9 @@ function mapRuntimeSnapshot(dto: RuntimeSnapshotDto): RuntimeSnapshot {
     assetId: dto.asset_id,
     terminalId: dto.terminal_id,
     status: dto.status,
+    mode: dto.mode,
+    planVersion: dto.plan_version,
+    lockedPlan: dto.locked_plan,
     steps: dto.steps.map((step) => ({
       stepId: step.step_id,
       title: step.title,
@@ -130,6 +136,20 @@ export async function streamApproveAgent(runtimeId: string, approved: boolean, a
   const response = await requestEventStream('/api/console/approval', {
     method: 'POST',
     body: JSON.stringify({ runtime_id: runtimeId, approved, approval_token: approvalToken ?? null, allow_prefix: allowPrefix?.trim() || null }),
+  })
+  return readEventStream(response)
+}
+
+export async function updateRuntimePlan(runtimeId: string, steps: PlanStep[]): Promise<EventItem> {
+  return requestJson<EventItem>(`/api/console/runtimes/${runtimeId}/plan`, {
+    method: 'PUT',
+    body: JSON.stringify({ steps }),
+  })
+}
+
+export async function streamApproveRuntimePlan(runtimeId: string): Promise<AsyncGenerator<EventItem, void, void>> {
+  const response = await requestEventStream(`/api/console/runtimes/${runtimeId}/plan/approve`, {
+    method: 'POST',
   })
   return readEventStream(response)
 }

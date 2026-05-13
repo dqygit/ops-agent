@@ -54,12 +54,16 @@ export type SessionRecord = {
   model: string
 }
 
-export type PlanStepStatus = 'pending' | 'running' | 'completed'
+export type PlanStepStatus = 'pending' | 'running' | 'completed' | 'failed'
 
 export type PlanStep = {
   id?: string
   title: string
   command?: string
+  reason?: string
+  riskLevel?: string
+  workingDirectory?: string | null
+  expectedOutput?: string | null
   summary?: string
   status?: PlanStepStatus
 }
@@ -186,6 +190,9 @@ export type RuntimeSummary = {
   assetId: number
   terminalId: string | null
   status: string
+  mode: RunMode
+  planVersion: number
+  lockedPlan: boolean
   currentStepId: string | null
   pendingApprovalStepId: string | null
   updatedAt: string
@@ -197,6 +204,9 @@ export type RuntimeSnapshot = {
   assetId: number
   terminalId: string | null
   status: string
+  mode: RunMode
+  planVersion: number
+  lockedPlan: boolean
   steps: RuntimeStep[]
   currentStepId: string | null
   pendingApprovalStepId: string | null

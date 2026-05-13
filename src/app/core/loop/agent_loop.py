@@ -137,8 +137,10 @@ class AgentLoop:
     def _run_plan_mode(self, state: LoopState, *, manager: MessageManager, continue_existing: bool = False) -> Iterator[LoopEvent]:
         if not continue_existing and not state.steps:
             yield from self._generate_plan(state, manager=manager)
-            if state.phase == "failed":
-                return
+            return
+
+        if state.phase == "waiting_plan_approval":
+            return
 
         while state.cursor < len(state.steps):
             step = state.get_current_step()
@@ -170,6 +172,7 @@ class AgentLoop:
             step.status = "completed"
             if summary:
                 step.output = summary
+            yield self._emit_plan_state(state, title="Task Plan")
             state.messages = []
             state.cursor += 1
 

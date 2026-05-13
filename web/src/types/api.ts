@@ -46,6 +46,9 @@ export type RuntimeSummaryDto = {
   asset_id: number
   terminal_id: string | null
   status: string
+  mode: RunMode
+  plan_version: number
+  locked_plan: boolean
   current_step_id: string | null
   pending_approval_step_id: string | null
   updated_at: string
@@ -57,6 +60,9 @@ export type RuntimeSnapshotDto = {
   asset_id: number
   terminal_id: string | null
   status: string
+  mode: RunMode
+  plan_version: number
+  locked_plan: boolean
   steps: Array<{
     step_id: string
     title: string

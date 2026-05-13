@@ -44,10 +44,12 @@ class AnthropicLLMProvider:
         config: ModelConfig,
         request: LLMCompletionRequest,
     ) -> LLMCompletionResponse:
+        system_prompt = next((message.content for message in request.messages if message.role == "system"), "")
         response = self._get_client(config).messages.create(
             model=config.model_name,
             max_tokens=request.max_tokens if request.max_tokens is not None else config.max_tokens,
             temperature=request.temperature if request.temperature is not None else config.temperature,
+            system=system_prompt,
             messages=cast(Any, self._serialize_messages(request)),
             tools=cast(Any, self._serialize_tools(request) or None),
             tool_choice=cast(Any, self._serialize_tool_choice(request)),

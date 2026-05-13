@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { PanelCard } from '../layout/PanelCard'
 import type { RunMode } from '../../types/api'
-import type { Asset, ConversationSummary, EventItem, RuntimeSnapshot, RuntimeSummary } from '../../types/ops'
+import type { Asset, ConversationSummary, EventItem, PlanStep, RuntimeSnapshot, RuntimeSummary } from '../../types/ops'
 import { ConversationView } from './ConversationView'
 import { PromptInput } from './PromptInput'
 
@@ -28,6 +28,8 @@ type AssistantPanelProps = {
   onRun: (prompt: string) => Promise<void>
   onApprove: (allowPrefix?: string) => void
   onReject: () => void
+  onSavePlan: (runtimeId: string, steps: PlanStep[]) => Promise<void>
+  onApprovePlan: (runtimeId: string) => Promise<void>
 }
 
 const headerTimeFormatter = new Intl.DateTimeFormat('en-US', {
@@ -72,6 +74,8 @@ export function AssistantPanel({
   onRun,
   onApprove,
   onReject,
+  onSavePlan,
+  onApprovePlan,
 }: AssistantPanelProps) {
   const activeConversation = useMemo(
     () => conversationSummaries.find((item) => item.id === activeConversationId) ?? null,
@@ -107,7 +111,14 @@ export function AssistantPanel({
             </div>
           ) : null}
 
-          <ConversationView events={events} pendingApprovalRuntimeId={pendingApprovalRuntimeId} onApprove={onApprove} onReject={onReject} />
+          <ConversationView
+            events={events}
+            pendingApprovalRuntimeId={pendingApprovalRuntimeId}
+            onApprove={onApprove}
+            onReject={onReject}
+            onSavePlan={onSavePlan}
+            onApprovePlan={onApprovePlan}
+          />
 
           <PromptInput
             prompt={prompt}

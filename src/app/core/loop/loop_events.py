@@ -10,6 +10,7 @@ from app.core.loop.loop_state import LoopRuntimeStep
 LoopEventType = Literal[
     "message_update",  # The primary event for sync
     "plan",
+    "plan",
     "loop_final",
     "loop_failed",
 ]

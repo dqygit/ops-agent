@@ -11,6 +11,7 @@ LoopMode = Literal["agent", "plan"]
 
 LoopPhase = Literal[
     "planning",
+    "waiting_plan_approval",
     "approving",
     "executing",
     "completed",

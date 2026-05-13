@@ -72,6 +72,12 @@ class TaskOrchestrator:
             terminal_service=self._terminal_service,
         )
 
+    def stream_plan_approval(self, *, runtime_id: str) -> Iterator[dict]:
+        return self._app_service.stream_plan_approval(
+            runtime_id=runtime_id,
+            terminal_service=self._terminal_service,
+        )
+
 class ConsoleAppService:
     def __init__(
         self,
@@ -127,7 +133,7 @@ class ConsoleAppService:
             os_type=os_type,
             user_prompt=prompt,
             model_config=model_config,
-            mode=mode, # type: ignore
+            mode=mode,
             conversation_history=conversation_history,
         )
         
@@ -196,6 +202,26 @@ class ConsoleAppService:
                 yield event
         except Exception as exc:
             logger.exception("stream_approve failed runtime_id=%s", runtime_id)
+            yield {
+                "id": f"evt-error-{runtime_id}",
+                "kind": "error",
+                "runtimeId": runtime_id,
+                "sequence": -1,
+                "ts": "",
+                "text": str(exc),
+                "recoverable": True,
+            }
+
+    def update_plan(self, *, runtime_id: str, steps: list[dict]) -> dict:
+        return self.runtime_manager.update_plan(runtime_id=runtime_id, steps=steps)
+
+    def stream_plan_approval(self, *, runtime_id: str, terminal_service: TerminalService) -> Iterator[dict]:
+        try:
+            events = self.runtime_manager.approve_plan(runtime_id=runtime_id, terminal_service=terminal_service)
+            for event in events:
+                yield event
+        except Exception as exc:
+            logger.exception("stream_plan_approval failed runtime_id=%s", runtime_id)
             yield {
                 "id": f"evt-error-{runtime_id}",
                 "kind": "error",

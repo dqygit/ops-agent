@@ -1,7 +1,7 @@
 import { useCallback, useState, type RefObject } from 'react'
-import { appendConversationEvents, streamApproveAgent, streamRunAgent } from '../../api'
+import { appendConversationEvents, streamApproveAgent, streamApproveRuntimePlan, streamRunAgent, updateRuntimePlan } from '../../api'
 import type { RunMode } from '../../types/api'
-import type { AgentMessage, Asset, EventItem, RuntimeSummary } from '../../types/ops'
+import type { AgentMessage, Asset, EventItem, PlanStep, RuntimeSummary } from '../../types/ops'
 import { flushDeltaBuffer, LOCAL_TERMINAL_ASSET_ID, mergeDeltaEvent, mergePersistedEventsWithTransient, PENDING_ASSISTANT_MESSAGE_ID, upsertMessageEvent } from './consoleShared'
 
 interface UseAgentRunProps {
@@ -366,10 +366,65 @@ export function useAgentRun({
     ]
   )
 
+  const savePlan = useCallback(async (runtimeId: string, steps: PlanStep[]) => {
+    if (!activeConversationId) {
+      return
+    }
+    const event = await updateRuntimePlan(runtimeId, steps)
+    if (activeConversationIdRef.current === activeConversationId) {
+      setEvents((currentEvents: EventItem[]) => [...currentEvents, event])
+    }
+    const detail = await appendConversationEvents(activeConversationId, [event])
+    upsertConversationSummary(detail)
+    if (activeConversationIdRef.current === activeConversationId) {
+      setEvents((currentEvents: EventItem[]) => mergePersistedEventsWithTransient(detail.events, currentEvents))
+    } else {
+      applyConversationDetailIfActive(activeConversationId, detail)
+    }
+    await syncConversationRuntimes(activeConversationId)
+  }, [activeConversationId, activeConversationIdRef, applyConversationDetailIfActive, setEvents, syncConversationRuntimes, upsertConversationSummary])
+
+  const approvePlan = useCallback(async (runtimeId: string) => {
+    if (!activeConversationId) {
+      return
+    }
+    const stream = await streamApproveRuntimePlan(runtimeId)
+    const pendingPersistEvents: EventItem[] = []
+    const latestMessageSnapshots = new Map<string, AgentMessage>()
+
+    for await (const event of stream) {
+      if (event.kind === 'message_update') {
+        const message = { ...event, kind: 'message' as const } as unknown as AgentMessage
+        setEvents((currentEvents: EventItem[]) => upsertMessageEvent(currentEvents, message))
+        latestMessageSnapshots.set(message.id, message)
+        continue
+      }
+
+      if (activeConversationIdRef.current === activeConversationId) {
+        setEvents((currentEvents: EventItem[]) => [...currentEvents, event])
+      }
+      pendingPersistEvents.push(event)
+    }
+
+    const allPersistEvents = [...pendingPersistEvents, ...Array.from(latestMessageSnapshots.values()) as EventItem[]]
+    if (allPersistEvents.length > 0) {
+      const detail = await appendConversationEvents(activeConversationId, allPersistEvents)
+      upsertConversationSummary(detail)
+      if (activeConversationIdRef.current === activeConversationId) {
+        setEvents((currentEvents: EventItem[]) => mergePersistedEventsWithTransient(detail.events, currentEvents))
+      } else {
+        applyConversationDetailIfActive(activeConversationId, detail)
+      }
+    }
+    await syncConversationRuntimes(activeConversationId)
+  }, [activeConversationId, activeConversationIdRef, applyConversationDetailIfActive, setEvents, syncConversationRuntimes, upsertConversationSummary])
+
   return {
     pendingApprovalRuntimeId,
     runAgent,
     approveRun: (allowPrefix?: string) => void submitApproval(true, allowPrefix),
     rejectRun: () => void submitApproval(false),
+    savePlan,
+    approvePlan,
   }
 }

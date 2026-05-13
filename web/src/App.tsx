@@ -93,6 +93,8 @@ export function App() {
     runAgent,
     approveRun,
     rejectRun,
+    savePlan,
+    approvePlan,
   } = useAgentRun({
     activeConversationId,
     activeConversationIdRef,
@@ -267,6 +269,8 @@ export function App() {
                 onReject={() => {
                   void rejectRun()
                 }}
+                onSavePlan={savePlan}
+                onApprovePlan={approvePlan}
               />
             ) : loadError ? (
               <section className={centerFallbackClassName}>

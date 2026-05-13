@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 
 from app.core.loop.agent_loop import AgentLoop
 from app.core.loop.loop_events import LoopEvent
-from app.core.loop.loop_state import LoopContext, LoopState
+from app.core.loop.loop_state import LoopContext, LoopRuntimeStep, LoopState
 
 
 @dataclass
@@ -84,6 +84,9 @@ class LoopRuntimeManager:
             "asset_id": rt.asset_id,
             "terminal_id": rt.terminal_id,
             "status": state.phase,
+            "mode": state.context.mode,
+            "plan_version": state.plan_version,
+            "locked_plan": state.locked_plan,
             "steps": [
                 {
                     "step_id": s.step_id,
@@ -113,10 +116,90 @@ class LoopRuntimeManager:
         rt = self._by_runtime.get(runtime_id)
         if rt is None:
             raise ValueError("runtime not found")
-            
+
         loop = AgentLoop(tools=self._tools_factory(terminal_service))
         for event in loop.run(rt.state):
             yield self._to_ws_event(event, rt)
+
+    def update_plan(self, *, runtime_id: str, steps: list[dict]) -> dict:
+        rt = self._by_runtime.get(runtime_id)
+        if rt is None:
+            raise ValueError("runtime not found")
+        state = rt.state
+        if state.context.mode != "plan":
+            raise ValueError("runtime is not in plan mode")
+        if state.phase != "waiting_plan_approval" or state.locked_plan:
+            raise ValueError("plan can only be edited before approval")
+        if not steps:
+            raise ValueError("plan must include at least one step")
+
+        state.steps = [
+            LoopRuntimeStep(
+                step_id=str(item.get("id") or item.get("step_id") or f"step-{uuid.uuid4().hex[:8]}"),
+                title=str(item.get("title") or "").strip() or f"Step {index}",
+                command=str(item.get("command") or "").strip(),
+                reason=str(item.get("reason") or "Executing plan step"),
+                risk_level=str(item.get("riskLevel") or item.get("risk_level") or "low"),
+                working_directory=str(item.get("workingDirectory") or item.get("working_directory") or "") or None,
+                expected_output=str(item.get("expectedOutput") or item.get("expected_output") or "") or None,
+                status="pending",
+            )
+            for index, item in enumerate(steps, start=1)
+        ]
+        state.cursor = 0
+        state.plan_version += 1
+        rt.updated_at = datetime.now(UTC)
+        return self._append_plan_event(rt)
+
+    def approve_plan(self, *, runtime_id: str, terminal_service) -> Iterator[dict]:
+        rt = self._by_runtime.get(runtime_id)
+        if rt is None:
+            raise ValueError("runtime not found")
+        state = rt.state
+        if state.context.mode != "plan":
+            raise ValueError("runtime is not in plan mode")
+        if state.phase != "waiting_plan_approval":
+            raise ValueError("plan is not waiting for approval")
+        if not state.steps:
+            raise ValueError("plan has no steps")
+
+        state.locked_plan = True
+        state.cursor = 0
+        state.phase = "executing"
+        yield self._append_plan_event(rt)
+        loop = AgentLoop(tools=self._tools_factory(terminal_service))
+        for event in loop.run(rt.state):
+            yield self._to_ws_event(event, rt)
+
+    def _append_plan_event(self, rt: RuntimeState) -> dict:
+        state = rt.state
+        event = LoopEvent(
+            event_type="plan",
+            runtime_id=rt.runtime_id,
+            phase=state.phase,
+            payload={
+                "planId": rt.runtime_id,
+                "title": "Task Plan",
+                "mode": state.context.mode,
+                "version": state.plan_version,
+                "lockedPlan": state.locked_plan,
+                "status": state.phase,
+                "steps": [
+                    {
+                        "id": step.step_id,
+                        "title": step.title,
+                        "command": step.command,
+                        "reason": step.reason,
+                        "riskLevel": step.risk_level,
+                        "workingDirectory": step.working_directory,
+                        "expectedOutput": step.expected_output,
+                        "status": step.status,
+                    }
+                    for step in state.steps
+                ],
+            },
+        )
+        return self._to_ws_event(event, rt)
 
     def resume(self, *, runtime_id: str, approved: bool, approval_token: str | None, terminal_service) -> Iterator[dict]:
         rt = self._by_runtime.get(runtime_id)

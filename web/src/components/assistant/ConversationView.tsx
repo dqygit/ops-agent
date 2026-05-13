@@ -13,9 +13,11 @@ type ConversationViewProps = {
   pendingApprovalRuntimeId: string | null
   onApprove?: (allowPrefix?: string) => void
   onReject?: () => void
+  onSavePlan?: (runtimeId: string, steps: PlanStep[]) => Promise<void>
+  onApprovePlan?: (runtimeId: string) => Promise<void>
 }
 
-export function ConversationView({ events, pendingApprovalRuntimeId, onApprove, onReject }: ConversationViewProps) {
+export function ConversationView({ events, pendingApprovalRuntimeId, onApprove, onReject, onSavePlan, onApprovePlan }: ConversationViewProps) {
   const scrollContainerRef = useRef<HTMLDivElement | null>(null)
   const shouldAutoScrollRef = useRef(true)
 
@@ -230,7 +232,7 @@ export function ConversationView({ events, pendingApprovalRuntimeId, onApprove, 
                     
                     if (entry.type === 'event') {
                       if (entry.event.kind === 'plan') {
-                        return <PlanSummaryCard key={entry.event.id} event={entry.event} />
+                        return <PlanSummaryCard key={entry.event.id} event={entry.event} onSave={onSavePlan} onApprove={onApprovePlan} />
                       }
                       
                       return (
