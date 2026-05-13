@@ -181,14 +181,26 @@ class AgentLoop:
         state.summary = summary
         yield emit_completed(runtime_id=state.context.runtime_id, summary=state.summary)
 
+    def _emit_plan_state(self, state: LoopState, *, title: str) -> LoopEvent:
+        return emit_plan_update(
+            runtime_id=state.context.runtime_id,
+            plan_id=f"plan-{state.context.runtime_id}",
+            title=title,
+            steps=state.steps,
+            version=state.plan_version,
+            locked_plan=state.locked_plan,
+            is_latest=True,
+            updated=True,
+            loading=False,
+            mode=state.context.mode,
+        )
+
     def _summarize_plan_completion(self, state: LoopState, *, manager: MessageManager) -> Generator[LoopEvent, None, str]:
         provider = build_llm_provider(state.context.model_config)
         ctx = state.context
         step_lines = []
         for index, step in enumerate(state.steps, start=1):
             parts = [f"{index}. {step.title}", f"status={step.status}"]
-            if step.command:
-                parts.append(f"command={step.command}")
             if step.output:
                 parts.append(f"output={step.output}")
             step_lines.append(" | ".join(parts))
@@ -236,20 +248,19 @@ class AgentLoop:
         ctx = state.context
         
         yield from manager.begin_message(message_type="say", say_type="text")
-        yield from manager.update(text="Generating execution plan...")
-
         request = LLMCompletionRequest(
             messages=[
                 LLMMessage(
                     role="system",
                     content=(
-                        "You are an operations task planner. Please generate an executable task plan based on the user's goal."
+                        "You are an operations task planner. Please generate a task plan based on the user's goal."
                         "Return a JSON object in the format {\"steps\": [...]}."
-                        "The steps array must contain at least one executable step."
-                        "Each step includes title, reason, command, working_directory, expected_output, and risk_level."
-                        "Command must be a single executable command. Output only raw JSON. Do not wrap it in markdown code fences or add any explanation."
+                        "The steps array must contain at least one step."
+                        "Each step includes title, reason, working_directory, expected_output, and risk_level."
+                        "Do not include commands in the plan. Output only raw JSON. Do not wrap it in markdown code fences or add any explanation."
                     ),
                 ),
+                *ctx.conversation_history,
                 LLMMessage(
                     role="user",
                     content=(
@@ -274,7 +285,6 @@ class AgentLoop:
                     {
                         "title": "Execute user task",
                         "reason": "The planner returned no steps, so execute the user's request directly.",
-                        "command": "",
                         "working_directory": "",
                         "expected_output": "Complete the user's requested operations task.",
                         "risk_level": "medium",
@@ -285,12 +295,11 @@ class AgentLoop:
             state.cursor = 0
             for index, item in enumerate(raw_steps, start=1):
                 data = item if isinstance(item, dict) else {}
-                command = str(data.get("command", "")).strip()
+
                 state.steps.append(
                     LoopRuntimeStep(
                         step_id=f"step-{uuid.uuid4().hex[:8]}",
                         title=str(data.get("title") or f"Step {index}"),
-                        command=command,
                         reason=str(data.get("reason") or "Executing plan step"),
                         risk_level=str(data.get("risk_level") or "low"),
                         working_directory=str(data.get("working_directory") or "") or None,
@@ -299,7 +308,7 @@ class AgentLoop:
                     )
                 )
 
-            state.phase = "planning"
+            state.phase = "executing"
             state.locked_plan = True
             yield emit_plan_update(
                 runtime_id=ctx.runtime_id,
@@ -313,7 +322,7 @@ class AgentLoop:
                 loading=False,
                 mode=ctx.mode,
             )
-            yield from manager.finalize(text="\nPlan generated successfully.")
+            yield from self._run_plan_mode(state, manager=manager, continue_existing=True)
         except Exception as exc:
             error = f"Task planning failed: {exc}"
             state.phase = "failed"
@@ -343,12 +352,15 @@ class AgentLoop:
             f"原始任务: {ctx.user_prompt}\n"
             f"当前步骤标题: {step.title}\n"
             f"当前步骤原因: {step.reason}\n"
-            f"建议命令: {step.command or '无'}\n"
             f"建议工作目录: {step.working_directory or '未指定'}\n"
             f"期望输出: {step.expected_output or '未指定'}\n"
             "请围绕当前步骤执行，必要时可以调整参数，但不要偏离该步骤目标。"
         )
-        return [LLMMessage(role="system", content=system_msg), LLMMessage(role="user", content=user_msg)]
+        return [
+            LLMMessage(role="system", content=system_msg),
+            *ctx.conversation_history,
+            LLMMessage(role="user", content=user_msg),
+        ]
 
     def _tool_calling_loop(
         self,
@@ -473,7 +485,6 @@ class AgentLoop:
                     step = LoopRuntimeStep(
                         step_id=f"step-{uuid.uuid4().hex[:8]}",
                         title=command or tool_call.name,
-                        command=command,
                         reason="LLM requested tool execution",
                         risk_level="low",
                         working_directory=str(working_directory) if working_directory else None,
@@ -483,8 +494,6 @@ class AgentLoop:
                     state.cursor = len(state.steps) - 1
                 else:
                     step = plan_step
-                    if command:
-                        step.command = command
                     step.working_directory = str(working_directory) if working_directory else None
 
                 action, reason = handler.needs_approval(args)
@@ -528,7 +537,7 @@ class AgentLoop:
                         tool_call={
                             "id": tool_call.id,
                             "name": tool_call.name,
-                            "command": args.get("command", step.command),
+                            "command": args.get("command", command),
                             "args": args,
                         }
                     )
@@ -545,7 +554,7 @@ class AgentLoop:
                     tool_call={
                         "id": tool_call.id,
                         "name": tool_call.name,
-                        "command": args.get("command", step.command),
+                        "command": args.get("command", command),
                         "args": args,
                     }
                 )
@@ -554,7 +563,7 @@ class AgentLoop:
                 ok, output = yield from handler.execute(state=state, step_id=step.step_id, args=args, manager=manager)
                 
                 step.status = "completed" if ok else "failed"
-                unresolved_tool_failure = not ok
+                unresolved_tool_failure = any(step.status == "failed" for step in state.steps)
                 state.messages.append(
                     LLMMessage(
                         role="tool",

@@ -91,7 +91,7 @@ class LoopRuntimeManager:
                 {
                     "step_id": s.step_id,
                     "title": s.title,
-                    "command": s.command,
+                    "command": "",
                     "reason": s.reason,
                     "risk_level": s.risk_level,
                     "working_directory": s.working_directory,
@@ -137,7 +137,6 @@ class LoopRuntimeManager:
             LoopRuntimeStep(
                 step_id=str(item.get("id") or item.get("step_id") or f"step-{uuid.uuid4().hex[:8]}"),
                 title=str(item.get("title") or "").strip() or f"Step {index}",
-                command=str(item.get("command") or "").strip(),
                 reason=str(item.get("reason") or "Executing plan step"),
                 risk_level=str(item.get("riskLevel") or item.get("risk_level") or "low"),
                 working_directory=str(item.get("workingDirectory") or item.get("working_directory") or "") or None,
@@ -188,7 +187,7 @@ class LoopRuntimeManager:
                     {
                         "id": step.step_id,
                         "title": step.title,
-                        "command": step.command,
+                        "command": "",
                         "reason": step.reason,
                         "riskLevel": step.risk_level,
                         "workingDirectory": step.working_directory,

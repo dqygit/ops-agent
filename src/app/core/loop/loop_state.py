@@ -65,7 +65,6 @@ class LoopReviewResult:
 class LoopRuntimeStep:
     step_id: str
     title: str
-    command: str
     reason: str
     risk_level: str
     working_directory: str | None = None
@@ -79,7 +78,6 @@ class LoopRuntimeStep:
         return cls(
             step_id=step_id,
             title=step.title,
-            command=step.command,
             reason=step.reason,
             risk_level=step.risk_level,
             working_directory=step.working_directory or None,
@@ -90,7 +88,6 @@ class LoopRuntimeStep:
     def to_plan_step(self) -> PlanStep:
         return PlanStep(
             title=self.title,
-            command=self.command,
             reason=self.reason,
             risk_level=self.risk_level,
             working_directory=self.working_directory or "",

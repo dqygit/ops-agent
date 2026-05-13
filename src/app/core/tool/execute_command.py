@@ -77,8 +77,9 @@ class ExecuteCommandHandler:
             return False, ""
 
         try:
+            command = str(args.get("command", "")).strip()
             execution_id = session_manager.start_execution(
-                step.command,
+                command,
                 type("ExecutionContext", (), {"working_directory": step.working_directory})(),
             )
             execution = session_manager.get_execution_result(execution_id)

@@ -205,6 +205,35 @@ export function mergePersistedEventsWithTransient(
   return normalizePlanEvents(nextEvents)
 }
 
+export function upsertStreamEvent(
+  currentEvents: EventItem[],
+  event: EventItem
+): EventItem[] {
+  if (event.kind !== 'plan') {
+    return normalizePlanEvents([...currentEvents, event])
+  }
+
+  const incomingPlanId = event.planId ?? event.id
+  const nextEvents = currentEvents.map((currentEvent) => {
+    if (currentEvent.kind !== 'plan') {
+      return currentEvent
+    }
+
+    const currentPlanId = currentEvent.planId ?? currentEvent.id
+    return currentPlanId === incomingPlanId ? event : currentEvent
+  })
+
+  const hasExistingPlan = currentEvents.some((currentEvent) => {
+    if (currentEvent.kind !== 'plan') {
+      return false
+    }
+    const currentPlanId = currentEvent.planId ?? currentEvent.id
+    return currentPlanId === incomingPlanId
+  })
+
+  return normalizePlanEvents(hasExistingPlan ? nextEvents : [...currentEvents, event])
+}
+
 /**
  * 更新或插入 AgentMessage 到事件列表
  */

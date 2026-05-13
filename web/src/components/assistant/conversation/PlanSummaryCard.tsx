@@ -20,6 +20,8 @@ export function PlanSummaryCard({ event, onSave, onApprove }: PlanSummaryCardPro
   const completedSteps = visibleSteps.filter((step) => step.status === 'completed').length
   const runningStep = visibleSteps.find((step) => step.status === 'running')
   const progress = totalSteps > 0 ? Math.round((completedSteps / totalSteps) * 100) : 0
+  const title = event.title?.trim()
+  const displayTitle = title || (isPlanMode ? '' : 'Task Plan')
 
   useEffect(() => {
     setDraftSteps(event.steps)
@@ -88,7 +90,7 @@ export function PlanSummaryCard({ event, onSave, onApprove }: PlanSummaryCardPro
       <div className="mb-2.5 flex items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <div className={`h-3.5 w-1.5 rounded-full ${isPlanMode ? 'bg-ops-cyan' : 'bg-ops-green'}`} />
-          <h3 className="text-[13.5px] font-bold tracking-wide text-ops-text">{event.title?.trim() || 'Task Plan'}</h3>
+          {displayTitle ? <h3 className="text-[13.5px] font-bold tracking-wide text-ops-text">{displayTitle}</h3> : null}
           {isPlanMode && event.lockedPlan ? (
             <span className="inline-flex items-center gap-1 rounded-md border border-ops-cyan/35 bg-ops-cyan/10 px-1.5 py-0.5 text-[10px] font-medium text-ops-cyan">
               <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"></rect><path d="M7 11V7a5 5 0 0110 0v4"></path></svg>

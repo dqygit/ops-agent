@@ -95,7 +95,7 @@ def emit_plan_update(*, runtime_id: str, plan_id: str, title: str, steps: list[L
             {
                 "id": step.step_id,
                 "title": step.title,
-                "command": step.command,
+                "command": "",
                 "summary": step.output or None,
                 "status": step.status,
             }

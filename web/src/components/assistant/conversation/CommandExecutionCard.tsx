@@ -32,28 +32,26 @@ export function CommandExecutionCard({
   const rawCommand = message?.toolCall?.command || (startEvent as any)?.command || approvalEvent?.command || ''
   
   // Parse command: if it's JSON like {"command":"lshw -short"}, extract the actual command
-  const { displayCommand, fullCommand } = (() => {
-    if (!rawCommand) return { displayCommand: '', fullCommand: '' }
-    
+  const displayCommand = (() => {
+    if (!rawCommand) return ''
+
     // Try to parse as JSON
     try {
       const parsed = JSON.parse(rawCommand)
       if (parsed && typeof parsed === 'object' && 'command' in parsed) {
         // It's a JSON object with a command field
-        return {
-          displayCommand: parsed.command,
-          fullCommand: rawCommand
-        }
+        return parsed.command
       }
     } catch {
       // Not JSON, use as-is
     }
-    
-    return { displayCommand: rawCommand, fullCommand: rawCommand }
+
+    return rawCommand
   })()
   
-  const outputText = message?.toolOutput || chunkEvents.map((event) => event.text).join('')
+  const outputText = message?.toolOutput ?? chunkEvents.map((event) => event.text).join('')
   const exitCode = message ? message.exitCode : ((endEvent as any)?.exitCode ?? (endEvent as any)?.exit_code)
+  const hasExecutionResult = message ? message.type === 'say' && message.say === 'tool_use' && !message.partial : !!endEvent
   const commandTokens = displayCommand.trim().split(/\s+/).filter(Boolean)
   const allowPrefixOptions = Array.from(new Set([displayCommand.trim(), commandTokens[0]].filter(Boolean)))
   
@@ -196,20 +194,20 @@ export function CommandExecutionCard({
             </div>
           )}
 
-          {outputText && (
+          {hasExecutionResult && (
             <div className="flex flex-col gap-1.5">
               <span className="text-[9px] font-bold tracking-widest text-ops-muted/60 uppercase">Execution Output</span>
-              <OutputBlock text={outputText} label="Trace" />
+              <OutputBlock text={outputText || '(no output)'} label="Trace" />
             </div>
           )}
         </div>
       )}
 
-      {!isExpanded && outputText && (
+      {!isExpanded && hasExecutionResult && (
         <div className="mt-1.5 ml-9 flex items-center gap-2 overflow-hidden border-t border-ops-border/10 pt-1.5">
           <span className="shrink-0 text-[9px] font-bold tracking-[0.05em] text-ops-muted/40 uppercase">Output:</span>
           <span className="truncate font-mono text-[11px] text-ops-muted/60">
-            {outputText.split('\n').filter(l => l.trim()).pop() || outputText.slice(-100)}
+            {outputText.split('\n').filter(l => l.trim()).pop() || outputText.slice(-100) || '(no output)'}
           </span>
         </div>
       )}

@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { EmptyState } from '../layout/EmptyState'
-import type { EventItem, AgentMessage } from '../../types/ops'
+import type { EventItem, AgentMessage, PlanStep } from '../../types/ops'
 import { CommandExecutionCard } from './conversation/CommandExecutionCard'
 import { PlanSummaryCard } from './conversation/PlanSummaryCard'
 import { AssistantMessageContent } from './conversation/AssistantMessageContent'
@@ -23,6 +23,7 @@ export function ConversationView({ events, pendingApprovalRuntimeId, onApprove, 
 
   const lastEvent = events[events.length - 1]
   const isStreamingNow = lastEvent?.kind === 'delta'
+  const latestPlanEvent = [...events].reverse().find((event) => event.kind === 'plan')
 
   const groups: Group[] = []
   const commandGroupMap = new Map<string, { index: number }>()
@@ -232,7 +233,23 @@ export function ConversationView({ events, pendingApprovalRuntimeId, onApprove, 
                     
                     if (entry.type === 'event') {
                       if (entry.event.kind === 'plan') {
-                        return <PlanSummaryCard key={entry.event.id} event={entry.event} onSave={onSavePlan} onApprove={onApprovePlan} />
+                        if (entry.event !== latestPlanEvent) {
+                          return null
+                        }
+
+                        const planCard = <PlanSummaryCard event={entry.event} onSave={onSavePlan} onApprove={onApprovePlan} />
+
+                        const shouldStick = entry.event.mode === 'plan'
+
+                        if (shouldStick) {
+                          return (
+                            <div key={entry.event.id} className="sticky top-0 z-20 -mx-1 rounded-xl bg-ops-bg/95 px-1 py-1 backdrop-blur-md">
+                              {planCard}
+                            </div>
+                          )
+                        }
+
+                        return <div key={entry.event.id}>{planCard}</div>
                       }
                       
                       return (

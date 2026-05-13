@@ -2,7 +2,7 @@ import { useCallback, useState, type RefObject } from 'react'
 import { appendConversationEvents, streamApproveAgent, streamApproveRuntimePlan, streamRunAgent, updateRuntimePlan } from '../../api'
 import type { RunMode } from '../../types/api'
 import type { AgentMessage, Asset, EventItem, PlanStep, RuntimeSummary } from '../../types/ops'
-import { flushDeltaBuffer, LOCAL_TERMINAL_ASSET_ID, mergeDeltaEvent, mergePersistedEventsWithTransient, PENDING_ASSISTANT_MESSAGE_ID, upsertMessageEvent } from './consoleShared'
+import { flushDeltaBuffer, LOCAL_TERMINAL_ASSET_ID, mergeDeltaEvent, mergePersistedEventsWithTransient, PENDING_ASSISTANT_MESSAGE_ID, upsertMessageEvent, upsertStreamEvent } from './consoleShared'
 
 interface UseAgentRunProps {
   // Conversation dependencies
@@ -145,7 +145,7 @@ export function useAgentRun({
 
         // Immediately update UI with transient event, don't block SSE stream
         if (activeConversationIdRef.current === conversationId) {
-          setEvents((currentEvents: EventItem[]) => [...currentEvents, event])
+          setEvents((currentEvents: EventItem[]) => upsertStreamEvent(currentEvents, event))
         }
 
         // Collect non-delta events, batch persist after stream ends
@@ -288,7 +288,7 @@ export function useAgentRun({
 
           // Immediately update UI with transient event, don't block SSE stream
           if (activeConversationIdRef.current === conversationId) {
-            setEvents((currentEvents: EventItem[]) => [...currentEvents, event])
+            setEvents((currentEvents: EventItem[]) => upsertStreamEvent(currentEvents, event))
           }
 
           // Collect non-delta events, batch persist after stream ends
@@ -372,7 +372,7 @@ export function useAgentRun({
     }
     const event = await updateRuntimePlan(runtimeId, steps)
     if (activeConversationIdRef.current === activeConversationId) {
-      setEvents((currentEvents: EventItem[]) => [...currentEvents, event])
+      setEvents((currentEvents: EventItem[]) => upsertStreamEvent(currentEvents, event))
     }
     const detail = await appendConversationEvents(activeConversationId, [event])
     upsertConversationSummary(detail)
@@ -401,7 +401,7 @@ export function useAgentRun({
       }
 
       if (activeConversationIdRef.current === activeConversationId) {
-        setEvents((currentEvents: EventItem[]) => [...currentEvents, event])
+        setEvents((currentEvents: EventItem[]) => upsertStreamEvent(currentEvents, event))
       }
       pendingPersistEvents.push(event)
     }
