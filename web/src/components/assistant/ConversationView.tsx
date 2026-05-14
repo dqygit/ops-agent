@@ -178,8 +178,13 @@ export function ConversationView({ events, pendingApprovalRuntimeId, onApprove, 
   }
 
   return (
-    <div className="flex flex-1 flex-col overflow-hidden" aria-label="Assistant Conversation">
-      <div ref={scrollContainerRef} className="flex flex-1 flex-col gap-5 overflow-y-auto px-4 py-4">
+    <div className="relative flex flex-1 flex-col overflow-hidden" aria-label="Assistant Conversation">
+      {latestPlanEvent?.mode === 'plan' ? (
+        <div className="absolute right-4 top-3 z-30 w-[min(380px,calc(100%-2rem))]">
+          <PlanSummaryCard event={latestPlanEvent} onSave={onSavePlan} onApprove={onApprovePlan} />
+        </div>
+      ) : null}
+      <div ref={scrollContainerRef} className={`flex flex-1 flex-col gap-5 overflow-y-auto px-4 py-4 ${latestPlanEvent?.mode === 'plan' ? 'pt-20' : ''}`}>
         {turns.map((turn, turnIndex) => {
           const isLastTurn = turnIndex === turns.length - 1
           const orderedAssistantGroups = sortAssistantGroups(turn.assistantGroups)
@@ -233,23 +238,11 @@ export function ConversationView({ events, pendingApprovalRuntimeId, onApprove, 
                     
                     if (entry.type === 'event') {
                       if (entry.event.kind === 'plan') {
-                        if (entry.event !== latestPlanEvent) {
+                        if (entry.event !== latestPlanEvent || entry.event.mode === 'plan') {
                           return null
                         }
 
-                        const planCard = <PlanSummaryCard event={entry.event} onSave={onSavePlan} onApprove={onApprovePlan} />
-
-                        const shouldStick = entry.event.mode === 'plan'
-
-                        if (shouldStick) {
-                          return (
-                            <div key={entry.event.id} className="sticky top-0 z-20 -mx-1 rounded-xl bg-ops-bg/95 px-1 py-1 backdrop-blur-md">
-                              {planCard}
-                            </div>
-                          )
-                        }
-
-                        return <div key={entry.event.id}>{planCard}</div>
+                        return <div key={entry.event.id} className="max-w-[560px]"><PlanSummaryCard event={entry.event} onSave={onSavePlan} onApprove={onApprovePlan} /></div>
                       }
                       
                       return (
