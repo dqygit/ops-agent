@@ -1,5 +1,5 @@
 import type { RunMode } from '../../types/api'
-import type { Asset } from '../../types/ops'
+import type { Asset, ConversationContextStatus } from '../../types/ops'
 import { ModelSelector } from './ModelSelector'
 
 type PromptInputProps = {
@@ -8,6 +8,7 @@ type PromptInputProps = {
   selectedModel: string
   runMode: RunMode
   selectedAsset: Asset
+  contextStatus: ConversationContextStatus | null
   onPromptChange: (prompt: string) => void
   onModelChange: (model: string) => void
   onRunModeChange: (mode: RunMode) => void
@@ -24,12 +25,28 @@ const MODE_LABEL: Record<RunMode, string> = {
   plan: 'Plan',
 }
 
+function contextStatusColor(status: ConversationContextStatus | null) {
+  if (!status) return 'rgba(148,163,184,0.55)'
+  if (status.contextStatus === 'critical') return '#ef4444'
+  if (status.contextStatus === 'warning') return '#f59e0b'
+  return '#06b6d4'
+}
+
+function contextPercent(status: ConversationContextStatus | null) {
+  return Math.max(0, Math.min(100, status?.contextPercent ?? 0))
+}
+
+function contextLabel(status: ConversationContextStatus | null) {
+  return status ? `上下文 ${contextPercent(status)}%` : '上下文 --%'
+}
+
 export function PromptInput({
   prompt,
   models,
   selectedModel,
   runMode,
   selectedAsset,
+  contextStatus,
   onPromptChange,
   onModelChange,
   onRunModeChange,
@@ -56,8 +73,8 @@ export function PromptInput({
     <div className="relative mx-6 mb-4 mt-2 shrink-0 rounded-[28px] border border-ops-cyan/10 bg-ops-deep/80 p-[1px] shadow-[0_24px_70px_rgba(0,0,0,0.45)] backdrop-blur-xl transition-all duration-300 before:pointer-events-none before:absolute before:inset-x-8 before:bottom-[-1px] before:h-px before:bg-gradient-to-r before:from-transparent before:via-ops-cyan/60 before:to-transparent focus-within:border-ops-cyan/40 focus-within:shadow-[0_28px_80px_rgba(0,0,0,0.55),0_0_36px_rgba(6,182,212,0.14)]">
       <div className="relative overflow-hidden rounded-[27px] border border-white/[0.04] bg-[radial-gradient(circle_at_18%_0%,rgba(6,182,212,0.14),transparent_34%),linear-gradient(180deg,rgba(21,27,40,0.92),rgba(5,8,15,0.96))]">
         <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(90deg,rgba(255,255,255,0.025)_1px,transparent_1px),linear-gradient(180deg,rgba(255,255,255,0.018)_1px,transparent_1px)] bg-[size:28px_28px] opacity-40" />
-        <div className="relative flex items-center justify-between gap-3 border-b border-white/[0.04] px-4 py-3">
-          <div className="flex min-w-0 items-center gap-2" aria-label="Context">
+        <div className="relative flex items-center gap-3 border-b border-white/[0.04] px-4 py-3">
+          <div className="flex min-w-0 flex-1 items-center gap-2" aria-label="Context">
             <span className="relative flex h-2.5 w-2.5 shrink-0">
               <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-ops-cyan opacity-30" />
               <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-ops-cyan shadow-glow" />
@@ -65,17 +82,31 @@ export function PromptInput({
             <span className="truncate text-[11px] font-black uppercase tracking-[0.18em] text-ops-cyan/90">
               {selectedAsset.name}
             </span>
-            <span className="hidden truncate rounded-full border border-ops-border/30 bg-ops-deep/70 px-2.5 py-1 font-mono text-[10px] text-ops-muted/70 sm:inline">
+            <span className="hidden truncate rounded-full border border-ops-border/30 bg-ops-deep/70 px-2.5 py-1 font-mono text-[10px] text-ops-muted/70 md:inline">
               {selectedAsset.host || 'local'}
             </span>
           </div>
-          <div className="hidden items-center gap-1.5 rounded-full border border-ops-border/20 bg-ops-deep/60 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.14em] text-ops-muted/55 sm:flex">
+          <div className="hidden items-center gap-1.5 rounded-full border border-ops-border/20 bg-ops-deep/60 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.14em] text-ops-muted/55 xl:flex">
             <span className="text-ops-cyan/70">Enter</span>
             <span>send</span>
             <span className="mx-1 h-1 w-1 rounded-full bg-ops-border/60" />
             <span className="text-ops-cyan/70">Shift Enter</span>
             <span>line</span>
           </div>
+          <span
+            className="ml-auto inline-flex shrink-0 items-center gap-1.5 rounded-full border border-ops-border/25 bg-ops-deep/65 px-2 py-1 font-mono text-[10px] text-ops-muted/75"
+            title={contextLabel(contextStatus)}
+            aria-label={contextLabel(contextStatus)}
+          >
+            <span
+              aria-hidden="true"
+              className="h-3.5 w-3.5 rounded-full"
+              style={{
+                background: `conic-gradient(${contextStatusColor(contextStatus)} ${contextPercent(contextStatus)}%, rgba(148,163,184,0.22) 0)`,
+              }}
+            />
+            <span>{contextLabel(contextStatus)}</span>
+          </span>
         </div>
 
         <label className="sr-only" htmlFor="prompt-input">

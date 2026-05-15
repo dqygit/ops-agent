@@ -44,6 +44,8 @@ export function App() {
     setEvents,
     runtimeSummaries,
     activeRuntimeSnapshot,
+    contextStatus,
+    setContextStatus,
     loadConversation,
     syncConversationRuntimes,
     refreshConversationList,
@@ -110,6 +112,7 @@ export function App() {
     selectedModel,
     runMode,
     setLoadError,
+    setContextStatus,
   })
 
   const terminalOutput = activeTerminalTab?.output ?? ''
@@ -253,6 +256,7 @@ export function App() {
                 prompt={prompt}
                 runMode={runMode}
                 selectedAsset={selectedAsset}
+                contextStatus={contextStatus}
                 loadError={loadError}
                 onModelChange={setSelectedModel}
                 onRunModeChange={setRunMode}

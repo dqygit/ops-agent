@@ -227,6 +227,20 @@ export type RuntimeEventEnvelope = {
   [key: string]: unknown
 }
 
+export type ConversationContextStatus = {
+  contextPercent: number
+  contextStatus: 'normal' | 'warning' | 'critical'
+}
+
+export type ContextStatusEvent = ConversationContextStatus & {
+  id: string
+  kind: 'context_status'
+  compactionApplied?: boolean
+  fitStatus?: 'fits' | 'compacted_to_fit' | 'overflow'
+  summaryRevision?: string | null
+  sourceConversationRevision?: string
+}
+
 export type TerminalStatusEvent = {
   id: string
   kind: 'terminal_status'
@@ -265,6 +279,7 @@ export type EventItem =
   | ExecutionStartedEvent
   | ExecutionOutputEvent
   | ExecutionCompletedEvent
+  | ContextStatusEvent
   | TerminalStatusEvent
   | AgentMessage
   | { id: string; kind: 'message_update'; payload: AgentMessage } // For raw event wrapper if needed

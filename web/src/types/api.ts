@@ -26,6 +26,11 @@ export type ConversationCreateResponseDto = {
   events: EventItem[]
 }
 
+export type ConversationContextStatusDto = {
+  context_percent: number
+  context_status: 'normal' | 'warning' | 'critical'
+}
+
 export type ConsoleBootstrap = {
   assets: Asset[]
   groups: AssetGroup[]

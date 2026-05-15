@@ -425,6 +425,11 @@ class ConversationCreateResponse(BaseModel):
     events: list[dict] = Field(default_factory=list)
 
 
+class ConversationContextStatusView(BaseModel):
+    context_percent: int
+    context_status: Literal["normal", "warning", "critical"]
+
+
 class ConversationAppendEventsRequest(BaseModel):
     events: list[dict] = Field(default_factory=list)
 

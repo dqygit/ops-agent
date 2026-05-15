@@ -5,10 +5,12 @@ import json
 import logging
 from datetime import UTC, datetime
 from pathlib import Path
+import re
 from tempfile import NamedTemporaryFile
 from uuid import uuid4
 
 logger = logging.getLogger(__name__)
+CONVERSATION_ID_PATTERN = re.compile(r"^conv_[A-Za-z0-9]+$")
 
 
 @dataclass
@@ -38,6 +40,10 @@ class ConversationService:
     def __init__(self, base_dir: Path, model_service=None):
         self._base_dir = Path(base_dir)
         self._model_service = model_service
+
+    @property
+    def base_dir(self) -> Path:
+        return self._base_dir
 
     def create_conversation(self, selected_model: str | None) -> ConversationSummary:
         conversation_id = f"conv_{uuid4().hex}"
@@ -170,6 +176,7 @@ class ConversationService:
         try:
             title = generator(prompt, model_name=model_name)
         except Exception:
+            logger.exception("Failed to generate conversation title model_name=%s", model_name)
             return None
         if not isinstance(title, str):
             return None
@@ -194,6 +201,8 @@ class ConversationService:
         return self._base_dir / "index.json"
 
     def _detail_path(self, conversation_id: str) -> Path:
+        if not CONVERSATION_ID_PATTERN.fullmatch(conversation_id):
+            raise FileNotFoundError(conversation_id)
         return self._base_dir / f"{conversation_id}.json"
 
     def _write_detail(self, detail: ConversationDetail) -> None:

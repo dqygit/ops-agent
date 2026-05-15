@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { PanelCard } from '../layout/PanelCard'
 import type { RunMode } from '../../types/api'
-import type { Asset, ConversationSummary, EventItem, PlanStep, RuntimeSnapshot, RuntimeSummary } from '../../types/ops'
+import type { Asset, ConversationContextStatus, ConversationSummary, EventItem, PlanStep, RuntimeSnapshot, RuntimeSummary } from '../../types/ops'
 import { ConversationView } from './ConversationView'
 import { PromptInput } from './PromptInput'
 
@@ -18,6 +18,7 @@ type AssistantPanelProps = {
   runMode: RunMode
   prompt: string
   selectedAsset: Asset
+  contextStatus: ConversationContextStatus | null
   loadError: string | null
   onModelChange: (model: string) => void
   onRunModeChange: (mode: RunMode) => void
@@ -64,6 +65,7 @@ export function AssistantPanel({
   runMode,
   prompt,
   selectedAsset,
+  contextStatus,
   loadError,
   onModelChange,
   onRunModeChange,
@@ -126,6 +128,7 @@ export function AssistantPanel({
             selectedModel={selectedModel}
             runMode={runMode}
             selectedAsset={selectedAsset}
+            contextStatus={contextStatus}
             onPromptChange={onPromptChange}
             onModelChange={onModelChange}
             onRunModeChange={onRunModeChange}

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react'
 import { appendConversationEvents, streamApproveAgent, streamApproveRuntimePlan, streamRunAgent, updateRuntimePlan } from '../../api'
 import type { RunMode } from '../../types/api'
-import type { AgentMessage, Asset, EventItem, PlanStep, RuntimeSummary } from '../../types/ops'
+import type { AgentMessage, Asset, ConversationContextStatus, EventItem, PlanStep, RuntimeSummary } from '../../types/ops'
 import { flushDeltaBuffer, LOCAL_TERMINAL_ASSET_ID, mergeDeltaEvent, mergePersistedEventsWithTransient, PENDING_ASSISTANT_MESSAGE_ID, upsertMessageEvent, upsertStreamEvent } from './consoleShared'
 
 interface UseAgentRunProps {
@@ -34,6 +34,7 @@ interface UseAgentRunProps {
   selectedModel: string
   runMode: RunMode
   setLoadError: (error: string | null) => void
+  setContextStatus: (status: ConversationContextStatus | null) => void
 }
 
 function shouldSyncRuntimeForEvent(event: EventItem) {
@@ -105,6 +106,7 @@ export function useAgentRun({
   selectedModel,
   runMode,
   setLoadError,
+  setContextStatus,
 }: UseAgentRunProps) {
   const [pendingApprovalRuntimeId, setPendingApprovalRuntimeId] = useState<string | null>(null)
   const [pendingApprovalToken, setPendingApprovalToken] = useState<string | null>(null)
@@ -203,6 +205,14 @@ export function useAgentRun({
           continue
         }
 
+        if (event.kind === 'context_status') {
+          setContextStatus({
+            contextPercent: event.contextPercent,
+            contextStatus: event.contextStatus,
+          })
+          continue
+        }
+
         // Immediately update UI with transient event, don't block SSE stream
         if (activeConversationIdRef.current === conversationId) {
           setEvents((currentEvents: EventItem[]) => upsertStreamEvent(currentEvents, event))
@@ -276,6 +286,7 @@ export function useAgentRun({
     selectedModel,
     runMode,
     setLoadError,
+    setContextStatus,
     upsertConversationSummary,
     setEvents,
     applyConversationDetailIfActive,

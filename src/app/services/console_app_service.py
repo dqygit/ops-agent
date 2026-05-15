@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Iterator
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 
 from sqlmodel import Session
 
@@ -13,6 +13,7 @@ from app.core.tool.execute_command import ExecuteCommandHandler
 from app.db.repositories.assets import get_asset
 from app.db.repositories.models import get_default_model_config
 from app.services.approval_service import get_approval_service
+from app.services.context_manager import ContextManager, JsonObject
 from app.services.model_service import ModelService
 from app.services.terminal_service import TerminalService
 
@@ -115,8 +116,8 @@ class ConsoleAppService:
         shell_type = self._resolve_shell_type(terminal_service, terminal_id)
         os_type = self._infer_os_type(shell_type)
 
-        # Load conversation history for multi-turn context (Roo Code style)
-        conversation_history = self._build_conversation_history(conversation_id)
+        context_result = self._prepare_conversation_context(conversation_id, model_config)
+        conversation_history = context_result.prepared_messages
 
         runtime_id = new_runtime_id()
         context = LoopContext(
@@ -139,6 +140,18 @@ class ConsoleAppService:
             terminal_id=terminal_id,
             context=context,
         )
+
+        yield {
+            "id": f"evt-context-{runtime_id}",
+            "kind": "context_status",
+            "runtimeId": runtime_id,
+            "contextPercent": context_result.context_percent,
+            "contextStatus": context_result.context_status,
+            "compactionApplied": context_result.compaction_applied,
+            "fitStatus": context_result.fit_status,
+            "summaryRevision": context_result.summary_revision,
+            "sourceConversationRevision": context_result.source_conversation_revision,
+        }
 
         try:
             events = self.runtime_manager.run(runtime_id=runtime_id, terminal_service=terminal_service)
@@ -262,120 +275,31 @@ class ConsoleAppService:
             return "Darwin/Linux"
         return "unknown"
 
-    def _build_conversation_history(self, conversation_id: str) -> list:
-        """Load persisted conversation events and convert to LLMMessage list.
-
-        Follows the Roo Code pattern: each previous turn's user message and
-        assistant response are included so the LLM has full multi-turn context.
-        Tool calls/results from prior turns are condensed into a single
-        assistant message summarizing what was done.
-        """
-        from app.core.llm.types import LLMMessage
-
+    def _prepare_conversation_context(self, conversation_id: str, model_config):
+        context_manager = self._context_manager()
         if not conversation_id or conversation_id == "console":
-            return []
+            return context_manager.prepare_context(conversation_id or "console", [], model_config)
 
+        from app.api.conversations import get_conversation_service
+        service = get_conversation_service()
         try:
-            from app.api.conversations import get_conversation_service
-            service = get_conversation_service()
             detail = service.get_conversation(conversation_id)
-        except (FileNotFoundError, Exception):
-            return []
+        except FileNotFoundError:
+            logger.warning("Conversation not found while preparing context conversation_id=%s", conversation_id)
+            return context_manager.prepare_context(conversation_id, [], model_config)
 
-        events = detail.events or []
-        if not events:
-            return []
+        events = cast(list[JsonObject], detail.events or [])
+        result = context_manager.prepare_context(conversation_id, events, model_config)
+        logger.info(
+            "Prepared conversation context: %d messages from %d events, %d%%, fit=%s",
+            len(result.prepared_messages),
+            len(events),
+            result.context_percent,
+            result.fit_status,
+        )
+        return result
 
-        messages: list[LLMMessage] = []
-
-        for event in events:
-            kind = event.get("kind", "")
-            event_type = event.get("type", "")
-
-            # User messages
-            if kind == "user":
-                text = event.get("text", "").strip()
-                if text:
-                    messages.append(LLMMessage(role="user", content=text))
-                continue
-
-            # AgentMessage snapshots (from the new protocol)
-            if kind == "message" and event_type == "say":
-                say_type = event.get("say", "")
-                partial = event.get("partial", False)
-                if partial:
-                    continue  # Skip intermediate streaming snapshots
-
-                if say_type == "text":
-                    text = event.get("text", "").strip()
-                    if text:
-                        messages.append(LLMMessage(role="assistant", content=text))
-                elif say_type == "tool_use":
-                    # Summarize tool execution as assistant context
-                    tool_call = event.get("toolCall") or event.get("tool_call") or {}
-                    tool_output = event.get("toolOutput") or event.get("tool_output") or ""
-                    exit_code = event.get("exitCode") if event.get("exitCode") is not None else event.get("exit_code")
-                    command = tool_call.get("command", "") or tool_call.get("name", "")
-                    summary_parts = []
-                    if command:
-                        summary_parts.append(f"[Executed: {command}]")
-                    if tool_output:
-                        # Truncate long output to avoid token bloat
-                        truncated = tool_output[:2000] + ("..." if len(tool_output) > 2000 else "")
-                        summary_parts.append(f"Output:\n{truncated}")
-                    if exit_code is not None:
-                        summary_parts.append(f"Exit code: {exit_code}")
-                    if summary_parts:
-                        messages.append(LLMMessage(role="assistant", content="\n".join(summary_parts)))
-                elif say_type == "error":
-                    text = event.get("text", "").strip()
-                    if text:
-                        messages.append(LLMMessage(role="assistant", content=f"[Error: {text}]"))
-                continue
-
-            if kind == "plan":
-                title = event.get("title", "Task Plan").strip() or "Task Plan"
-                steps = event.get("steps") or []
-                if isinstance(steps, list) and steps:
-                    step_lines = []
-                    for index, step in enumerate(steps, start=1):
-                        if not isinstance(step, dict):
-                            continue
-                        step_title = str(step.get("title") or f"Step {index}").strip()
-                        command = str(step.get("command") or "").strip()
-                        reason = str(step.get("summary") or step.get("reason") or "").strip()
-                        line = f"{index}. {step_title}"
-                        if command:
-                            line += f" | Command: {command}"
-                        if reason:
-                            line += f" | Reason: {reason}"
-                        step_lines.append(line)
-                    if step_lines:
-                        messages.append(LLMMessage(role="assistant", content=f"{title}\n" + "\n".join(step_lines)))
-                continue
-
-            # Legacy 'final' events (from older protocol)
-            if kind == "final":
-                text = event.get("text", "").strip()
-                if text:
-                    messages.append(LLMMessage(role="assistant", content=text))
-                continue
-
-            # Legacy 'delta' events — only if they have accumulated text
-            if kind == "delta":
-                text = event.get("text", "").strip()
-                if text:
-                    messages.append(LLMMessage(role="assistant", content=text))
-                continue
-
-        # Deduplicate consecutive messages with same role (merge if needed)
-        if not messages:
-            return []
-
-        # Remove the last user message — it's the current prompt, already handled by agent_loop
-        # The current user event was just persisted by console.py before stream_run
-        if messages and messages[-1].role == "user":
-            messages = messages[:-1]
-
-        logger.info("Built conversation history: %d messages from %d events", len(messages), len(events))
-        return messages
+    def _context_manager(self) -> ContextManager:
+        from app.api.conversations import get_conversation_service
+        service = get_conversation_service()
+        return ContextManager(service.base_dir / "context")

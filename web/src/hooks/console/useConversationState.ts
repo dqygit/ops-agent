@@ -4,11 +4,12 @@ import {
   createConversation as createConversationApi,
   deleteConversation as deleteConversationApi,
   getConversation,
+  getConversationContext,
   getConversations,
   getRuntimeSnapshot,
   listConversationRuntimes,
 } from '../../api'
-import type { ConversationSummary, EventItem, RuntimeSnapshot, RuntimeSummary } from '../../types/ops'
+import type { ConversationContextStatus, ConversationSummary, EventItem, RuntimeSnapshot, RuntimeSummary } from '../../types/ops'
 import { normalizePlanEvents, upsertConversationSummaryFromDetail } from './consoleShared'
 
 export function useConversationState(selectedModel: string) {
@@ -19,23 +20,45 @@ export function useConversationState(selectedModel: string) {
   const [runtimeSummaries, setRuntimeSummaries] = useState<RuntimeSummary[]>([])
   const [activeRuntimeId, setActiveRuntimeId] = useState<string | null>(null)
   const [activeRuntimeSnapshot, setActiveRuntimeSnapshot] = useState<RuntimeSnapshot | null>(null)
-  
+  const [contextStatus, setContextStatus] = useState<ConversationContextStatus | null>(null)
+
   const activeConversationIdRef = useRef<string | null>(null)
+  const loadConversationRequestRef = useRef(0)
 
   useEffect(() => {
     activeConversationIdRef.current = activeConversationId
   }, [activeConversationId])
 
   const loadConversation = useCallback(async (conversationId: string) => {
+    const requestId = loadConversationRequestRef.current + 1
+    loadConversationRequestRef.current = requestId
+    activeConversationIdRef.current = conversationId
+    setContextStatus(null)
+
     const detail = await getConversation(conversationId)
+    if (loadConversationRequestRef.current !== requestId) {
+      return detail
+    }
     setActiveConversationId(detail.id)
     setActiveConversationTitle(detail.title)
     setEvents(normalizePlanEvents(detail.events))
-    const runtimes = await listConversationRuntimes(conversationId)
+
+    const [runtimes, nextContextStatus] = await Promise.all([
+      listConversationRuntimes(conversationId),
+      getConversationContext(conversationId),
+    ])
+    if (loadConversationRequestRef.current !== requestId) {
+      return detail
+    }
+    setContextStatus(nextContextStatus)
     setRuntimeSummaries(runtimes)
     const nextRuntimeId = runtimes[0]?.runtimeId ?? null
     setActiveRuntimeId(nextRuntimeId)
-    setActiveRuntimeSnapshot(nextRuntimeId ? await getRuntimeSnapshot(nextRuntimeId) : null)
+    const nextRuntimeSnapshot = nextRuntimeId ? await getRuntimeSnapshot(nextRuntimeId) : null
+    if (loadConversationRequestRef.current !== requestId) {
+      return detail
+    }
+    setActiveRuntimeSnapshot(nextRuntimeSnapshot)
     return detail
   }, [])
 
@@ -80,6 +103,7 @@ export function useConversationState(selectedModel: string) {
     setRuntimeSummaries([])
     setActiveRuntimeId(null)
     setActiveRuntimeSnapshot(null)
+    setContextStatus(null)
     return created.conversation.id
   }, [selectedModel])
 
@@ -136,6 +160,8 @@ export function useConversationState(selectedModel: string) {
     runtimeSummaries,
     activeRuntimeId,
     activeRuntimeSnapshot,
+    contextStatus,
+    setContextStatus,
     loadConversation,
     syncConversationRuntimes,
     refreshConversationList,

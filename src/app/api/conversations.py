@@ -1,15 +1,18 @@
 import os
 from pathlib import Path
+from typing import cast
 
 from fastapi import APIRouter, HTTPException, Response, status
 
 from app.api.schemas import (
     ConversationAppendEventsRequest,
+    ConversationContextStatusView,
     ConversationCreateRequest,
     ConversationCreateResponse,
     ConversationDetailView,
     ConversationSummaryView,
 )
+from app.services.context_manager import ContextManager, JsonObject
 from app.services.conversation_service import ConversationService
 from app.services.model_service import ModelService
 
@@ -56,6 +59,31 @@ def append_conversation_events(conversation_id: str, payload: ConversationAppend
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Conversation not found") from exc
     return ConversationDetailView.model_validate(detail.__dict__)
+
+
+@router.get("/api/conversations/{conversation_id}/context", response_model=ConversationContextStatusView)
+def get_conversation_context(conversation_id: str) -> ConversationContextStatusView:
+    service = get_conversation_service()
+    try:
+        detail = service.get_conversation(conversation_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Conversation not found") from exc
+
+    context_manager = ContextManager(service.base_dir / "context")
+    events = cast(list[JsonObject], detail.events or [])
+    metadata = context_manager.read_metadata(conversation_id)
+    source_revision = context_manager.source_revision(events)
+    if metadata is None or metadata.source_conversation_revision != source_revision:
+        model_config = ModelService().load_settings()
+        result = context_manager.prepare_context(conversation_id, events, model_config)
+        return ConversationContextStatusView(
+            context_percent=result.context_percent,
+            context_status=result.context_status,
+        )
+    return ConversationContextStatusView(
+        context_percent=metadata.context_percent,
+        context_status=metadata.context_status,
+    )
 
 
 @router.delete("/api/conversations/{conversation_id}", status_code=status.HTTP_204_NO_CONTENT, response_class=Response)

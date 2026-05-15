@@ -1,6 +1,6 @@
 import { requestJson, requestVoid } from './client'
-import type { ConversationCreateResponseDto, ConversationDetailDto, ConversationSummaryDto } from '../types/api'
-import type { ConversationDetail, ConversationSummary, EventItem } from '../types/ops'
+import type { ConversationContextStatusDto, ConversationCreateResponseDto, ConversationDetailDto, ConversationSummaryDto } from '../types/api'
+import type { ConversationContextStatus, ConversationDetail, ConversationSummary, EventItem } from '../types/ops'
 
 export function mapConversationSummary(dto: ConversationSummaryDto): ConversationSummary {
   return {
@@ -25,6 +25,13 @@ export function mapConversationDetail(dto: ConversationDetailDto): ConversationD
   }
 }
 
+export function mapConversationContextStatus(dto: ConversationContextStatusDto): ConversationContextStatus {
+  return {
+    contextPercent: dto.context_percent,
+    contextStatus: dto.context_status,
+  }
+}
+
 export async function getConversations(): Promise<ConversationSummary[]> {
   const conversations = await requestJson<ConversationSummaryDto[]>('/api/conversations')
   return conversations.map(mapConversationSummary)
@@ -44,6 +51,11 @@ export async function createConversation(selectedModel: string | null): Promise<
 export async function getConversation(conversationId: string): Promise<ConversationDetail> {
   const conversation = await requestJson<ConversationDetailDto>(`/api/conversations/${conversationId}`)
   return mapConversationDetail(conversation)
+}
+
+export async function getConversationContext(conversationId: string): Promise<ConversationContextStatus> {
+  const status = await requestJson<ConversationContextStatusDto>(`/api/conversations/${conversationId}/context`)
+  return mapConversationContextStatus(status)
 }
 
 export async function appendConversationEvents(conversationId: string, events: EventItem[]): Promise<ConversationDetail> {
