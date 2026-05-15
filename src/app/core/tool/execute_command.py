@@ -13,6 +13,8 @@ from app.core.loop.loop_events import (
 from app.core.loop.loop_state import LoopState
 from app.core.loop.message_manager import MessageManager
 from app.core.tool.schema import LLMToolDefinition
+from app.core.approval import ApprovalContext
+from app.core.connectors.execution import ExecutionContext
 from app.services.approval_service import get_approval_service
 
 
@@ -46,7 +48,13 @@ class ExecuteCommandHandler:
 
     def needs_approval(self, args: dict[str, Any]) -> tuple[str, str]:
         command = str(args.get("command", "")).strip()
-        action, reason = get_approval_service().check_command(command)
+        context = ApprovalContext(
+            asset_type=str(args.get("asset_type", "") or ""),
+            shell_type=str(args.get("shell_type", "") or ""),
+            profile=str(args.get("execution_profile", "posix-shell") or "posix-shell"),
+            vendor=str(args.get("device_vendor", "") or "") or None,
+        )
+        action, reason = get_approval_service().check_command(command, context)
         return action, reason
 
     def execute(self, *, state: LoopState, step_id: str, args: dict[str, Any], manager: MessageManager | None = None) -> Iterator[LoopEvent]:
@@ -80,7 +88,7 @@ class ExecuteCommandHandler:
             command = str(args.get("command", "")).strip()
             execution_id = session_manager.start_execution(
                 command,
-                type("ExecutionContext", (), {"working_directory": step.working_directory})(),
+                ExecutionContext(working_directory=step.working_directory),
             )
             execution = session_manager.get_execution_result(execution_id)
             
@@ -91,7 +99,7 @@ class ExecuteCommandHandler:
             if execution.output and manager:
                 yield from manager.update(tool_output=execution.output)
 
-            success = execution.completed and execution.exit_code in {None, 0}
+            success = execution.success and not execution.needs_attention
             return success, execution.output
         except Exception as exc:
             logger.exception("命令执行异常 runtime_id=%s, command_id=%s", ctx.runtime_id, step.step_id)

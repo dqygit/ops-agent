@@ -9,7 +9,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from app.core.approval import ApprovalChecker, ApprovalPermissions, ApprovalPolicy, create_default_policy
+from app.core.approval import ApprovalChecker, ApprovalContext, ApprovalPermissions, ApprovalPolicy, create_default_policy
 from app.shared.config import SETTINGS_PATH
 
 
@@ -76,9 +76,9 @@ class ApprovalService:
         with open(self._config_path, "w", encoding="utf-8") as f:
             json.dump(existing_data, f, ensure_ascii=False, indent=2)
 
-    def check_command(self, command: str) -> tuple[str, str]:
+    def check_command(self, command: str, context: ApprovalContext | None = None) -> tuple[str, str]:
         """检查命令是否需要审批。"""
-        return self._checker.check_command(command)
+        return self._checker.check_command(command, context)
 
     def add_allow_prefix(self, prefix: str) -> bool:
         """添加允许执行的命令前缀。"""

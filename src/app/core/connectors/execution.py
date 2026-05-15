@@ -38,6 +38,10 @@ class ExecutionEvent:
     completion_reason: CompletionReason | None = None
     mode: str | None = None
     pager_detected: bool = False
+    profile: str = "posix-shell"
+    prompt_before: str | None = None
+    prompt_after: str | None = None
+    matched_error: str | None = None
 
 
 @dataclass(slots=True)
@@ -51,3 +55,7 @@ class ExecutionResult:
     completion_reason: CompletionReason | None = None
     mode: str | None = None
     pager_detected: bool = False
+    profile: str = "posix-shell"
+    prompt_before: str | None = None
+    prompt_after: str | None = None
+    matched_error: str | None = None

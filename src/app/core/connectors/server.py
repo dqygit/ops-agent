@@ -199,6 +199,7 @@ def connector_factory(asset):
 
         device_params = {
             "device_type": device_type,
+            "asset_type": asset_type,
             "host": getattr(asset, "host"),
             "port": getattr(asset, "port"),
             "username": getattr(asset, "username"),

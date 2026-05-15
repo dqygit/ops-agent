@@ -218,7 +218,7 @@ class AgentLoop:
                     content=(
                         "You are an operations assistant. Summarize the completed plan for the user. "
                         "Be concise, mention what was done, important results, and any recommended next action. "
-                        "Always respond in English."
+                        "Respond in Chinese unless the user explicitly requests another language."
                     ),
                 ),
                 LLMMessage(
@@ -272,6 +272,8 @@ class AgentLoop:
                         f"操作系统类型: {ctx.os_type}\n"
                         f"当前主机信息: {ctx.asset_summary}\n"
                         f"Shell: {ctx.shell_type}\n"
+                        f"执行 Profile: {ctx.execution_profile}\n"
+                        f"{'设备执行规则:\n' + ctx.device_context + '\n' if ctx.device_context else ''}"
                         f"用户任务: {ctx.user_prompt}"
                     ),
                 ),
@@ -468,6 +470,12 @@ class AgentLoop:
                 else:
                     step = plan_step
                     step.working_directory = str(working_directory) if working_directory else None
+
+                args.setdefault("asset_type", state.context.asset_type)
+                args["shell_type"] = state.context.shell_type
+                args["execution_profile"] = state.context.execution_profile
+                if state.context.device_vendor:
+                    args["device_vendor"] = state.context.device_vendor
 
                 action, reason = handler.needs_approval(args)
                 if action == "deny":

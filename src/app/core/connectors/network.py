@@ -1,17 +1,31 @@
+from collections.abc import Iterable
 from io import StringIO
 from typing import Any, cast
 
 from netmiko import ConnectHandler
 
+from app.core.connectors.device_profiles import (
+    NETWORK_CLI_PROFILE,
+    GENERIC_DEVICE_PROFILE,
+    matches_command_prefix,
+    select_device_profile,
+)
+from app.core.connectors.execution import ExecutionContext, ExecutionEvent, ExecutionResult
+from app.core.connectors.network_cli import analyze_transcript, strip_pager_markers
+
 
 class NetworkConnector:
     def __init__(self, device_params: dict[str, Any], ssh_params: dict[str, Any] | None = None):
-        self.device_params = {"conn_timeout": 15, **device_params}
+        self.asset_type = str(device_params.get("asset_type", "") or "")
+        netmiko_params = {key: value for key, value in device_params.items() if key != "asset_type"}
+        self.device_params = {"conn_timeout": 15, **netmiko_params}
         self.ssh_params = ssh_params or self._build_ssh_params(device_params)
         self.shell_kind = "network"
         self.connection: Any | None = None
         self.ssh_client: Any | None = None
         self.channel: Any | None = None
+        self._execution_events: dict[str, list[ExecutionEvent]] = {}
+        self._execution_results: dict[str, ExecutionResult] = {}
 
     def connect(self) -> None:
         self.connection = ConnectHandler(**self.device_params)
@@ -22,6 +36,84 @@ class NetworkConnector:
         connection = self.connection
         assert connection is not None
         return cast(str, connection.send_command(command))
+
+    def start_execution(self, command: str, context: ExecutionContext, execution_id: str) -> None:
+        profile = select_device_profile(self._resolve_asset_type(), self.shell_kind) or GENERIC_DEVICE_PROFILE
+        prompt_before = self._safe_find_prompt()
+        normalized_command = command.strip().lower()
+        is_read_only = any(matches_command_prefix(prefix, normalized_command) for prefix in profile.read_prefixes)
+        transcript = self._send_command(command, profile, auto_advance_pager=is_read_only)
+        analysis = analyze_transcript(transcript, profile)
+
+        if analysis.pager_detected and is_read_only:
+            transcript = strip_pager_markers(transcript, profile)
+            analysis = analyze_transcript(transcript, profile)
+
+        needs_attention = analysis.confirm_detected or (analysis.pager_detected and not is_read_only)
+        completed = analysis.prompt is not None and not analysis.confirm_detected
+        success = completed and analysis.matched_error is None and not needs_attention
+        completion_reason = "prompt_detected"
+        if analysis.pager_detected:
+            completion_reason = "pager_end"
+        if needs_attention:
+            completion_reason = "timeout" if analysis.prompt is None else "prompt_detected"
+        if analysis.matched_error is not None:
+            success = False
+            needs_attention = True
+
+        result = ExecutionResult(
+            execution_id=execution_id,
+            output=transcript,
+            completed=completed,
+            success=success,
+            needs_attention=needs_attention or analysis.prompt is None,
+            exit_code=None,
+            completion_reason=completion_reason,
+            mode=analysis.mode,
+            pager_detected=analysis.pager_detected,
+            profile=NETWORK_CLI_PROFILE,
+            prompt_before=prompt_before,
+            prompt_after=analysis.prompt,
+            matched_error=analysis.matched_error,
+        )
+        self._execution_results[execution_id] = result
+        self._execution_events[execution_id] = [
+            ExecutionEvent(execution_id=execution_id, event_type="started", profile=NETWORK_CLI_PROFILE, prompt_before=prompt_before),
+            ExecutionEvent(execution_id=execution_id, event_type="output", text=transcript, profile=NETWORK_CLI_PROFILE),
+            ExecutionEvent(
+                execution_id=execution_id,
+                event_type="completed",
+                text=transcript,
+                completed=result.completed,
+                success=result.success,
+                needs_attention=result.needs_attention,
+                exit_code=result.exit_code,
+                completion_reason=result.completion_reason,
+                mode=result.mode,
+                pager_detected=result.pager_detected,
+                profile=result.profile,
+                prompt_before=result.prompt_before,
+                prompt_after=result.prompt_after,
+                matched_error=result.matched_error,
+            ),
+        ]
+
+    def read_execution_events(self, execution_id: str) -> Iterable[ExecutionEvent]:
+        return list(self._execution_events.get(execution_id, []))
+
+    def get_execution_result(self, execution_id: str) -> ExecutionResult:
+        result = self._execution_results.get(execution_id)
+        if result is None:
+            return ExecutionResult(
+                execution_id=execution_id,
+                output="",
+                completed=False,
+                success=False,
+                needs_attention=True,
+                completion_reason="unsupported",
+                profile=NETWORK_CLI_PROFILE,
+            )
+        return result
 
     def open_interactive(self) -> object:
         if self.channel is None:
@@ -57,6 +149,8 @@ class NetworkConnector:
         if self.connection is not None:
             self.connection.disconnect()
             self.connection = None
+        self._execution_events.clear()
+        self._execution_results.clear()
 
     def _connect_ssh(self) -> None:
         import paramiko
@@ -112,3 +206,57 @@ class NetworkConnector:
             "username": device_params.get("username"),
             "password": device_params.get("password"),
         }
+
+    def _send_command(self, command: str, profile, *, auto_advance_pager: bool = False) -> str:
+        if self.connection is None:
+            self.connect()
+        connection = self.connection
+        assert connection is not None
+        read_timeout = cast(float, self.device_params.get("read_timeout", 30))
+        transcript = cast(
+            str,
+            connection.send_command_timing(
+                command,
+                strip_prompt=False,
+                strip_command=False,
+                cmd_verify=False,
+                read_timeout=read_timeout,
+            ),
+        )
+        if not auto_advance_pager:
+            return transcript
+
+        latest_chunk = transcript
+        for _ in range(int(self.device_params.get("max_pager_advances", 100))):
+            analysis = analyze_transcript(latest_chunk, profile)
+            if not analysis.pager_detected or analysis.confirm_detected:
+                break
+            connection.write_channel(" ")
+            latest_chunk = cast(
+                str,
+                connection.read_channel_timing(read_timeout=read_timeout),
+            )
+            transcript += latest_chunk
+        return transcript
+
+    def _safe_find_prompt(self) -> str | None:
+        if self.connection is None:
+            self.connect()
+        connection = self.connection
+        assert connection is not None
+        try:
+            return cast(str, connection.find_prompt())
+        except Exception:
+            return None
+
+    def _resolve_asset_type(self) -> str:
+        if self.asset_type:
+            return self.asset_type
+        device_type = str(self.device_params.get("device_type", "") or "").lower()
+        if "cisco" in device_type:
+            return "cisco"
+        if "juniper" in device_type:
+            return "juniper"
+        if "huawei" in device_type:
+            return "huawei"
+        return "network"

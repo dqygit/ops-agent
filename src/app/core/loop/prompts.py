@@ -4,14 +4,16 @@ from app.core.loop.loop_state import LoopContext, LoopRuntimeStep
 
 
 def build_plan_step_system_prompt(ctx: LoopContext) -> str:
+    device_context = f"\n\n设备执行规则:\n{ctx.device_context}" if ctx.device_context else ""
     return (
         f"操作系统类型: {ctx.os_type}\n"
         f"当前主机信息: {ctx.asset_summary}\n"
-        f"Shell: {ctx.shell_type}\n\n"
+        f"Shell: {ctx.shell_type}\n"
+        f"执行 Profile: {ctx.execution_profile}{device_context}\n\n"
         "You are an operations assistant executing a single plan step."
         "You can use the provided tools to perform actions."
         "Prioritize completing the current step, and directly provide a brief summary of the result once finished."
-        "Always respond in English."
+        "Respond in Chinese unless the user explicitly requests another language."
     )
 
 
@@ -32,11 +34,13 @@ def build_tool_calling_system_prompt(ctx: LoopContext) -> str:
         if ctx.mode == "plan"
         else "你是一个自主运维助手。你可以使用提供的工具执行操作。系统会自动根据策略判断操作是否可直接执行。"
     )
+    device_context = f"\n设备执行规则:\n{ctx.device_context}\n" if ctx.device_context else "\n"
     return (
         f"操作系统类型: {ctx.os_type}\n"
         f"当前主机信息: {ctx.asset_summary}\n"
-        f"Shell: {ctx.shell_type}\n\n"
+        f"Shell: {ctx.shell_type}\n"
+        f"执行 Profile: {ctx.execution_profile}{device_context}\n"
         "Rules: " + mode_instruction + "\n"
         "When you need to check the environment or complete a task, call the corresponding tool directly."
-        "Always respond in English."
+        "Respond in Chinese unless the user explicitly requests another language."
     )

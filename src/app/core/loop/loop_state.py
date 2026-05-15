@@ -34,12 +34,16 @@ class LoopContext:
     runtime_id: str
     conversation_id: str
     asset_id: int
+    asset_type: str
     terminal_id: str | None
     asset_summary: str
     shell_type: str
     os_type: str
     user_prompt: str
     model_config: ModelConfig
+    execution_profile: str = "posix-shell"
+    device_vendor: str | None = None
+    device_context: str = ""
     mode: LoopMode = "agent"
     recent_output: str = ""
     conversation_history: list[LLMMessage] = field(default_factory=list)

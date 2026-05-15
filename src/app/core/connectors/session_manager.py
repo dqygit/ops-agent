@@ -68,6 +68,7 @@ class TerminalSessionManager:
                 success=True,
                 exit_code=0,
                 completion_reason="exit_code",
+                profile="posix-shell",
             )
         )
         return execution_id
@@ -86,7 +87,14 @@ class TerminalSessionManager:
         output = "".join(event.text for event in events if event.event_type == "output")
         completed_event = next((event for event in reversed(events) if event.event_type == "completed"), None)
         if completed_event is None:
-            return ExecutionResult(execution_id=execution_id, output=output, completed=False, success=False, completion_reason="unsupported")
+            return ExecutionResult(
+                execution_id=execution_id,
+                output=output,
+                completed=False,
+                success=False,
+                completion_reason="unsupported",
+                profile="posix-shell",
+            )
         return ExecutionResult(
             execution_id=execution_id,
             output=output,
@@ -97,6 +105,10 @@ class TerminalSessionManager:
             completion_reason=completed_event.completion_reason,
             mode=completed_event.mode,
             pager_detected=completed_event.pager_detected,
+            profile=completed_event.profile,
+            prompt_before=completed_event.prompt_before,
+            prompt_after=completed_event.prompt_after,
+            matched_error=completed_event.matched_error,
         )
 
     def cancel_execution(self, execution_id: str) -> None:
@@ -115,6 +127,7 @@ class TerminalSessionManager:
                 success=False,
                 needs_attention=True,
                 completion_reason="manual_stop",
+                profile="posix-shell",
             )
         )
 

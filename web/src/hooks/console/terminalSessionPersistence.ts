@@ -89,7 +89,7 @@ export function buildRestoredTerminalState({
     if (tab.sessionId === null) return []
     const asset = assets.find((item) => item.id === tab.assetId)
     if (!asset) return []
-    return [{ assetId: asset.id, asset, sessionId: tab.sessionId, output: '' }]
+    return [{ assetId: asset.id, asset, sessionId: null, output: '' }]
   })
 
   const tabs = [localTab, ...restoredTabs]

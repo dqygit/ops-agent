@@ -7,6 +7,11 @@ from typing import Any, cast
 
 from sqlmodel import Session
 
+from app.core.connectors.device_profiles import (
+    NETWORK_CLI_PROFILE,
+    select_device_profile,
+    select_execution_profile,
+)
 from app.core.loop.loop_state import LoopContext, LoopMode
 from app.core.loop.runtime_manager import LoopRuntimeManager, new_runtime_id
 from app.core.tool.execute_command import ExecuteCommandHandler
@@ -120,8 +125,12 @@ class ConsoleAppService:
             f"asset={getattr(asset, 'name', '')}, type={getattr(asset, 'asset_type', '')}, "
             f"host={getattr(asset, 'host', '')}, user={getattr(asset, 'username', '')}"
         )
+        asset_type = str(getattr(asset, "asset_type", "") or "")
         shell_type = self._resolve_shell_type(terminal_service, terminal_id)
-        os_type = self._infer_os_type(shell_type)
+        execution_profile = select_execution_profile(asset_type, shell_type)
+        device_profile = select_device_profile(asset_type, shell_type)
+        os_type = self._infer_os_type(shell_type, execution_profile=execution_profile)
+        device_context = self._build_device_context(execution_profile, device_profile)
 
         context_result = self._prepare_conversation_context(conversation_id, model_config)
         conversation_history = context_result.prepared_messages
@@ -131,10 +140,14 @@ class ConsoleAppService:
             runtime_id=runtime_id,
             conversation_id=conversation_id,
             asset_id=asset_id,
+            asset_type=asset_type,
             terminal_id=terminal_id,
             asset_summary=asset_summary,
             shell_type=shell_type,
             os_type=os_type,
+            execution_profile=execution_profile,
+            device_vendor=device_profile.vendor if device_profile else None,
+            device_context=device_context,
             user_prompt=prompt,
             model_config=model_config,
             mode=mode,
@@ -275,12 +288,39 @@ class ConsoleAppService:
                 shell_type = "unknown"
         return shell_type
 
-    def _infer_os_type(self, shell_type: str) -> str:
+    def _infer_os_type(self, shell_type: str, *, execution_profile: str = "posix-shell") -> str:
+        if execution_profile == NETWORK_CLI_PROFILE:
+            if shell_type == "serial":
+                return "serial-console"
+            return "network-device"
         if shell_type in {"powershell", "cmd"}:
             return "Windows"
-        if shell_type in {"posix", "network", "serial"}:
+        if shell_type == "posix":
             return "Darwin/Linux"
         return "unknown"
+
+    def _build_device_context(self, execution_profile: str, device_profile) -> str:
+        if execution_profile != NETWORK_CLI_PROFILE or device_profile is None:
+            return ""
+
+        base_rules = [
+            "You are operating a network device CLI, not a Linux shell.",
+            "Do not use Linux commands.",
+            f"Use the current device vendor syntax: {device_profile.vendor}.",
+            "Prefer read-only inspection commands before changes.",
+            "Treat prompts, pagination, configuration modes, and confirmations as protocol state.",
+            "Never save configuration unless the user explicitly approves a save action.",
+            "If command output contains an error pattern or an unexpected confirmation prompt, stop and explain.",
+        ]
+        if device_profile.vendor == "generic":
+            base_rules.append(
+                "This is a generic network device profile. First use '?' to inspect available commands, then choose vendor-specific read-only commands from that output before entering configuration mode."
+            )
+        else:
+            base_rules.append(
+                f"Read-only prefixes: {', '.join(device_profile.read_prefixes)}. Save commands requiring separate approval: {', '.join(device_profile.save_commands)}."
+            )
+        return "\n".join(base_rules)
 
     def _prepare_conversation_context(self, conversation_id: str, model_config):
         context_manager = self._context_manager()

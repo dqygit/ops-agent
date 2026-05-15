@@ -59,6 +59,8 @@ export function useTerminalSessions({
   const firstOutputHandledRef = useRef<Record<number, boolean>>({
     [LOCAL_TERMINAL_ASSET_ID]: false,
   })
+  const restoredAssetIdsRef = useRef<Set<number>>(new Set())
+  const reconnectingRestoredAssetsRef = useRef<Set<number>>(new Set())
 
   const syncTerminalTabs = useCallback(
     (updater: (currentTabs: TerminalTab[]) => TerminalTab[]) => {
@@ -86,6 +88,11 @@ export function useTerminalSessions({
       terminalTabsRef.current = restoredState.tabs
       terminalSessionIdsRef.current = Object.fromEntries(
         restoredState.tabs.map((tab) => [tab.assetId, tab.sessionId])
+      )
+      restoredAssetIdsRef.current = new Set(
+        restoredState.tabs
+          .filter((tab) => tab.assetId !== LOCAL_TERMINAL_ASSET_ID && tab.sessionId === null)
+          .map((tab) => tab.assetId)
       )
       for (const tab of restoredState.tabs) {
         firstOutputHandledRef.current[tab.assetId] = tab.output.length > 0
@@ -170,6 +177,8 @@ export function useTerminalSessions({
       }
       delete terminalSessionIdsRef.current[assetId]
       delete firstOutputHandledRef.current[assetId]
+      restoredAssetIdsRef.current.delete(assetId)
+      reconnectingRestoredAssetsRef.current.delete(assetId)
 
       syncTerminalTabs((currentTabs) =>
         currentTabs.filter((item) => item.assetId !== assetId)
@@ -343,6 +352,9 @@ export function useTerminalSessions({
 
           if (payload.type === 'output') {
             const incomingOutput = payload.data ?? ''
+            if (incomingOutput.length === 0) {
+              return
+            }
             syncTerminalTabs((currentTabs) =>
               currentTabs.map((item) => {
                 if (item.assetId !== tabItem.assetId) {
@@ -416,8 +428,44 @@ export function useTerminalSessions({
     if (!hasRestoredTerminalStateRef.current) {
       return
     }
-    persistTerminalState(terminalTabs, activeTerminalAssetId)
-  }, [activeTerminalAssetId, terminalTabs])
+
+    for (const tab of terminalTabs) {
+      if (
+        tab.assetId === LOCAL_TERMINAL_ASSET_ID ||
+        tab.sessionId !== null ||
+        !restoredAssetIdsRef.current.has(tab.assetId) ||
+        reconnectingRestoredAssetsRef.current.has(tab.assetId)
+      ) {
+        continue
+      }
+
+      reconnectingRestoredAssetsRef.current.add(tab.assetId)
+      void createTerminalSession(tab.assetId)
+        .then((result) => {
+          if (result.error || !result.terminal_id) {
+            throw new Error(result.error || 'Terminal reconnection failed')
+          }
+          restoredAssetIdsRef.current.delete(tab.assetId)
+          syncTerminalTabs((currentTabs) =>
+            currentTabs.map((item) =>
+              item.assetId === tab.assetId ? { ...item, sessionId: result.terminal_id } : item
+            )
+          )
+        })
+        .catch((error) => {
+          const errorMessage = error instanceof Error ? error.message : 'Terminal reconnection failed'
+          setLoadError(errorMessage)
+          reconnectingRestoredAssetsRef.current.delete(tab.assetId)
+        })
+    }
+
+    const hasPendingRestoredTabs = terminalTabs.some(
+      (tab) => tab.sessionId === null && restoredAssetIdsRef.current.has(tab.assetId)
+    )
+    if (!hasPendingRestoredTabs) {
+      persistTerminalState(terminalTabs, activeTerminalAssetId)
+    }
+  }, [activeTerminalAssetId, syncTerminalTabs, terminalTabs, setLoadError])
 
   // Cleanup all WebSockets
   useEffect(() => {
