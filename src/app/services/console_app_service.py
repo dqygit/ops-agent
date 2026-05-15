@@ -109,6 +109,13 @@ class ConsoleAppService:
     ) -> Iterator[dict]:
         asset = self._resolve_asset(session, asset_id)
         model_config = self._resolve_model_config(session, model_name)
+        if terminal_id and not terminal_service.session_belongs_to_asset(terminal_id, asset_id):
+            logger.warning(
+                "Ignoring terminal_id that does not belong to asset: asset_id=%s terminal_id=%s",
+                asset_id,
+                terminal_id,
+            )
+            terminal_id = None
         asset_summary = (
             f"asset={getattr(asset, 'name', '')}, type={getattr(asset, 'asset_type', '')}, "
             f"host={getattr(asset, 'host', '')}, user={getattr(asset, 'username', '')}"

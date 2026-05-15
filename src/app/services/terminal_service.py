@@ -210,6 +210,9 @@ class TerminalService:
                 return terminal_id
         return None
 
+    def session_belongs_to_asset(self, terminal_id: str, asset_id: int) -> bool:
+        return self._session_keys.get(terminal_id) == f"asset:{asset_id}" and terminal_id in self._sessions
+
     def send_input(self, terminal_id: str, data: str, *, output_markers: dict[str, str] | None = None) -> str | None:
         runtime = self._sessions.get(terminal_id)
         if runtime is None:
