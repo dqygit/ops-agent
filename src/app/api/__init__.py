@@ -10,6 +10,7 @@ from app.api.health import router as health_router
 from app.api.models import router as models_router
 from app.api.console import router as console_router
 from app.api.conversations import router as conversations_router
+from app.api.skills import router as skills_router
 from app.api.ssh_keys import router as ssh_keys_router
 from app.api.system import router as system_router
 from app.api.terminal import get_terminal_service, router as terminal_router
@@ -34,6 +35,7 @@ app.include_router(terminal_router)
 app.include_router(groups_router)
 app.include_router(console_router)
 app.include_router(conversations_router)
+app.include_router(skills_router)
 app.include_router(ssh_keys_router)
 app.include_router(system_router)
 
@@ -49,6 +51,7 @@ __all__ = [
     "conversations_router",
     "lifespan",
     "models_router",
+    "skills_router",
     "ssh_keys_router",
     "system_router",
     "terminal_router",

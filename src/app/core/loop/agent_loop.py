@@ -30,8 +30,10 @@ from app.core.loop.loop_events import (
 from app.core.loop.loop_state import LoopRuntimeStep, LoopState
 from app.core.loop.message_manager import MessageManager
 from app.core.loop.prompts import (
+    build_manual_skill_system_prompt,
     build_plan_step_system_prompt,
     build_plan_step_user_prompt,
+    build_planner_skill_index_prompt,
     build_tool_calling_system_prompt,
 )
 from app.core.tool.handler import ToolHandler
@@ -253,31 +255,40 @@ class AgentLoop:
         ctx = state.context
         
         yield from manager.begin_message(message_type="say", say_type="text")
+        messages = [
+            LLMMessage(
+                role="system",
+                content=(
+                    "You are an operations task planner. Please generate a task plan based on the user's goal."
+                    "Return a JSON object in the format {\"steps\": [...]}."
+                    "The steps array must contain at least one step."
+                    "Each step includes title, reason, working_directory, expected_output, and risk_level."
+                    "Do not include commands in the plan. Output only raw JSON. Do not wrap it in markdown code fences or add any explanation."
+                ),
+            )
+        ]
+        planner_skill_prompt = build_planner_skill_index_prompt(ctx)
+        if planner_skill_prompt:
+            messages.append(LLMMessage(role="system", content=planner_skill_prompt))
+        manual_skill_prompt = build_manual_skill_system_prompt(ctx)
+        if manual_skill_prompt:
+            messages.append(LLMMessage(role="system", content=manual_skill_prompt))
+        messages.extend(ctx.conversation_history)
+        messages.append(
+            LLMMessage(
+                role="user",
+                content=(
+                    f"操作系统类型: {ctx.os_type}\n"
+                    f"当前主机信息: {ctx.asset_summary}\n"
+                    f"Shell: {ctx.shell_type}\n"
+                    f"执行 Profile: {ctx.execution_profile}\n"
+                    f"{'设备执行规则:\n' + ctx.device_context + '\n' if ctx.device_context else ''}"
+                    f"用户任务: {ctx.user_prompt}"
+                ),
+            )
+        )
         request = LLMCompletionRequest(
-            messages=[
-                LLMMessage(
-                    role="system",
-                    content=(
-                        "You are an operations task planner. Please generate a task plan based on the user's goal."
-                        "Return a JSON object in the format {\"steps\": [...]}."
-                        "The steps array must contain at least one step."
-                        "Each step includes title, reason, working_directory, expected_output, and risk_level."
-                        "Do not include commands in the plan. Output only raw JSON. Do not wrap it in markdown code fences or add any explanation."
-                    ),
-                ),
-                *ctx.conversation_history,
-                LLMMessage(
-                    role="user",
-                    content=(
-                        f"操作系统类型: {ctx.os_type}\n"
-                        f"当前主机信息: {ctx.asset_summary}\n"
-                        f"Shell: {ctx.shell_type}\n"
-                        f"执行 Profile: {ctx.execution_profile}\n"
-                        f"{'设备执行规则:\n' + ctx.device_context + '\n' if ctx.device_context else ''}"
-                        f"用户任务: {ctx.user_prompt}"
-                    ),
-                ),
-            ],
+            messages=messages,
             json_mode=True,
         )
         try:
@@ -346,11 +357,13 @@ class AgentLoop:
 
     def _build_step_messages(self, state: LoopState, step: LoopRuntimeStep) -> list[LLMMessage]:
         ctx = state.context
-        return [
-            LLMMessage(role="system", content=build_plan_step_system_prompt(ctx)),
-            *ctx.conversation_history,
-            LLMMessage(role="user", content=build_plan_step_user_prompt(ctx, step)),
-        ]
+        messages = [LLMMessage(role="system", content=build_plan_step_system_prompt(ctx))]
+        manual_skill_prompt = build_manual_skill_system_prompt(ctx)
+        if manual_skill_prompt:
+            messages.append(LLMMessage(role="system", content=manual_skill_prompt))
+        messages.extend(ctx.conversation_history)
+        messages.append(LLMMessage(role="user", content=build_plan_step_user_prompt(ctx, step)))
+        return messages
 
     def _tool_calling_loop(
         self,
@@ -367,6 +380,9 @@ class AgentLoop:
 
         if not state.messages:
             state.messages.append(LLMMessage(role="system", content=build_tool_calling_system_prompt(ctx)))
+            manual_skill_prompt = build_manual_skill_system_prompt(ctx)
+            if manual_skill_prompt:
+                state.messages.append(LLMMessage(role="system", content=manual_skill_prompt))
             # Inject conversation history from previous turns (Roo Code style)
             if ctx.conversation_history:
                 state.messages.extend(ctx.conversation_history)
@@ -439,6 +455,7 @@ class AgentLoop:
                     state.summary = summary
                 return False, True, summary
 
+            restart_tool_calling = False
             for index, tool_call in enumerate(response.tool_calls):
                 handler = self._tools.get(tool_call.name)
                 if handler is None:
@@ -544,15 +561,43 @@ class AgentLoop:
                 ok, output = yield from handler.execute(state=state, step_id=step.step_id, args=args, manager=manager)
                 
                 step.status = "completed" if ok else "failed"
+                tool_content = output if ok else f"Command Failed: {output}"
+                step.output = tool_content
                 unresolved_tool_failure = any(step.status == "failed" for step in state.steps)
                 state.messages.append(
                     LLMMessage(
                         role="tool",
-                        content=output if ok else f"Command Failed: {output}",
+                        content=tool_content,
                         tool_call_id=tool_call.id,
                         name=tool_call.name,
                     )
                 )
                 yield from manager.finalize(exit_code=0 if ok else 1)
+
+                if ok and tool_call.name == "load_skill":
+                    cancellation_content = (
+                        "Cancelled because load_skill changed the runtime instructions. "
+                        "Re-evaluate before using more tools."
+                    )
+                    for remaining_tool_call in response.tool_calls[index + 1:]:
+                        state.messages.append(
+                            LLMMessage(
+                                role="tool",
+                                content=cancellation_content,
+                                tool_call_id=remaining_tool_call.id,
+                                name=remaining_tool_call.name,
+                            )
+                        )
+                    manual_skill_prompt = build_manual_skill_system_prompt(ctx)
+                    if manual_skill_prompt and not any(
+                        message.role == "system" and message.content == manual_skill_prompt
+                        for message in state.messages
+                    ):
+                        state.messages.append(LLMMessage(role="system", content=manual_skill_prompt))
+                    restart_tool_calling = True
+                    break
+
+            if restart_tool_calling:
+                continue
 
         return False, True, ""

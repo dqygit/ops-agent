@@ -1,7 +1,7 @@
 from collections.abc import Iterator
 from typing import Any, cast
 
-from anthropic.types import JSONOutputFormatParam
+from anthropic.types import JSONOutputFormatParam, TextBlockParam
 
 from app.core.llm.base import LLMCompletionChunk, LLMCompletionRequest, LLMCompletionResponse
 from app.core.tool import LLMToolCall
@@ -19,12 +19,11 @@ class AnthropicLLMProvider:
         config: ModelConfig,
         request: LLMCompletionRequest,
     ) -> Iterator[LLMCompletionChunk]:
-        system_prompt = next((message.content for message in request.messages if message.role == "system"), "")
         with self._get_client(config).messages.stream(
             model=config.model_name,
             max_tokens=request.max_tokens if request.max_tokens is not None else config.max_tokens,
             temperature=request.temperature if request.temperature is not None else config.temperature,
-            system=system_prompt,
+            system=self._serialize_system_prompt(request),
             messages=cast(Any, self._serialize_messages(request)),
             tools=cast(Any, self._serialize_tools(request) or None),
             tool_choice=cast(Any, self._serialize_tool_choice(request)),
@@ -44,12 +43,11 @@ class AnthropicLLMProvider:
         config: ModelConfig,
         request: LLMCompletionRequest,
     ) -> LLMCompletionResponse:
-        system_prompt = next((message.content for message in request.messages if message.role == "system"), "")
         response = self._get_client(config).messages.create(
             model=config.model_name,
             max_tokens=request.max_tokens if request.max_tokens is not None else config.max_tokens,
             temperature=request.temperature if request.temperature is not None else config.temperature,
-            system=system_prompt,
+            system=self._serialize_system_prompt(request),
             messages=cast(Any, self._serialize_messages(request)),
             tools=cast(Any, self._serialize_tools(request) or None),
             tool_choice=cast(Any, self._serialize_tool_choice(request)),
@@ -93,11 +91,49 @@ class AnthropicLLMProvider:
         for message in request.messages:
             if message.role == "system":
                 continue
-            payload: dict[str, Any] = {"role": message.role, "content": message.content}
+            if message.role == "user":
+                messages.append({"role": "user", "content": message.content})
+                continue
+            if message.role == "assistant":
+                if not message.tool_calls:
+                    messages.append({"role": "assistant", "content": message.content})
+                    continue
+                content_blocks: list[dict[str, Any]] = []
+                if message.content:
+                    content_blocks.append({"type": "text", "text": message.content})
+                for tool_call in message.tool_calls:
+                    content_blocks.append(
+                        {
+                            "type": "tool_use",
+                            "id": tool_call.id,
+                            "name": tool_call.name,
+                            "input": tool_call.arguments,
+                        }
+                    )
+                messages.append({"role": "assistant", "content": content_blocks})
+                continue
             if message.role == "tool":
-                payload["role"] = "user"
-            messages.append(payload)
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "tool_result",
+                                "tool_use_id": message.tool_call_id or "",
+                                "content": message.content,
+                            }
+                        ],
+                    }
+                )
         return messages
+
+    def _serialize_system_prompt(self, request: LLMCompletionRequest) -> list[TextBlockParam] | str:
+        system_messages = [message.content for message in request.messages if message.role == "system" and message.content]
+        if not system_messages:
+            return ""
+        if len(system_messages) == 1:
+            return system_messages[0]
+        return [{"type": "text", "text": content} for content in system_messages]
 
     def _serialize_tools(self, request: LLMCompletionRequest) -> list[dict[str, Any]]:
         return [

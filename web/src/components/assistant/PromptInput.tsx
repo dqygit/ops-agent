@@ -1,5 +1,7 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { getSkills } from '../../api'
 import type { RunMode } from '../../types/api'
-import type { Asset, ConversationContextStatus } from '../../types/ops'
+import type { Asset, ConversationContextStatus, SkillPackage } from '../../types/ops'
 import { ModelSelector } from './ModelSelector'
 
 type PromptInputProps = {
@@ -12,7 +14,7 @@ type PromptInputProps = {
   onPromptChange: (prompt: string) => void
   onModelChange: (model: string) => void
   onRunModeChange: (mode: RunMode) => void
-  onRun: (prompt: string) => Promise<void>
+  onRun: (prompt: string, selectedSkillName?: string | null) => Promise<void>
 }
 
 const MODE_DESCRIPTION: Record<RunMode, string> = {
@@ -40,6 +42,30 @@ function contextLabel(status: ConversationContextStatus | null) {
   return status ? `${contextPercent(status)}%` : '--%'
 }
 
+function getSlashSuggestionQuery(prompt: string) {
+  const match = prompt.match(/^\s*\/([^\s]*)$/)
+  return match ? match[1] : null
+}
+
+function parseLeadingSkillCommand(prompt: string, validSkillNames: Set<string>) {
+  const trimmedPrompt = prompt.trimStart()
+  const match = trimmedPrompt.match(/^\/([^\s/]+)(?=\s|$)/)
+
+  if (!match) {
+    return { prompt, selectedSkillName: null as string | null }
+  }
+
+  const selectedSkillName = match[1]
+  if (!validSkillNames.has(selectedSkillName)) {
+    return { prompt, selectedSkillName: null as string | null }
+  }
+
+  return {
+    prompt: trimmedPrompt.slice(match[0].length).trimStart(),
+    selectedSkillName,
+  }
+}
+
 export function PromptInput({
   prompt,
   models,
@@ -52,6 +78,70 @@ export function PromptInput({
   onRunModeChange,
   onRun,
 }: PromptInputProps) {
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null)
+  const skillsRequestRef = useRef<Promise<SkillPackage[]> | null>(null)
+  const [skillPackages, setSkillPackages] = useState<SkillPackage[] | null>(null)
+  const [skillsLoading, setSkillsLoading] = useState(false)
+
+  const slashSuggestionQuery = useMemo(() => getSlashSuggestionQuery(prompt), [prompt])
+  const shouldShowSlashSuggestions = slashSuggestionQuery !== null
+
+  const loadSkillPackages = useCallback(async () => {
+    if (skillsRequestRef.current) {
+      return skillsRequestRef.current
+    }
+
+    setSkillsLoading(true)
+
+    const request = getSkills()
+      .then((packages) => {
+        const validPackages = packages.filter((skill) => skill.valid)
+        setSkillPackages(validPackages)
+        return validPackages
+      })
+      .catch(() => {
+        setSkillPackages([])
+        return []
+      })
+      .finally(() => {
+        skillsRequestRef.current = null
+        setSkillsLoading(false)
+      })
+
+    skillsRequestRef.current = request
+    return request
+  }, [])
+
+  useEffect(() => {
+    if (!shouldShowSlashSuggestions) {
+      return
+    }
+
+    void loadSkillPackages()
+  }, [loadSkillPackages, shouldShowSlashSuggestions])
+
+  const filteredSkillPackages = useMemo(() => {
+    if (slashSuggestionQuery === null) {
+      return []
+    }
+
+    const query = slashSuggestionQuery.toLowerCase()
+    return (skillPackages ?? []).filter((skill) => skill.name.toLowerCase().startsWith(query))
+  }, [skillPackages, slashSuggestionQuery])
+
+  const selectSkillSuggestion = useCallback((skillName: string) => {
+    onPromptChange(`/${skillName} `)
+    requestAnimationFrame(() => {
+      const textarea = textareaRef.current
+      if (!textarea) {
+        return
+      }
+      textarea.focus()
+      const cursor = textarea.value.length
+      textarea.setSelectionRange(cursor, cursor)
+    })
+  }, [onPromptChange])
+
   const submitPrompt = async () => {
     const currentPrompt = prompt
 
@@ -59,10 +149,23 @@ export function PromptInput({
       return
     }
 
+    let nextPrompt = currentPrompt
+    let selectedSkillName: string | null = null
+
+    if (/^\s*\//.test(currentPrompt)) {
+      const validSkills = await loadSkillPackages()
+      const parsedPrompt = parseLeadingSkillCommand(
+        currentPrompt,
+        new Set(validSkills.map((skill) => skill.name)),
+      )
+      nextPrompt = parsedPrompt.prompt
+      selectedSkillName = parsedPrompt.selectedSkillName
+    }
+
     onPromptChange('')
 
     try {
-      await onRun(currentPrompt)
+      await onRun(nextPrompt, selectedSkillName)
     }
     catch {
       onPromptChange(currentPrompt)
@@ -115,6 +218,7 @@ export function PromptInput({
         <div className="relative">
           <textarea
             id="prompt-input"
+            ref={textareaRef}
             className="min-h-[86px] w-full resize-none bg-transparent px-5 pb-5 pr-20 pt-4 text-[15px] font-medium leading-relaxed text-ops-text caret-ops-cyan outline-none placeholder:text-ops-muted/32 scrollbar-thin"
             value={prompt}
             onChange={(event) => onPromptChange(event.target.value)}
@@ -124,8 +228,45 @@ export function PromptInput({
                 void submitPrompt()
               }
             }}
-            placeholder="Describe the operation, paste logs, or ask the agent to investigate..."
+            placeholder="Describe the operation, paste logs, or type / to pick a skill..."
           />
+
+          {shouldShowSlashSuggestions ? (
+            <div
+              className="absolute left-4 right-20 top-[calc(100%-0.5rem)] z-20 overflow-hidden rounded-2xl border border-ops-cyan/20 bg-ops-deep/95 shadow-[0_18px_60px_rgba(0,0,0,0.45)] backdrop-blur-xl"
+              role="listbox"
+              aria-label="Available skills"
+            >
+              <div className="border-b border-white/[0.04] px-4 py-2 text-[10px] font-bold uppercase tracking-[0.14em] text-ops-muted/65">
+                Slash skills
+              </div>
+              <div className="max-h-64 overflow-y-auto py-2">
+                {skillsLoading ? (
+                  <div className="px-4 py-3 text-sm text-ops-muted/70">Loading skills...</div>
+                ) : filteredSkillPackages.length > 0 ? (
+                  filteredSkillPackages.map((skill) => (
+                    <button
+                      key={skill.path}
+                      type="button"
+                      className="flex w-full flex-col items-start gap-1 px-4 py-3 text-left transition-colors hover:bg-ops-cyan/10 focus:bg-ops-cyan/10 focus:outline-none"
+                      onMouseDown={(event) => {
+                        event.preventDefault()
+                      }}
+                      onClick={() => selectSkillSuggestion(skill.name)}
+                      role="option"
+                      aria-label={`/${skill.name}`}
+                    >
+                      <span className="font-mono text-[13px] text-ops-cyan">/{skill.name}</span>
+                      <span className="text-[11px] leading-5 text-ops-muted/80">{skill.description || 'No description provided.'}</span>
+                    </button>
+                  ))
+                ) : (
+                  <div className="px-4 py-3 text-sm text-ops-muted/70">No matching valid skills.</div>
+                )}
+              </div>
+            </div>
+          ) : null}
+
           <button
             className={`absolute bottom-4 right-4 flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border transition-all duration-200 active:scale-95 ${prompt.trim()
               ? 'border-ops-cyan/45 bg-ops-cyan text-ops-deep shadow-[0_0_28px_rgba(6,182,212,0.38)] hover:-translate-y-0.5 hover:bg-cyan-300 hover:shadow-[0_0_36px_rgba(6,182,212,0.55)]'

@@ -11,6 +11,7 @@ import {
   getGroups,
   getModelConfigs,
   getSSHKeys,
+  getSkills,
   setDefaultModelConfig,
   testModelConfig,
   updateApprovalPolicy,
@@ -18,11 +19,12 @@ import {
   updateModelConfig,
   updateSSHKey,
 } from '../../api'
-import type { AssetGroup, ModelConfig, SSHKey } from '../../types/ops'
+import type { AssetGroup, ModelConfig, SSHKey, SkillPackage } from '../../types/ops'
 import { DeleteConfirmDialog } from './DeleteConfirmDialog'
 import { GroupsSection } from './GroupsSection'
 import { ModelsSection } from './ModelsSection'
 import { PermissionsSection } from './PermissionsSection'
+import { SkillsSection } from './SkillsSection'
 import { SSHKeysSection } from './SSHKeysSection'
 import type { GroupForm, ModelForm, PermissionsForm, SettingsDialogProps, SettingsSection, SSHKeyForm } from './settingsTypes'
 
@@ -91,8 +93,11 @@ export function SettingsDialog({ initialGroups, selectedModel, sshKeys: initialS
   const [groups, setGroups] = useState<AssetGroup[]>(initialGroups)
   const [modelConfigs, setModelConfigs] = useState<ModelConfig[]>([])
   const [sshKeys, setSSHKeys] = useState<SSHKey[]>(initialSSHKeys)
+  const [skills, setSkills] = useState<SkillPackage[]>([])
   const [loading, setLoading] = useState(true)
+  const [skillsLoading, setSkillsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [skillsError, setSkillsError] = useState<string | null>(null)
   const [groupForm, setGroupForm] = useState<GroupForm>(emptyGroupForm)
   const [showGroupForm, setShowGroupForm] = useState(false)
   const [editingGroup, setEditingGroup] = useState<AssetGroup | null>(null)
@@ -128,8 +133,22 @@ export function SettingsDialog({ initialGroups, selectedModel, sshKeys: initialS
     }
   }
 
+  const loadSkills = async () => {
+    setSkillsLoading(true)
+    setSkillsError(null)
+    try {
+      const nextSkills = await getSkills()
+      setSkills(nextSkills)
+    } catch (loadError) {
+      setSkillsError(loadError instanceof Error ? loadError.message : 'Failed to load skills')
+    } finally {
+      setSkillsLoading(false)
+    }
+  }
+
   useEffect(() => {
     void loadSettings()
+    void loadSkills()
   }, [])
 
   const startCreateGroup = () => {
@@ -411,6 +430,7 @@ export function SettingsDialog({ initialGroups, selectedModel, sshKeys: initialS
             <button type="button" className={`w-full text-left px-4 py-3 rounded-xl transition-all duration-200 text-[11px] font-bold  active:scale-[0.98] ${activeSection === 'models' ? 'bg-ops-cyan/15 text-ops-cyan shadow-glow border border-ops-cyan/30' : 'text-ops-muted hover:text-ops-text hover:bg-ops-panel/60 border border-transparent'}`} onClick={() => setActiveSection('models')}>AI Model Configs</button>
             <button type="button" className={`w-full text-left px-4 py-3 rounded-xl transition-all duration-200 text-[11px] font-bold  active:scale-[0.98] ${activeSection === 'sshKeys' ? 'bg-ops-cyan/15 text-ops-cyan shadow-glow border border-ops-cyan/30' : 'text-ops-muted hover:text-ops-text hover:bg-ops-panel/60 border border-transparent'}`} onClick={() => setActiveSection('sshKeys')}>Identity Keys (SSH)</button>
             <button type="button" className={`w-full text-left px-4 py-3 rounded-xl transition-all duration-200 text-[11px] font-bold  active:scale-[0.98] ${activeSection === 'permissions' ? 'bg-ops-cyan/15 text-ops-cyan shadow-glow border border-ops-cyan/30' : 'text-ops-muted hover:text-ops-text hover:bg-ops-panel/60 border border-transparent'}`} onClick={() => setActiveSection('permissions')}>Command Permissions</button>
+            <button type="button" className={`w-full text-left px-4 py-3 rounded-xl transition-all duration-200 text-[11px] font-bold  active:scale-[0.98] ${activeSection === 'skills' ? 'bg-ops-cyan/15 text-ops-cyan shadow-glow border border-ops-cyan/30' : 'text-ops-muted hover:text-ops-text hover:bg-ops-panel/60 border border-transparent'}`} onClick={() => setActiveSection('skills')}>Skill Packages</button>
           </nav>
           <div className="flex-1 p-6 overflow-y-auto bg-ops-panel/50 relative">
             {error ? <div className="p-4 mb-6 rounded-md bg-red-500/10 border border-red-500/20 text-red-500 text-sm flex items-center justify-between">{error}<button type="button" className="px-3 py-1.5 rounded-md bg-ops-border/20 hover:bg-ops-border/30 transition-colors text-ops-text text-sm" onClick={() => void loadSettings()}>Retry</button></div> : null}
@@ -461,12 +481,19 @@ export function SettingsDialog({ initialGroups, selectedModel, sshKeys: initialS
                 onCancelForm={cancelSSHKeyForm}
                 onSave={saveSSHKey}
               />
-            ) : (
+            ) : activeSection === 'permissions' ? (
               <PermissionsSection
                 permissionsForm={permissionsForm}
                 saving={saving}
                 onFormChange={setPermissionsForm}
                 onSave={savePermissions}
+              />
+            ) : (
+              <SkillsSection
+                skills={skills}
+                loading={skillsLoading}
+                error={skillsError}
+                onRetry={() => void loadSkills()}
               />
             )}
           </div>

@@ -300,6 +300,20 @@ class ConsoleBootstrapView(BaseModel):
     initialEvents: list[dict] = Field(default_factory=list)
 
 
+class SkillPackageView(BaseModel):
+    name: str
+    description: str
+    path: str
+    valid: bool
+    error: str | None = None
+    updated_at: datetime
+    body_size: int
+
+
+class SkillsResponse(BaseModel):
+    skills: list[SkillPackageView] = Field(default_factory=list)
+
+
 class ConsoleRunRequest(BaseModel):
     prompt: str
     mode: Literal["agent", "plan"] = "agent"
@@ -308,6 +322,7 @@ class ConsoleRunRequest(BaseModel):
     terminal_id: str | None = None
     conversation_id: str = "console"
     model_name: str | None = None
+    selected_skill_name: str | None = None
     terminal_context: dict | None = None
 
 
@@ -355,6 +370,7 @@ class RuntimeSummaryView(BaseModel):
     asset_id: int
     terminal_id: str | None = None
     status: str
+    loaded_skill_name: str | None = None
     mode: str = "agent"
     plan_version: int = 1
     locked_plan: bool = False
@@ -369,6 +385,7 @@ class RuntimeSnapshotView(BaseModel):
     asset_id: int
     terminal_id: str | None = None
     status: str
+    loaded_skill_name: str | None = None
     mode: str = "agent"
     plan_version: int = 1
     locked_plan: bool = False

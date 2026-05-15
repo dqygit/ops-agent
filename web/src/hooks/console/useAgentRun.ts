@@ -122,7 +122,7 @@ export function useAgentRun({
     setPendingApprovalToken(pendingApproval?.approvalToken ?? null)
   }, [events])
 
-  const runAgent = useCallback(async (runPrompt: string) => {
+  const runAgent = useCallback(async (runPrompt: string, selectedSkillName?: string | null) => {
     setLoadError(null)
 
     let conversationId = activeConversationId
@@ -164,6 +164,7 @@ export function useAgentRun({
         selectedModel,
         conversationId,
         runMode,
+        selectedSkillName,
       )
 
       const deltaBuffer = new Map<string, string>()

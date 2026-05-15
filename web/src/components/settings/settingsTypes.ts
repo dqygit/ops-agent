@@ -1,7 +1,7 @@
 import type { FormEvent } from 'react'
-import type { AssetGroup, ModelConfig, SSHKey } from '../../types/ops'
+import type { AssetGroup, ModelConfig, SSHKey, SkillPackage } from '../../types/ops'
 
-export type SettingsSection = 'groups' | 'models' | 'sshKeys' | 'permissions'
+export type SettingsSection = 'groups' | 'models' | 'sshKeys' | 'permissions' | 'skills'
 
 export type GroupForm = {
   name: string
@@ -96,4 +96,11 @@ export type PermissionsSectionProps = {
   saving: boolean
   onFormChange: (form: PermissionsForm) => void
   onSave: (event: FormEvent<HTMLFormElement>) => void
+}
+
+export type SkillsSectionProps = {
+  skills: SkillPackage[]
+  loading: boolean
+  error: string | null
+  onRetry: () => void
 }

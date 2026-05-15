@@ -84,6 +84,7 @@ class LoopRuntimeManager:
             "asset_id": rt.asset_id,
             "terminal_id": rt.terminal_id,
             "status": state.phase,
+            "loaded_skill_name": state.context.loaded_skill_name,
             "mode": state.context.mode,
             "plan_version": state.plan_version,
             "locked_plan": state.locked_plan,

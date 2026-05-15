@@ -48,6 +48,16 @@ export type SSHKey = {
   updatedAt: string
 }
 
+export type SkillPackage = {
+  name: string
+  description: string
+  path: string
+  valid: boolean
+  error: string | null
+  updatedAt: string
+  bodySize: number
+}
+
 export type SessionRecord = {
   id: number
   title: string
@@ -193,6 +203,7 @@ export type RuntimeSummary = {
   mode: RunMode
   planVersion: number
   lockedPlan: boolean
+  loadedSkillName: string | null
   currentStepId: string | null
   pendingApprovalStepId: string | null
   updatedAt: string
@@ -207,6 +218,7 @@ export type RuntimeSnapshot = {
   mode: RunMode
   planVersion: number
   lockedPlan: boolean
+  loadedSkillName: string | null
   steps: RuntimeStep[]
   currentStepId: string | null
   pendingApprovalStepId: string | null

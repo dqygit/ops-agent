@@ -47,6 +47,10 @@ class LoopContext:
     mode: LoopMode = "agent"
     recent_output: str = ""
     conversation_history: list[LLMMessage] = field(default_factory=list)
+    available_skills: list[dict[str, str]] = field(default_factory=list)
+    loaded_skill_name: str | None = None
+    manual_skill_name: str | None = None
+    manual_skill_content: str = ""
 
 
 @dataclass(slots=True)

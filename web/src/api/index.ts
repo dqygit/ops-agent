@@ -26,5 +26,6 @@ export {
   updateModelConfig,
 } from './modelConfigs'
 export type { ModelConfigPayload, ModelConnectionTestPayload, ModelConnectionTestResult } from './modelConfigs'
+export { getSkills, mapSkillPackage } from './skills'
 export { createSSHKey, deleteSSHKey, getSSHKeys, mapSSHKey, updateSSHKey } from './sshKeys'
 export type { SSHKeyPayload } from './sshKeys'

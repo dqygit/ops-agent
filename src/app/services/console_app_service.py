@@ -15,11 +15,13 @@ from app.core.connectors.device_profiles import (
 from app.core.loop.loop_state import LoopContext, LoopMode
 from app.core.loop.runtime_manager import LoopRuntimeManager, new_runtime_id
 from app.core.tool.execute_command import ExecuteCommandHandler
+from app.core.tool.load_skill import LoadSkillHandler
 from app.db.repositories.assets import get_asset
 from app.db.repositories.models import get_default_model_config
 from app.services.approval_service import get_approval_service
 from app.services.context_manager import ContextManager, JsonObject
 from app.services.model_service import ModelService
+from app.services.skill_service import SkillService
 from app.services.terminal_service import TerminalService
 
 
@@ -54,6 +56,7 @@ class TaskOrchestrator:
         asset_id: int,
         terminal_id: str | None = None,
         model_name: str | None = None,
+        selected_skill_name: str | None = None,
         conversation_id: str = "console",
         mode: LoopMode = "agent",
     ) -> Iterator[dict]:
@@ -63,6 +66,7 @@ class TaskOrchestrator:
             asset_id=asset_id,
             terminal_id=terminal_id,
             model_name=model_name,
+            selected_skill_name=selected_skill_name,
             conversation_id=conversation_id,
             mode=mode,
             terminal_service=self._terminal_service,
@@ -89,10 +93,13 @@ class ConsoleAppService:
         self,
         *,
         model_service: ModelService | None = None,
+        skill_service: SkillService | None = None,
     ) -> None:
         self._model_service = model_service or ModelService()
+        self._skill_service = skill_service or SkillService()
         self.runtime_manager = LoopRuntimeManager(
             tools_factory=lambda ts: [
+                LoadSkillHandler(self._skill_service),
                 ExecuteCommandHandler(_TerminalSessionAdapter(ts, self.runtime_manager)),
             ]
         )
@@ -108,6 +115,7 @@ class ConsoleAppService:
         asset_id: int,
         terminal_id: str | None = None,
         model_name: str | None = None,
+        selected_skill_name: str | None = None,
         conversation_id: str = "console",
         mode: LoopMode = "agent",
         terminal_service: TerminalService,
@@ -136,6 +144,35 @@ class ConsoleAppService:
         conversation_history = context_result.prepared_messages
 
         runtime_id = new_runtime_id()
+        skill_packages = self._skill_service.list_skills()
+        available_skills = [
+            {"name": skill.name, "description": skill.description}
+            for skill in skill_packages
+            if skill.valid
+        ]
+        loaded_skill_name: str | None = None
+        manual_skill_name: str | None = None
+        manual_skill_content = ""
+        if selected_skill_name:
+            manual_skill_name = selected_skill_name.strip() or None
+            if manual_skill_name:
+                try:
+                    loaded_skill = self._skill_service.load_skill(manual_skill_name)
+                except ValueError as exc:
+                    yield {
+                        "id": f"evt-error-{runtime_id}",
+                        "kind": "error",
+                        "runtimeId": runtime_id,
+                        "sequence": -1,
+                        "ts": "",
+                        "text": str(exc),
+                        "recoverable": True,
+                    }
+                    return
+                loaded_skill_name = loaded_skill.name
+                manual_skill_name = loaded_skill.name
+                manual_skill_content = loaded_skill.body
+
         context = LoopContext(
             runtime_id=runtime_id,
             conversation_id=conversation_id,
@@ -152,8 +189,12 @@ class ConsoleAppService:
             model_config=model_config,
             mode=mode,
             conversation_history=conversation_history,
+            available_skills=available_skills,
+            loaded_skill_name=loaded_skill_name,
+            manual_skill_name=manual_skill_name,
+            manual_skill_content=manual_skill_content,
         )
-        
+
         self.runtime_manager.create_runtime(
             conversation_id=conversation_id,
             asset_id=asset_id,

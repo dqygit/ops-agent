@@ -126,6 +126,7 @@ async def run_console_agent(
         asset_id=asset_id,
         terminal_id=payload.terminal_id,
         model_name=payload.model_name,
+        selected_skill_name=payload.selected_skill_name,
         conversation_id=payload.conversation_id,
         mode=payload.mode,
     )
@@ -157,6 +158,7 @@ def list_conversation_runtimes(conversation_id: str) -> list[RuntimeSummaryView]
                 asset_id=runtime.asset_id,
                 terminal_id=runtime.terminal_id,
                 status=runtime.state.phase,
+                loaded_skill_name=runtime.state.context.loaded_skill_name,
                 mode=runtime.state.context.mode,
                 plan_version=runtime.state.plan_version,
                 locked_plan=runtime.state.locked_plan,

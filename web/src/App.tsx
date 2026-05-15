@@ -270,8 +270,8 @@ export function App() {
                 onDeleteConversation={(conversationId) => {
                   void deleteConversation(conversationId)
                 }}
-                onRun={(nextPrompt) => {
-                  return runAgent(nextPrompt)
+                onRun={(nextPrompt, selectedSkillName) => {
+                  return runAgent(nextPrompt, selectedSkillName)
                 }}
                 onApprove={(allowPrefix) => {
                   void approveRun(allowPrefix)

@@ -1,7 +1,15 @@
 import { mapAsset } from './assets'
 import { requestEventStream, requestJson } from './client'
 import { mapAssetGroup, type AssetGroupDto } from './groups'
-import type { ConsoleBootstrap, RunMode, RuntimeEventsResponseDto, RuntimeSnapshotDto, RuntimeSummaryDto } from '../types/api'
+import type {
+  ConsoleBootstrap,
+  ConsoleRunRequest,
+  ConsoleRunRequestDto,
+  RunMode,
+  RuntimeEventsResponseDto,
+  RuntimeSnapshotDto,
+  RuntimeSummaryDto,
+} from '../types/api'
 import type { EventItem, PlanStep, RuntimeEventEnvelope, RuntimeSnapshot, RuntimeSummary } from '../types/ops'
 
 type ConsoleBootstrapDto = Omit<ConsoleBootstrap, 'assets' | 'groups'> & {
@@ -28,6 +36,7 @@ function mapRuntimeSummary(dto: RuntimeSummaryDto): RuntimeSummary {
     mode: dto.mode,
     planVersion: dto.plan_version,
     lockedPlan: dto.locked_plan,
+    loadedSkillName: dto.loaded_skill_name,
     currentStepId: dto.current_step_id,
     pendingApprovalStepId: dto.pending_approval_step_id,
     updatedAt: dto.updated_at,
@@ -44,6 +53,7 @@ function mapRuntimeSnapshot(dto: RuntimeSnapshotDto): RuntimeSnapshot {
     mode: dto.mode,
     planVersion: dto.plan_version,
     lockedPlan: dto.locked_plan,
+    loadedSkillName: dto.loaded_skill_name,
     steps: dto.steps.map((step) => ({
       stepId: step.step_id,
       title: step.title,
@@ -124,10 +134,52 @@ async function* readEventStream(response: Response): AsyncGenerator<EventItem, v
   }
 }
 
-export async function streamRunAgent(prompt: string, currentEvents: EventItem[], assetId?: number, terminalId?: string | null, modelName?: string, conversationId?: string, mode: RunMode = 'agent'): Promise<AsyncGenerator<EventItem, void, void>> {
+function buildConsoleRunRequestDto({
+  prompt,
+  mode,
+  currentEvents,
+  assetId,
+  terminalId,
+  modelName,
+  conversationId,
+  selectedSkillName,
+}: ConsoleRunRequest): ConsoleRunRequestDto {
+  return {
+    prompt,
+    mode,
+    currentEvents,
+    asset_id: assetId,
+    terminal_id: terminalId,
+    model_name: modelName,
+    conversation_id: conversationId,
+    ...(selectedSkillName != null ? { selected_skill_name: selectedSkillName } : {}),
+  }
+}
+
+export async function streamRunAgent(
+  prompt: string,
+  currentEvents: EventItem[],
+  assetId?: number,
+  terminalId?: string | null,
+  modelName?: string,
+  conversationId?: string,
+  mode: RunMode = 'agent',
+  selectedSkillName?: string | null,
+): Promise<AsyncGenerator<EventItem, void, void>> {
   const response = await requestEventStream('/api/console/run', {
     method: 'POST',
-    body: JSON.stringify({ prompt, mode, currentEvents, asset_id: assetId, terminal_id: terminalId, model_name: modelName, conversation_id: conversationId }),
+    body: JSON.stringify(
+      buildConsoleRunRequestDto({
+        prompt,
+        mode,
+        currentEvents,
+        assetId,
+        terminalId,
+        modelName,
+        conversationId,
+        selectedSkillName,
+      }),
+    ),
   })
   return readEventStream(response)
 }

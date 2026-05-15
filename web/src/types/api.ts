@@ -1,4 +1,4 @@
-import type { Asset, AssetGroup, EventItem, RunMode, RuntimeSnapshot, RuntimeSummary, SessionRecord, SSHKey } from './ops'
+import type { Asset, AssetGroup, EventItem, RunMode, RuntimeSnapshot, RuntimeSummary, SessionRecord, SSHKey, SkillPackage } from './ops'
 
 export type { RunMode }
 
@@ -31,6 +31,46 @@ export type ConversationContextStatusDto = {
   context_status: 'normal' | 'warning' | 'critical'
 }
 
+export type SkillPackageDto = {
+  name: string
+  description: string
+  path: string
+  valid: boolean
+  error: string | null
+  updated_at: string
+  body_size: number
+}
+
+export type SkillsResponseDto = {
+  skills: SkillPackageDto[]
+}
+
+export type ConsoleRunRequest = {
+  prompt: string
+  mode: RunMode
+  currentEvents: EventItem[]
+  assetId?: number
+  terminalId?: string | null
+  modelName?: string
+  conversationId?: string
+  selectedSkillName?: string | null
+}
+
+export type ConsoleRunRequestDto = {
+  prompt: string
+  mode: RunMode
+  currentEvents: EventItem[]
+  asset_id?: number
+  terminal_id?: string | null
+  model_name?: string
+  conversation_id?: string
+  selected_skill_name?: string
+}
+
+export type SkillsApiModels = {
+  skills: SkillPackage[]
+}
+
 export type ConsoleBootstrap = {
   assets: Asset[]
   groups: AssetGroup[]
@@ -54,6 +94,7 @@ export type RuntimeSummaryDto = {
   mode: RunMode
   plan_version: number
   locked_plan: boolean
+  loaded_skill_name: string | null
   current_step_id: string | null
   pending_approval_step_id: string | null
   updated_at: string
@@ -68,6 +109,7 @@ export type RuntimeSnapshotDto = {
   mode: RunMode
   plan_version: number
   locked_plan: boolean
+  loaded_skill_name: string | null
   steps: Array<{
     step_id: string
     title: string
