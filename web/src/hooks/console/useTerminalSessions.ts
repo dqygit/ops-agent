@@ -10,13 +10,14 @@ import {
   defaultLocalTerminalAsset,
   LOCAL_TERMINAL_ASSET_ID,
 } from './consoleShared'
+import {
+  buildRestoredTerminalState,
+  persistTerminalState,
+  readPersistedTerminalState,
+  type TerminalTabState,
+} from './terminalSessionPersistence'
 
-type TerminalTab = {
-  assetId: number
-  asset: Asset
-  sessionId: string | null
-  output: string
-}
+type TerminalTab = TerminalTabState
 
 interface UseTerminalSessionsProps {
   assets: Asset[]
@@ -54,6 +55,7 @@ export function useTerminalSessions({
     },
   ])
   const terminalSocketRef = useRef<WebSocket | null>(null)
+  const hasRestoredTerminalStateRef = useRef(false)
   const firstOutputHandledRef = useRef<Record<number, boolean>>({
     [LOCAL_TERMINAL_ASSET_ID]: false,
   })
@@ -74,20 +76,24 @@ export function useTerminalSessions({
 
   const initializeLocalTerminal = useCallback(
     (terminalSessionId: string | null, terminalOutput: string) => {
-      const localTab: TerminalTab = {
-        assetId: LOCAL_TERMINAL_ASSET_ID,
-        asset: defaultLocalTerminalAsset,
-        sessionId: terminalSessionId,
-        output: terminalOutput,
+      const restoredState = buildRestoredTerminalState({
+        assets,
+        localSessionId: terminalSessionId,
+        localOutput: terminalOutput,
+        persisted: readPersistedTerminalState(),
+      })
+      setTerminalTabs(restoredState.tabs)
+      terminalTabsRef.current = restoredState.tabs
+      terminalSessionIdsRef.current = Object.fromEntries(
+        restoredState.tabs.map((tab) => [tab.assetId, tab.sessionId])
+      )
+      for (const tab of restoredState.tabs) {
+        firstOutputHandledRef.current[tab.assetId] = tab.output.length > 0
       }
-      setTerminalTabs([localTab])
-      terminalTabsRef.current = [localTab]
-      terminalSessionIdsRef.current = {
-        [LOCAL_TERMINAL_ASSET_ID]: terminalSessionId,
-      }
-      setActiveTerminalAssetId(LOCAL_TERMINAL_ASSET_ID)
+      setActiveTerminalAssetId(restoredState.activeAssetId)
+      hasRestoredTerminalStateRef.current = true
     },
-    []
+    [assets]
   )
 
   const connectAssetTerminal = useCallback(async (asset: Asset) => {
@@ -149,6 +155,22 @@ export function useTerminalSessions({
 
   const removeTerminalTab = useCallback(
     (assetId: number) => {
+      const tab = terminalTabsRef.current.find((item) => item.assetId === assetId)
+      const socket = terminalSocketsRef.current[assetId]
+      delete terminalSocketsRef.current[assetId]
+      if (
+        socket &&
+        (socket.readyState === WebSocket.OPEN ||
+          socket.readyState === WebSocket.CONNECTING)
+      ) {
+        socket.close()
+      }
+      if (tab?.sessionId) {
+        void closeTerminalSessionApi(tab.sessionId).catch(() => undefined)
+      }
+      delete terminalSessionIdsRef.current[assetId]
+      delete firstOutputHandledRef.current[assetId]
+
       syncTerminalTabs((currentTabs) =>
         currentTabs.filter((item) => item.assetId !== assetId)
       )
@@ -379,7 +401,6 @@ export function useTerminalSessions({
         continue
       }
       const socket = currentSockets[assetId]
-      const sessionId = terminalSessionIdsRef.current[assetId]
       delete currentSockets[assetId]
       if (
         socket &&
@@ -388,24 +409,20 @@ export function useTerminalSessions({
       ) {
         socket.close()
       }
-      if (sessionId !== null && sessionId !== undefined) {
-        void closeTerminalSessionApi(sessionId).catch(() => undefined)
-      }
-      delete terminalSessionIdsRef.current[assetId]
-      delete firstOutputHandledRef.current[assetId]
     }
   }, [activeTerminalAssetId, syncTerminalTabs, terminalTabs, setLoadError])
+
+  useEffect(() => {
+    if (!hasRestoredTerminalStateRef.current) {
+      return
+    }
+    persistTerminalState(terminalTabs, activeTerminalAssetId)
+  }, [activeTerminalAssetId, terminalTabs])
 
   // Cleanup all WebSockets
   useEffect(() => {
     return () => {
       for (const tabItem of terminalTabsRef.current) {
-        if (
-          tabItem.assetId === LOCAL_TERMINAL_ASSET_ID ||
-          tabItem.sessionId === null
-        ) {
-          continue
-        }
         const socket = terminalSocketsRef.current[tabItem.assetId]
         delete terminalSocketsRef.current[tabItem.assetId]
         if (
@@ -415,7 +432,6 @@ export function useTerminalSessions({
         ) {
           socket.close()
         }
-        void closeTerminalSessionApi(tabItem.sessionId).catch(() => undefined)
       }
       terminalSocketRef.current = null
     }

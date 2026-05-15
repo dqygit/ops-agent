@@ -37,7 +37,7 @@ function contextPercent(status: ConversationContextStatus | null) {
 }
 
 function contextLabel(status: ConversationContextStatus | null) {
-  return status ? `上下文 ${contextPercent(status)}%` : '上下文 --%'
+  return status ? `${contextPercent(status)}%` : '--%'
 }
 
 export function PromptInput({

@@ -58,9 +58,15 @@ class ServerConnector:
             "hostname": self.host,
             "port": self.port,
             "username": self.username,
+            "allow_agent": False,
+            "look_for_keys": False,
         }
         if self.private_key:
             connect_kwargs["pkey"] = self._load_private_key()
+            if self.passphrase:
+                connect_kwargs["passphrase"] = self.passphrase
+            if self.password is not None:
+                connect_kwargs["password"] = self.password
         elif self.password is not None:
             connect_kwargs["password"] = self.password
         else:
@@ -159,12 +165,13 @@ def connector_factory(asset):
     passphrase = None
 
     with Session(engine) as session:
-        if auth_type == "password":
+        if auth_type in {"password", "password_and_key"}:
             credential = get_asset_credential_record(session, asset_id)
-            if credential is None:
+            if credential is None and auth_type == "password":
                 raise ValueError("Password credential is required for password auth")
-            password = credential_service.decrypt_secret(credential.encrypted_blob)
-        elif auth_type in {"key", "password_and_key"}:
+            if credential is not None:
+                password = credential_service.decrypt_secret(credential.encrypted_blob)
+        if auth_type in {"key", "password_and_key"}:
             if ssh_key_id is None:
                 raise ValueError("SSH key is required for key auth")
             ssh_key = get_ssh_key_record(session, ssh_key_id)
@@ -173,7 +180,7 @@ def connector_factory(asset):
             private_key = credential_service.decrypt_secret(ssh_key.encrypted_private_key)
             if ssh_key.encrypted_passphrase:
                 passphrase = credential_service.decrypt_secret(ssh_key.encrypted_passphrase)
-        else:
+        elif auth_type != "password":
             credential = get_asset_credential_record(session, asset_id)
             if credential is not None:
                 password = credential_service.decrypt_secret(credential.encrypted_blob)
@@ -195,6 +202,15 @@ def connector_factory(asset):
             "host": getattr(asset, "host"),
             "port": getattr(asset, "port"),
             "username": getattr(asset, "username"),
+            "allow_agent": False,
+        }
+        ssh_params = {
+            "host": getattr(asset, "host"),
+            "port": getattr(asset, "port"),
+            "username": getattr(asset, "username"),
+            "password": password,
+            "private_key": private_key,
+            "passphrase": passphrase,
         }
         if private_key:
             device_params["use_keys"] = True
@@ -208,11 +224,13 @@ def connector_factory(asset):
             )._load_private_key()
             if passphrase:
                 device_params["passphrase"] = passphrase
+            if password is not None:
+                device_params["password"] = password
         elif password is not None:
             device_params["password"] = password
         else:
             raise ValueError("Network device authentication material is required")
-        return NetworkConnector(device_params)
+        return NetworkConnector(device_params, ssh_params)
 
     return ServerConnector(
         host=getattr(asset, "host"),
