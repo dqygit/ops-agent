@@ -17,24 +17,20 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-from app.core.llm.types import LLMCompletionRequest, LLMCompletionResponse, LLMMessage
+from app.core.llm.types import LLMCompletionResponse, LLMMessage
 from app.core.llm.factory import build_llm_provider
+from app.core.loop.request_builder import AgentLLMRequestBuilder
 from app.core.loop.loop_events import (
     AgentMessage,
     LoopEvent,
     emit_completed,
     emit_failed,
-    emit_message_update,
     emit_plan_update,
 )
 from app.core.loop.loop_state import LoopRuntimeStep, LoopState
 from app.core.loop.message_manager import MessageManager
 from app.core.loop.prompts import (
     build_manual_skill_system_prompt,
-    build_plan_step_system_prompt,
-    build_plan_step_user_prompt,
-    build_planner_skill_index_prompt,
-    build_tool_calling_system_prompt,
 )
 from app.core.tool.handler import ToolHandler
 
@@ -43,8 +39,9 @@ EventCallback = Any
 
 
 class AgentLoop:
-    def __init__(self, *, tools: list[ToolHandler]) -> None:
+    def __init__(self, *, tools: list[ToolHandler], request_builder: AgentLLMRequestBuilder | None = None) -> None:
         self._tools = {t.definition.name: t for t in tools}
+        self._request_builder = request_builder or AgentLLMRequestBuilder()
 
     def run(self, state: LoopState) -> Iterator[LoopEvent]:
         manager = MessageManager(runtime_id=state.context.runtime_id)
@@ -213,27 +210,7 @@ class AgentLoop:
             step_lines.append(" | ".join(parts))
 
         yield from manager.begin_message(message_type="say", say_type="text")
-        request = LLMCompletionRequest(
-            messages=[
-                LLMMessage(
-                    role="system",
-                    content=(
-                        "You are an operations assistant. Summarize the completed plan for the user. "
-                        "Be concise, mention what was done, important results, and any recommended next action. "
-                        "Respond in Chinese unless the user explicitly requests another language."
-                    ),
-                ),
-                LLMMessage(
-                    role="user",
-                    content=(
-                        f"Original task: {ctx.user_prompt}\n\n"
-                        "Completed plan steps:\n"
-                        + ("\n".join(step_lines) if step_lines else "No step details were recorded.")
-                    ),
-                ),
-            ],
-            json_mode=False,
-        )
+        request = self._request_builder.build_plan_summary_request(state=state, step_lines=step_lines)
 
         summary_parts: list[str] = []
         for chunk in provider.stream_complete(config=ctx.model_config, request=request):
@@ -255,42 +232,7 @@ class AgentLoop:
         ctx = state.context
         
         yield from manager.begin_message(message_type="say", say_type="text")
-        messages = [
-            LLMMessage(
-                role="system",
-                content=(
-                    "You are an operations task planner. Please generate a task plan based on the user's goal."
-                    "Return a JSON object in the format {\"steps\": [...]}."
-                    "The steps array must contain at least one step."
-                    "Each step includes title, reason, working_directory, expected_output, and risk_level."
-                    "Do not include commands in the plan. Output only raw JSON. Do not wrap it in markdown code fences or add any explanation."
-                ),
-            )
-        ]
-        planner_skill_prompt = build_planner_skill_index_prompt(ctx)
-        if planner_skill_prompt:
-            messages.append(LLMMessage(role="system", content=planner_skill_prompt))
-        manual_skill_prompt = build_manual_skill_system_prompt(ctx)
-        if manual_skill_prompt:
-            messages.append(LLMMessage(role="system", content=manual_skill_prompt))
-        messages.extend(ctx.conversation_history)
-        messages.append(
-            LLMMessage(
-                role="user",
-                content=(
-                    f"操作系统类型: {ctx.os_type}\n"
-                    f"当前主机信息: {ctx.asset_summary}\n"
-                    f"Shell: {ctx.shell_type}\n"
-                    f"执行 Profile: {ctx.execution_profile}\n"
-                    f"{'设备执行规则:\n' + ctx.device_context + '\n' if ctx.device_context else ''}"
-                    f"用户任务: {ctx.user_prompt}"
-                ),
-            )
-        )
-        request = LLMCompletionRequest(
-            messages=messages,
-            json_mode=True,
-        )
+        request = self._request_builder.build_plan_generation_request(state=state)
         try:
             response = provider.complete(config=ctx.model_config, request=request)
             payload = json.loads(self._extract_json_payload(response.text))
@@ -356,14 +298,7 @@ class AgentLoop:
         return stripped
 
     def _build_step_messages(self, state: LoopState, step: LoopRuntimeStep) -> list[LLMMessage]:
-        ctx = state.context
-        messages = [LLMMessage(role="system", content=build_plan_step_system_prompt(ctx))]
-        manual_skill_prompt = build_manual_skill_system_prompt(ctx)
-        if manual_skill_prompt:
-            messages.append(LLMMessage(role="system", content=manual_skill_prompt))
-        messages.extend(ctx.conversation_history)
-        messages.append(LLMMessage(role="user", content=build_plan_step_user_prompt(ctx, step)))
-        return messages
+        return self._request_builder.build_plan_step_messages(state=state, step=step)
 
     def _tool_calling_loop(
         self,
@@ -379,14 +314,7 @@ class AgentLoop:
         tools = [t.definition for t in self._tools.values()]
 
         if not state.messages:
-            state.messages.append(LLMMessage(role="system", content=build_tool_calling_system_prompt(ctx)))
-            manual_skill_prompt = build_manual_skill_system_prompt(ctx)
-            if manual_skill_prompt:
-                state.messages.append(LLMMessage(role="system", content=manual_skill_prompt))
-            # Inject conversation history from previous turns (Roo Code style)
-            if ctx.conversation_history:
-                state.messages.extend(ctx.conversation_history)
-            state.messages.append(LLMMessage(role="user", content=ctx.user_prompt))
+            state.messages = self._request_builder.build_initial_tool_calling_messages(state=state)
 
         import time
 
@@ -405,7 +333,7 @@ class AgentLoop:
             first_chunk_logged = False
             for chunk in provider.stream_complete(
                 config=ctx.model_config,
-                request=LLMCompletionRequest(messages=state.messages, tools=tools, json_mode=False),
+                request=self._request_builder.build_tool_calling_request(state=state, tools=tools),
             ):
                 if not first_chunk_logged:
                     first_chunk_logged = True

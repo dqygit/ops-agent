@@ -88,19 +88,23 @@ class AnthropicLLMProvider:
 
     def _serialize_messages(self, request: LLMCompletionRequest) -> list[dict[str, Any]]:
         messages: list[dict[str, Any]] = []
-        for message in request.messages:
+        breakpoint_index = self._find_cache_breakpoint(request)
+        for index, message in enumerate(request.messages):
             if message.role == "system":
                 continue
             if message.role == "user":
-                messages.append({"role": "user", "content": message.content})
+                messages.append({"role": "user", "content": self._serialize_text_content(message.content, request, cacheable=index == breakpoint_index)})
                 continue
             if message.role == "assistant":
                 if not message.tool_calls:
-                    messages.append({"role": "assistant", "content": message.content})
+                    messages.append({"role": "assistant", "content": self._serialize_text_content(message.content, request, cacheable=index == breakpoint_index)})
                     continue
                 content_blocks: list[dict[str, Any]] = []
                 if message.content:
-                    content_blocks.append({"type": "text", "text": message.content})
+                    text_block: dict[str, Any] = {"type": "text", "text": message.content}
+                    if index == breakpoint_index:
+                        text_block["cache_control"] = self._build_cache_control(request)
+                    content_blocks.append(text_block)
                 for tool_call in message.tool_calls:
                     content_blocks.append(
                         {
@@ -128,12 +132,19 @@ class AnthropicLLMProvider:
         return messages
 
     def _serialize_system_prompt(self, request: LLMCompletionRequest) -> list[TextBlockParam] | str:
-        system_messages = [message.content for message in request.messages if message.role == "system" and message.content]
-        if not system_messages:
+        system_entries = [(index, message.content) for index, message in enumerate(request.messages) if message.role == "system" and message.content]
+        if not system_entries:
             return ""
-        if len(system_messages) == 1:
-            return system_messages[0]
-        return [{"type": "text", "text": content} for content in system_messages]
+        breakpoint_index = self._find_cache_breakpoint(request)
+        blocks: list[TextBlockParam] = []
+        for index, content in system_entries:
+            block: dict[str, Any] = {"type": "text", "text": content}
+            if index == breakpoint_index:
+                block["cache_control"] = self._build_cache_control(request)
+            blocks.append(cast(TextBlockParam, block))
+        if len(blocks) == 1 and breakpoint_index != system_entries[0][0]:
+            return system_entries[0][1]
+        return blocks
 
     def _serialize_tools(self, request: LLMCompletionRequest) -> list[dict[str, Any]]:
         return [
@@ -142,8 +153,53 @@ class AnthropicLLMProvider:
                 "description": tool.description,
                 "input_schema": tool.input_schema,
             }
-            for tool in request.tools
+            for tool in sorted(request.tools, key=lambda item: item.name)
         ]
+
+    def _find_cache_breakpoint(self, request: LLMCompletionRequest) -> int | None:
+        if request.cache_policy is None or not request.cache_policy.enabled:
+            return None
+        for index in range(len(request.messages) - 1, -1, -1):
+            message = request.messages[index]
+            if self._message_supports_cache_marker(message):
+                return index
+        return None
+
+    def _message_supports_cache_marker(self, message) -> bool:
+        if self._resolve_cache_status(message) != "cacheable":
+            return False
+        if message.role == "system":
+            return bool(message.content)
+        if message.role == "user":
+            return bool(message.content)
+        if message.role == "assistant":
+            return bool(message.content)
+        return False
+
+    def _resolve_cache_status(self, message) -> str:
+        if message.cache_status != "inherit":
+            return message.cache_status
+        defaults = {
+            "system": "cacheable",
+            "history": "cacheable",
+            "summary": "cacheable",
+            "current_user": "volatile",
+            "runtime_context": "volatile",
+            "assistant_response": "volatile",
+            "tool_result": "volatile",
+        }
+        return defaults.get(message.cache_segment, "volatile")
+
+    def _build_cache_control(self, request: LLMCompletionRequest) -> dict[str, Any]:
+        ttl = request.cache_policy.ttl if request.cache_policy is not None else "ephemeral"
+        if ttl == "one_hour":
+            return {"type": "ephemeral", "ttl": "1h"}
+        return {"type": "ephemeral"}
+
+    def _serialize_text_content(self, content: str, request: LLMCompletionRequest, *, cacheable: bool) -> Any:
+        if not cacheable:
+            return content
+        return [{"type": "text", "text": content, "cache_control": self._build_cache_control(request)}]
 
     def _serialize_tool_choice(self, request: LLMCompletionRequest) -> Any:
         if request.tool_choice is None:

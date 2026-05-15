@@ -1,3 +1,5 @@
+from typing import Any, Literal
+
 from pydantic import BaseModel, Field, SecretStr, model_validator
 
 from app.shared.enums import AssetType, ModelProvider, TaskStatus
@@ -60,6 +62,9 @@ class ModelConfig(BaseModel):
     timeout_seconds: int = 30
     temperature: float = 0.2
     max_tokens: int = 1024
+    prompt_cache_enabled: bool = True
+    prompt_cache_ttl: Literal["ephemeral", "one_hour"] = "ephemeral"
+    provider_options: dict[str, Any] = Field(default_factory=dict)
 
 
 class TerminalContextAttachment(BaseModel):

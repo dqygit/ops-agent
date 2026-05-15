@@ -102,6 +102,9 @@ class OpenAICompatibleLLMProvider:
             params["response_format"] = {"type": "json_schema", "json_schema": request.json_schema}
         elif request.json_mode:
             params["response_format"] = {"type": "json_object"}
+        extra_body = self._build_cache_extension(config=config, request=request)
+        if extra_body:
+            params["extra_body"] = extra_body
         return params
 
     def _get_client(self, config: ModelConfig):
@@ -195,3 +198,15 @@ class OpenAICompatibleLLMProvider:
                 )
             )
         return parsed
+
+    def _build_cache_extension(self, *, config: ModelConfig, request: LLMCompletionRequest) -> dict[str, Any] | None:
+        if request.cache_policy is None or not request.cache_policy.enabled:
+            return None
+        options = config.provider_options or {}
+        cache_options = options.get("openai_compatible_prompt_cache")
+        if not isinstance(cache_options, dict):
+            return None
+        extra_body = dict(cache_options)
+        extra_body.setdefault("enabled", True)
+        extra_body.setdefault("ttl", request.cache_policy.ttl)
+        return extra_body

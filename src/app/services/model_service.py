@@ -2,6 +2,7 @@ import json
 import os
 import re
 from pathlib import Path
+from typing import Literal, cast
 
 from pydantic import SecretStr
 from sqlmodel import Session
@@ -16,6 +17,8 @@ from app.services.secret_key import get_ops_agent_secret_key
 from app.shared import config as shared_config
 from app.shared.enums import ModelProvider
 from app.shared.schemas import ModelConfig
+
+PromptCacheTTL = Literal["ephemeral", "one_hour"]
 
 
 class ModelService:
@@ -98,6 +101,8 @@ class ModelService:
             timeout_seconds=int(os.environ.get("OPS_AGENT_TIMEOUT_SECONDS", "30")),
             temperature=float(os.environ.get("OPS_AGENT_TEMPERATURE", "0.2")),
             max_tokens=int(os.environ.get("OPS_AGENT_MAX_TOKENS", "2560")),
+            prompt_cache_enabled=os.environ.get("OPS_AGENT_PROMPT_CACHE_ENABLED", "true").lower() != "false",
+            prompt_cache_ttl=self._normalize_prompt_cache_ttl(os.environ.get("OPS_AGENT_PROMPT_CACHE_TTL", "ephemeral")),
         )
 
     def load_settings(self) -> ModelConfig:
@@ -114,6 +119,9 @@ class ModelService:
             timeout_seconds=payload.get("timeout_seconds", default_config.timeout_seconds),
             temperature=payload.get("temperature", default_config.temperature),
             max_tokens=payload.get("max_tokens", default_config.max_tokens),
+            prompt_cache_enabled=payload.get("prompt_cache_enabled", default_config.prompt_cache_enabled),
+            prompt_cache_ttl=self._normalize_prompt_cache_ttl(payload.get("prompt_cache_ttl", default_config.prompt_cache_ttl)),
+            provider_options=payload.get("provider_options", default_config.provider_options),
         )
 
         # Only override with environment variables if they are explicitly set
@@ -126,6 +134,10 @@ class ModelService:
             updates["base_url"] = os.environ["OPS_AGENT_BASE_URL"]
         if os.environ.get("OPS_AGENT_API_KEY"):
             updates["api_key"] = SecretStr(os.environ["OPS_AGENT_API_KEY"])
+        if os.environ.get("OPS_AGENT_PROMPT_CACHE_ENABLED"):
+            updates["prompt_cache_enabled"] = os.environ["OPS_AGENT_PROMPT_CACHE_ENABLED"].lower() != "false"
+        if os.environ.get("OPS_AGENT_PROMPT_CACHE_TTL"):
+            updates["prompt_cache_ttl"] = self._normalize_prompt_cache_ttl(os.environ["OPS_AGENT_PROMPT_CACHE_TTL"])
             
         if updates:
             config = config.model_copy(update=updates)
@@ -144,6 +156,9 @@ class ModelService:
                     "timeout_seconds": config.timeout_seconds,
                     "temperature": config.temperature,
                     "max_tokens": config.max_tokens,
+                    "prompt_cache_enabled": config.prompt_cache_enabled,
+                    "prompt_cache_ttl": config.prompt_cache_ttl,
+                    "provider_options": config.provider_options,
                 },
                 ensure_ascii=False,
                 indent=2,
@@ -185,6 +200,9 @@ class ModelService:
             timeout_seconds=record.timeout_seconds,
             temperature=record.temperature,
             max_tokens=record.max_tokens,
+            prompt_cache_enabled=True,
+            prompt_cache_ttl="ephemeral",
+            provider_options={},
         )
 
     def to_record_payload(self, config: ModelConfig) -> dict:
@@ -205,3 +223,8 @@ class ModelService:
 
     def _credential_service(self) -> CredentialService:
         return CredentialService(secret_key=get_ops_agent_secret_key())
+
+    def _normalize_prompt_cache_ttl(self, value: object) -> PromptCacheTTL:
+        if value == "one_hour":
+            return "one_hour"
+        return cast(PromptCacheTTL, "ephemeral")

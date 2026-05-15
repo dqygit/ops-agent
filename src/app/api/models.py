@@ -26,6 +26,9 @@ def to_model_config_view(model_service: ModelService, record) -> ModelConfigView
         timeout_seconds=record.timeout_seconds,
         temperature=record.temperature,
         max_tokens=record.max_tokens,
+        prompt_cache_enabled=True,
+        prompt_cache_ttl="ephemeral",
+        provider_options={},
         description=record.description,
         created_at=record.created_at,
         updated_at=record.updated_at,
@@ -66,6 +69,9 @@ def create_model_config_record(payload: ModelConfigCreate, session: Session = De
         timeout_seconds=payload.timeout_seconds,
         temperature=payload.temperature,
         max_tokens=payload.max_tokens,
+        prompt_cache_enabled=payload.prompt_cache_enabled,
+        prompt_cache_ttl=payload.prompt_cache_ttl,
+        provider_options=payload.provider_options,
         description=payload.description,
     )
     record = create_model_config(session, **model_service.to_record_payload(config))
@@ -124,6 +130,9 @@ def test_model_config(payload: ModelConnectionTestRequest) -> ModelConnectionTes
         timeout_seconds=payload.timeout_seconds,
         temperature=payload.temperature,
         max_tokens=payload.max_tokens,
+        prompt_cache_enabled=payload.prompt_cache_enabled,
+        prompt_cache_ttl=payload.prompt_cache_ttl,
+        provider_options=payload.provider_options,
     )
     success = model_service.validate(config)
     return ModelConnectionTestResponse(success=success, message="Connection succeeded" if success else "Connection failed")

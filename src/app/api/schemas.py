@@ -67,6 +67,9 @@ class ModelConfigView(BaseModel):
     timeout_seconds: int = 30
     temperature: float = 0.2
     max_tokens: int = 1024
+    prompt_cache_enabled: bool = True
+    prompt_cache_ttl: Literal["ephemeral", "one_hour"] = "ephemeral"
+    provider_options: dict[str, Any] = Field(default_factory=dict)
     description: str
     created_at: datetime | None = None
     updated_at: datetime | None = None
@@ -82,6 +85,9 @@ class ModelConfigCreate(BaseModel):
     timeout_seconds: int = 30
     temperature: float = 0.2
     max_tokens: int = 1024
+    prompt_cache_enabled: bool = True
+    prompt_cache_ttl: Literal["ephemeral", "one_hour"] = "ephemeral"
+    provider_options: dict[str, Any] = Field(default_factory=dict)
     description: str = ""
 
 
@@ -95,6 +101,9 @@ class ModelConfigUpdate(BaseModel):
     timeout_seconds: int | None = None
     temperature: float | None = None
     max_tokens: int | None = None
+    prompt_cache_enabled: bool | None = None
+    prompt_cache_ttl: Literal["ephemeral", "one_hour"] | None = None
+    provider_options: dict[str, Any] | None = None
     description: str | None = None
 
 
@@ -106,6 +115,9 @@ class ModelConnectionTestRequest(BaseModel):
     timeout_seconds: int = 30
     temperature: float = 0.2
     max_tokens: int = 1024
+    prompt_cache_enabled: bool = True
+    prompt_cache_ttl: Literal["ephemeral", "one_hour"] = "ephemeral"
+    provider_options: dict[str, Any] = Field(default_factory=dict)
 
 
 class ModelConnectionTestResponse(BaseModel):
