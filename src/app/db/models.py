@@ -1,11 +1,11 @@
 from datetime import UTC, datetime
-
+from typing import ClassVar
 
 from sqlmodel import Field, SQLModel
 
 
 class AssetGroup(SQLModel, table=True):
-    __tablename__ = "asset_groups"
+    __tablename__: ClassVar[str] = "asset_groups"  # pyright: ignore[reportIncompatibleVariableOverride]
     id: int | None = Field(default=None, primary_key=True)
     name: str
     description: str = ""
@@ -14,7 +14,7 @@ class AssetGroup(SQLModel, table=True):
 
 
 class Asset(SQLModel, table=True):
-    __tablename__ = "assets"
+    __tablename__: ClassVar[str] = "assets"  # pyright: ignore[reportIncompatibleVariableOverride]
     id: int | None = Field(default=None, primary_key=True)
     group_id: int | None = None
     ssh_key_id: int | None = None
@@ -32,7 +32,7 @@ class Asset(SQLModel, table=True):
 
 
 class Credential(SQLModel, table=True):
-    __tablename__ = "credentials"
+    __tablename__: ClassVar[str] = "credentials"  # pyright: ignore[reportIncompatibleVariableOverride]
     id: int | None = Field(default=None, primary_key=True)
     asset_id: int
     encryption_version: str
@@ -42,7 +42,7 @@ class Credential(SQLModel, table=True):
 
 
 class SSHKey(SQLModel, table=True):
-    __tablename__ = "ssh_keys"
+    __tablename__: ClassVar[str] = "ssh_keys"  # pyright: ignore[reportIncompatibleVariableOverride]
     id: int | None = Field(default=None, primary_key=True)
     name: str
     public_key: str = ""
@@ -55,7 +55,7 @@ class SSHKey(SQLModel, table=True):
 
 
 class ModelConfigRecord(SQLModel, table=True):
-    __tablename__ = "model_configs"
+    __tablename__: ClassVar[str] = "model_configs"  # pyright: ignore[reportIncompatibleVariableOverride]
     id: int | None = Field(default=None, primary_key=True)
     name: str
     provider: str
@@ -74,7 +74,7 @@ class ModelConfigRecord(SQLModel, table=True):
 
 
 class ModelUsage(SQLModel, table=True):
-    __tablename__ = "model_usages"
+    __tablename__: ClassVar[str] = "model_usages"  # pyright: ignore[reportIncompatibleVariableOverride]
     id: int | None = Field(default=None, primary_key=True)
     task_id: int
     model_config_id: int | None = None
@@ -87,7 +87,7 @@ class ModelUsage(SQLModel, table=True):
 
 
 class AuditLog(SQLModel, table=True):
-    __tablename__ = "audit_logs"
+    __tablename__: ClassVar[str] = "audit_logs"  # pyright: ignore[reportIncompatibleVariableOverride]
     id: int | None = Field(default=None, primary_key=True)
     action: str
     entity_type: str

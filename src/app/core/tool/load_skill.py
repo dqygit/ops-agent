@@ -6,6 +6,7 @@ from typing import Any
 from app.core.loop.loop_events import LoopEvent
 from app.core.loop.loop_state import LoopState
 from app.core.loop.message_manager import MessageManager
+from app.core.tool.handler import ToolDisplayMetadata
 from app.core.tool.schema import LLMToolDefinition
 from app.services.skill_service import SkillService
 
@@ -34,6 +35,15 @@ class LoadSkillHandler:
     def needs_approval(self, args: dict[str, Any]) -> tuple[str, str]:
         _ = args
         return "allow", "Skill loading only reads local skill instructions."
+
+    def display_metadata(self, args: dict[str, Any]) -> ToolDisplayMetadata:
+        name = str(args.get("name", "")).strip()
+        display_name = name or "skill"
+        return ToolDisplayMetadata(
+            description="Load local skill instructions into the current runtime.",
+            display_text=f"Load skill {display_name}",
+            extra={"kind": "skill"},
+        )
 
     def execute(self, *, state: LoopState, step_id: str, args: dict[str, Any], manager: MessageManager | None = None) -> Iterator[LoopEvent]:
         _ = step_id

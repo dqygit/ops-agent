@@ -2,9 +2,11 @@ import { type FormEvent, useEffect, useState } from 'react'
 
 import {
   createGroup,
+  createMCPServer,
   createModelConfig,
   createSSHKey,
   deleteGroup,
+  deleteMCPServer,
   deleteModelConfig,
   deleteSSHKey,
   getApprovalPolicy,
@@ -12,21 +14,28 @@ import {
   getModelConfigs,
   getSSHKeys,
   getSkills,
+  listMCPServers,
+  refreshMCPServer,
   setDefaultModelConfig,
   testModelConfig,
+  setMCPServerEnabled,
+  testMCPServer,
   updateApprovalPolicy,
   updateGroup,
+  updateMCPServer,
+  updateMCPTool,
   updateModelConfig,
   updateSSHKey,
 } from '../../api'
-import type { AssetGroup, ModelConfig, SSHKey, SkillPackage } from '../../types/ops'
+import type { AssetGroup, MCPServer, MCPTool, ModelConfig, SSHKey, SkillPackage } from '../../types/ops'
 import { DeleteConfirmDialog } from './DeleteConfirmDialog'
 import { GroupsSection } from './GroupsSection'
+import { McpSection } from './McpSection'
 import { ModelsSection } from './ModelsSection'
 import { PermissionsSection } from './PermissionsSection'
 import { SkillsSection } from './SkillsSection'
 import { SSHKeysSection } from './SSHKeysSection'
-import type { GroupForm, ModelForm, PermissionsForm, SettingsDialogProps, SettingsSection, SSHKeyForm } from './settingsTypes'
+import type { GroupForm, MCPServerForm, ModelForm, PermissionsForm, SettingsDialogProps, SettingsSection, SSHKeyForm } from './settingsTypes'
 
 const emptyGroupForm: GroupForm = {
   name: '',
@@ -60,6 +69,17 @@ const emptyPermissionsForm: PermissionsForm = {
   denyInput: '',
 }
 
+const emptyMCPServerForm: MCPServerForm = {
+  name: '',
+  transport: 'stdio',
+  command: '',
+  args: '',
+  env: '{}',
+  url: '',
+  headers: '{}',
+  timeoutSeconds: '30',
+}
+
 function sshKeyToForm(sshKey: SSHKey): SSHKeyForm {
   return {
     name: sshKey.name,
@@ -71,6 +91,35 @@ function sshKeyToForm(sshKey: SSHKey): SSHKeyForm {
 
 function getModelOptions(configs: ModelConfig[]) {
   return configs.map((config) => config.modelName)
+}
+
+function jsonToFormValue(value: Record<string, string>) {
+  return JSON.stringify(value, null, 2)
+}
+
+function mcpServerToForm(server: MCPServer): MCPServerForm {
+  return {
+    name: server.name,
+    transport: server.transport,
+    command: server.command,
+    args: server.args.join('\n'),
+    env: jsonToFormValue(server.env),
+    url: server.url,
+    headers: jsonToFormValue(server.headers),
+    timeoutSeconds: String(server.timeoutSeconds),
+  }
+}
+
+function parseStringRecord(value: string, label: string) {
+  const trimmed = value.trim()
+  if (!trimmed) {
+    return {}
+  }
+  const parsed: unknown = JSON.parse(trimmed)
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error(`${label} must be a JSON object`)
+  }
+  return Object.fromEntries(Object.entries(parsed).map(([key, entry]) => [key, String(entry)]))
 }
 
 function modelToForm(config: ModelConfig): ModelForm {
@@ -94,10 +143,13 @@ export function SettingsDialog({ initialGroups, selectedModel, sshKeys: initialS
   const [modelConfigs, setModelConfigs] = useState<ModelConfig[]>([])
   const [sshKeys, setSSHKeys] = useState<SSHKey[]>(initialSSHKeys)
   const [skills, setSkills] = useState<SkillPackage[]>([])
+  const [mcpServers, setMCPServers] = useState<MCPServer[]>([])
   const [loading, setLoading] = useState(true)
   const [skillsLoading, setSkillsLoading] = useState(false)
+  const [mcpLoading, setMCPLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [skillsError, setSkillsError] = useState<string | null>(null)
+  const [mcpError, setMCPError] = useState<string | null>(null)
   const [groupForm, setGroupForm] = useState<GroupForm>(emptyGroupForm)
   const [showGroupForm, setShowGroupForm] = useState(false)
   const [editingGroup, setEditingGroup] = useState<AssetGroup | null>(null)
@@ -111,6 +163,11 @@ export function SettingsDialog({ initialGroups, selectedModel, sshKeys: initialS
   const [editingSSHKey, setEditingSSHKey] = useState<SSHKey | null>(null)
   const [deletingSSHKey, setDeletingSSHKey] = useState<SSHKey | null>(null)
   const [permissionsForm, setPermissionsForm] = useState<PermissionsForm>(emptyPermissionsForm)
+  const [mcpServerForm, setMCPServerForm] = useState<MCPServerForm>(emptyMCPServerForm)
+  const [showMCPServerForm, setShowMCPServerForm] = useState(false)
+  const [editingMCPServer, setEditingMCPServer] = useState<MCPServer | null>(null)
+  const [deletingMCPServer, setDeletingMCPServer] = useState<MCPServer | null>(null)
+  const [selectedMCPServerId, setSelectedMCPServerId] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [testResult, setTestResult] = useState<string | null>(null)
 
@@ -133,6 +190,20 @@ export function SettingsDialog({ initialGroups, selectedModel, sshKeys: initialS
     }
   }
 
+  const loadMCPServers = async () => {
+    setMCPLoading(true)
+    setMCPError(null)
+    try {
+      const nextMCPServers = await listMCPServers()
+      setMCPServers(nextMCPServers)
+      setSelectedMCPServerId((current) => current ?? nextMCPServers[0]?.id ?? null)
+    } catch (loadError) {
+      setMCPError(loadError instanceof Error ? loadError.message : 'Failed to load MCP servers')
+    } finally {
+      setMCPLoading(false)
+    }
+  }
+
   const loadSkills = async () => {
     setSkillsLoading(true)
     setSkillsError(null)
@@ -149,6 +220,7 @@ export function SettingsDialog({ initialGroups, selectedModel, sshKeys: initialS
   useEffect(() => {
     void loadSettings()
     void loadSkills()
+    void loadMCPServers()
   }, [])
 
   const startCreateGroup = () => {
@@ -414,6 +486,152 @@ export function SettingsDialog({ initialGroups, selectedModel, sshKeys: initialS
     }
   }
 
+  const updateMCPServerInList = (server: MCPServer) => {
+    setMCPServers((current) => current.map((item) => (item.id === server.id ? server : item)))
+    setSelectedMCPServerId(server.id)
+  }
+
+  const startCreateMCPServer = () => {
+    setEditingMCPServer(null)
+    setDeletingMCPServer(null)
+    setTestResult(null)
+    setMCPServerForm(emptyMCPServerForm)
+    setShowMCPServerForm(true)
+  }
+
+  const startEditMCPServer = (server: MCPServer) => {
+    setEditingMCPServer(server)
+    setDeletingMCPServer(null)
+    setTestResult(null)
+    setMCPServerForm(mcpServerToForm(server))
+    setShowMCPServerForm(true)
+    setSelectedMCPServerId(server.id)
+  }
+
+  const cancelMCPServerForm = () => {
+    setEditingMCPServer(null)
+    setShowMCPServerForm(false)
+    setTestResult(null)
+    setMCPServerForm(emptyMCPServerForm)
+  }
+
+  const toMCPServerCreatePayload = () => ({
+    name: mcpServerForm.name.trim(),
+    transport: mcpServerForm.transport,
+    command: mcpServerForm.transport === 'stdio' ? mcpServerForm.command.trim() : '',
+    args: mcpServerForm.transport === 'stdio' ? mcpServerForm.args.split('\n').map((arg) => arg.trim()).filter(Boolean) : [],
+    env: mcpServerForm.transport === 'stdio' ? parseStringRecord(mcpServerForm.env, 'Env') : {},
+    url: mcpServerForm.transport === 'httpSse' ? mcpServerForm.url.trim() : '',
+    headers: mcpServerForm.transport === 'httpSse' ? parseStringRecord(mcpServerForm.headers, 'Headers') : {},
+    timeoutSeconds: Number(mcpServerForm.timeoutSeconds) || 30,
+  })
+
+  const toMCPServerUpdatePayload = (server: MCPServer) => {
+    const originalForm = mcpServerToForm(server)
+    const transportChanged = server.transport !== mcpServerForm.transport
+    const payload = {
+      name: mcpServerForm.name.trim(),
+      transport: mcpServerForm.transport,
+      command: mcpServerForm.transport === 'stdio' ? mcpServerForm.command.trim() : '',
+      args: mcpServerForm.transport === 'stdio' ? mcpServerForm.args.split('\n').map((arg) => arg.trim()).filter(Boolean) : [],
+      url: mcpServerForm.transport === 'httpSse' ? mcpServerForm.url.trim() : '',
+      timeoutSeconds: Number(mcpServerForm.timeoutSeconds) || 30,
+      ...(mcpServerForm.transport !== 'stdio' ? { env: {} } : transportChanged || mcpServerForm.env !== originalForm.env ? { env: parseStringRecord(mcpServerForm.env, 'Env') } : {}),
+      ...(mcpServerForm.transport !== 'httpSse' ? { headers: {} } : transportChanged || mcpServerForm.headers !== originalForm.headers ? { headers: parseStringRecord(mcpServerForm.headers, 'Headers') } : {}),
+    }
+    return payload
+  }
+
+  const saveMCPServer = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setSaving(true)
+    setError(null)
+    try {
+      const savedServer = editingMCPServer
+        ? await updateMCPServer(editingMCPServer.id, toMCPServerUpdatePayload(editingMCPServer))
+        : await createMCPServer(toMCPServerCreatePayload())
+      setMCPServers((current) => (editingMCPServer ? current.map((server) => (server.id === savedServer.id ? savedServer : server)) : [savedServer, ...current]))
+      setSelectedMCPServerId(savedServer.id)
+      cancelMCPServerForm()
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : 'Failed to save MCP server')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const confirmDeleteMCPServer = async () => {
+    if (!deletingMCPServer) {
+      return
+    }
+    setSaving(true)
+    setError(null)
+    try {
+      await deleteMCPServer(deletingMCPServer.id)
+      const nextServers = mcpServers.filter((server) => server.id !== deletingMCPServer.id)
+      setMCPServers(nextServers)
+      setSelectedMCPServerId((current) => (current === deletingMCPServer.id ? nextServers[0]?.id ?? null : current))
+      setDeletingMCPServer(null)
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : 'Failed to delete MCP server')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const testMCP = async (server: MCPServer) => {
+    setSaving(true)
+    setTestResult(null)
+    setError(null)
+    try {
+      const result = await testMCPServer(server.id)
+      if (result.server) {
+        updateMCPServerInList(result.server)
+      }
+      setTestResult(result.message)
+    } catch (testError) {
+      setError(testError instanceof Error ? testError.message : 'MCP server test failed')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const refreshMCP = async (server: MCPServer) => {
+    setSaving(true)
+    setError(null)
+    try {
+      updateMCPServerInList(await refreshMCPServer(server.id))
+    } catch (refreshError) {
+      setError(refreshError instanceof Error ? refreshError.message : 'Failed to refresh MCP server')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const setMCPEnabled = async (server: MCPServer, enabled: boolean) => {
+    setSaving(true)
+    setError(null)
+    try {
+      updateMCPServerInList(await setMCPServerEnabled(server.id, enabled))
+    } catch (enableError) {
+      setError(enableError instanceof Error ? enableError.message : 'Failed to update MCP server')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const updateMCPToolSettings = async (tool: MCPTool, updates: { enabled?: boolean; approvalPolicy?: 'allow' | 'ask' | 'deny' }) => {
+    setSaving(true)
+    setError(null)
+    try {
+      updateMCPServerInList(await updateMCPTool(tool.id, updates))
+    } catch (toolError) {
+      setError(toolError instanceof Error ? toolError.message : 'Failed to update MCP tool')
+    } finally {
+      setSaving(false)
+    }
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-ops-bg/60 backdrop-blur-md animate-in fade-in duration-300" role="presentation">
       <section className="w-[880px] max-w-[95vw] h-[640px] max-h-[90vh] bg-ops-panel/90 border border-ops-border/40 rounded-2xl shadow-2xl flex flex-col overflow-hidden backdrop-blur-xl animate-in zoom-in-95 duration-300" role="dialog" aria-modal="true" aria-labelledby="settings-title">
@@ -431,6 +649,7 @@ export function SettingsDialog({ initialGroups, selectedModel, sshKeys: initialS
             <button type="button" className={`w-full text-left px-4 py-3 rounded-xl transition-all duration-200 text-[11px] font-bold  active:scale-[0.98] ${activeSection === 'sshKeys' ? 'bg-ops-cyan/15 text-ops-cyan shadow-glow border border-ops-cyan/30' : 'text-ops-muted hover:text-ops-text hover:bg-ops-panel/60 border border-transparent'}`} onClick={() => setActiveSection('sshKeys')}>Identity Keys (SSH)</button>
             <button type="button" className={`w-full text-left px-4 py-3 rounded-xl transition-all duration-200 text-[11px] font-bold  active:scale-[0.98] ${activeSection === 'permissions' ? 'bg-ops-cyan/15 text-ops-cyan shadow-glow border border-ops-cyan/30' : 'text-ops-muted hover:text-ops-text hover:bg-ops-panel/60 border border-transparent'}`} onClick={() => setActiveSection('permissions')}>Command Permissions</button>
             <button type="button" className={`w-full text-left px-4 py-3 rounded-xl transition-all duration-200 text-[11px] font-bold  active:scale-[0.98] ${activeSection === 'skills' ? 'bg-ops-cyan/15 text-ops-cyan shadow-glow border border-ops-cyan/30' : 'text-ops-muted hover:text-ops-text hover:bg-ops-panel/60 border border-transparent'}`} onClick={() => setActiveSection('skills')}>Skill Packages</button>
+            <button type="button" className={`w-full text-left px-4 py-3 rounded-xl transition-all duration-200 text-[11px] font-bold  active:scale-[0.98] ${activeSection === 'mcp' ? 'bg-ops-cyan/15 text-ops-cyan shadow-glow border border-ops-cyan/30' : 'text-ops-muted hover:text-ops-text hover:bg-ops-panel/60 border border-transparent'}`} onClick={() => setActiveSection('mcp')}>MCP Servers</button>
           </nav>
           <div className="flex-1 p-6 overflow-y-auto bg-ops-panel/50 relative">
             {error ? <div className="p-4 mb-6 rounded-md bg-red-500/10 border border-red-500/20 text-red-500 text-sm flex items-center justify-between">{error}<button type="button" className="px-3 py-1.5 rounded-md bg-ops-border/20 hover:bg-ops-border/30 transition-colors text-ops-text text-sm" onClick={() => void loadSettings()}>Retry</button></div> : null}
@@ -488,12 +707,36 @@ export function SettingsDialog({ initialGroups, selectedModel, sshKeys: initialS
                 onFormChange={setPermissionsForm}
                 onSave={savePermissions}
               />
-            ) : (
+            ) : activeSection === 'skills' ? (
               <SkillsSection
                 skills={skills}
                 loading={skillsLoading}
                 error={skillsError}
                 onRetry={() => void loadSkills()}
+              />
+            ) : (
+              <McpSection
+                servers={mcpServers}
+                serverForm={mcpServerForm}
+                showServerForm={showMCPServerForm}
+                editingServer={editingMCPServer}
+                selectedServerId={selectedMCPServerId}
+                loading={mcpLoading}
+                error={mcpError}
+                saving={saving}
+                testResult={testResult}
+                onRetry={() => void loadMCPServers()}
+                onStartCreate={startCreateMCPServer}
+                onStartEdit={startEditMCPServer}
+                onStartDelete={setDeletingMCPServer}
+                onSelectServer={setSelectedMCPServerId}
+                onFormChange={setMCPServerForm}
+                onCancelForm={cancelMCPServerForm}
+                onSave={saveMCPServer}
+                onTest={(server) => void testMCP(server)}
+                onRefresh={(server) => void refreshMCP(server)}
+                onSetEnabled={(server, enabled) => void setMCPEnabled(server, enabled)}
+                onUpdateTool={(tool, updates) => void updateMCPToolSettings(tool, updates)}
               />
             )}
           </div>
@@ -527,6 +770,16 @@ export function SettingsDialog({ initialGroups, selectedModel, sshKeys: initialS
             saving={saving}
             onCancel={() => setDeletingSSHKey(null)}
             onConfirm={() => void confirmDeleteSSHKey()}
+          />
+        ) : null}
+        {deletingMCPServer ? (
+          <DeleteConfirmDialog
+            titleId="delete-mcp-server-title"
+            title="Confirm MCP Server Deletion?"
+            message={deletingMCPServer.name}
+            saving={saving}
+            onCancel={() => setDeletingMCPServer(null)}
+            onConfirm={() => void confirmDeleteMCPServer()}
           />
         ) : null}
       </section>

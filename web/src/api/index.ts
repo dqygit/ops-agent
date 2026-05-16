@@ -26,6 +26,19 @@ export {
   updateModelConfig,
 } from './modelConfigs'
 export type { ModelConfigPayload, ModelConnectionTestPayload, ModelConnectionTestResult } from './modelConfigs'
+export {
+  createMCPServer,
+  deleteMCPServer,
+  listMCPServers,
+  mapMCPServer,
+  mapMCPTool,
+  refreshMCPServer,
+  setMCPServerEnabled,
+  testMCPServer,
+  updateMCPServer,
+  updateMCPTool,
+} from './mcp'
+export type { MCPServerPayload, MCPServerUpdatePayload, MCPToolUpdatePayload } from './mcp'
 export { getSkills, mapSkillPackage } from './skills'
 export { createSSHKey, deleteSSHKey, getSSHKeys, mapSSHKey, updateSSHKey } from './sshKeys'
 export type { SSHKeyPayload } from './sshKeys'

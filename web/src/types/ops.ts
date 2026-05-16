@@ -48,6 +48,56 @@ export type SSHKey = {
   updatedAt: string
 }
 
+export type MCPTransport = 'stdio' | 'httpSse'
+
+export type MCPConnectionStatus = 'untested' | 'ok' | 'failed'
+
+export type MCPDiscoveryStatus = 'never' | 'ok' | 'failed'
+
+export type MCPApprovalPolicy = 'allow' | 'ask' | 'deny'
+
+export type MCPTool = {
+  id: string
+  originalName: string
+  exposedName: string
+  description: string
+  inputSchema: Record<string, unknown>
+  approvalPolicy: MCPApprovalPolicy
+  enabled: boolean
+  discovered: boolean
+  lastDiscoveredAt: string | null
+  createdAt: string | null
+  updatedAt: string | null
+}
+
+export type MCPServer = {
+  id: string
+  name: string
+  slug: string
+  enabled: boolean
+  transport: MCPTransport
+  command: string
+  args: string[]
+  env: Record<string, string>
+  url: string
+  headers: Record<string, string>
+  timeoutSeconds: number
+  connectionStatus: MCPConnectionStatus
+  discoveryStatus: MCPDiscoveryStatus
+  lastError: string
+  lastDiscoveredAt: string | null
+  lastRefreshSucceeded: boolean
+  tools: MCPTool[]
+  createdAt: string | null
+  updatedAt: string | null
+}
+
+export type MCPConnectionTestResult = {
+  success: boolean
+  message: string
+  server: MCPServer | null
+}
+
 export type SkillPackage = {
   name: string
   description: string
@@ -273,6 +323,11 @@ export type AgentMessage = {
   toolCall?: {
     id: string
     name: string
+    description?: string
+    displayText?: string
+    kind?: string
+    originalName?: string
+    serverId?: string
     command?: string
     args: Record<string, any>
   }

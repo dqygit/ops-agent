@@ -29,8 +29,14 @@ export function CommandExecutionCard({
   const [allowPrefix, setAllowPrefix] = useState('')
 
   // Derived state from AgentMessage or Legacy events
-  const rawCommand = message?.toolCall?.command || (startEvent as any)?.command || approvalEvent?.command || ''
-  
+  const toolCall = message?.toolCall
+  const rawCommand = toolCall?.command || (startEvent as any)?.command || approvalEvent?.command || ''
+  const isCommandTool = Boolean(rawCommand)
+  const toolName = toolCall?.name || toolCall?.originalName || ''
+  const toolDisplayText = toolCall?.displayText || ''
+  const toolDescription = toolCall?.description || ''
+  const argsJson = toolCall?.args ? JSON.stringify(toolCall.args, null, 2) : '{}'
+
   // Parse command: if it's JSON like {"command":"lshw -short"}, extract the actual command
   const displayCommand = (() => {
     if (!rawCommand) return ''
@@ -48,7 +54,10 @@ export function CommandExecutionCard({
 
     return rawCommand
   })()
-  
+  const toolSummary = isCommandTool
+    ? displayCommand
+    : (toolDisplayText || toolDescription || toolName ? [toolDisplayText || toolName, toolDescription].filter(Boolean).join(' — ') : '')
+
   const outputText = message?.toolOutput ?? chunkEvents.map((event) => event.text).join('')
   const exitCode = message ? message.exitCode : ((endEvent as any)?.exitCode ?? (endEvent as any)?.exit_code)
   const hasExecutionResult = message ? message.type === 'say' && message.say === 'tool_use' && !message.partial : !!endEvent
@@ -90,9 +99,9 @@ export function CommandExecutionCard({
           </div>
 
           <div className="flex min-w-0 flex-1 flex-col gap-1">
-            <span className="text-[9px] font-black uppercase tracking-[0.16em] text-ops-muted/45">Command</span>
+            <span className="text-[9px] font-black uppercase tracking-[0.16em] text-ops-muted/45">{isCommandTool ? 'Command' : 'Tool Call'}</span>
             <code className={`truncate font-mono text-[12px] ${isRunning ? 'text-ops-cyan' : 'text-ops-text/82'}`}>
-              {displayCommand || (message?.toolCall?.name ? `Call: ${message.toolCall.name}` : 'Unknown Command')}
+              {toolSummary || (isCommandTool ? 'Unknown Command' : 'Unknown Tool')}
             </code>
           </div>
         </div>
@@ -137,9 +146,16 @@ export function CommandExecutionCard({
       {isExpanded && (
         <div className="mt-4 flex flex-col gap-4 animate-in fade-in slide-in-from-top-2 duration-200">
           <div className="flex flex-col gap-1.5">
-            <span className="text-[9px] font-black uppercase tracking-[0.16em] text-ops-muted/48">Command Payload</span>
+            <span className="text-[9px] font-black uppercase tracking-[0.16em] text-ops-muted/48">{isCommandTool ? 'Command Payload' : 'Tool Args'}</span>
+            {!isCommandTool && (toolName || toolDisplayText || toolDescription) ? (
+              <div className="rounded-2xl border border-ops-border/20 bg-ops-deep/45 px-4 py-3 text-[12px] leading-relaxed text-ops-text/82">
+                {toolName ? <div><span className="font-bold text-ops-muted/70">Name:</span> {toolName}</div> : null}
+                {toolDisplayText ? <div><span className="font-bold text-ops-muted/70">Display:</span> {toolDisplayText}</div> : null}
+                {toolDescription ? <div><span className="font-bold text-ops-muted/70">Description:</span> {toolDescription}</div> : null}
+              </div>
+            ) : null}
             <code className="block whitespace-pre-wrap break-all rounded-2xl border border-ops-border/20 bg-ops-deep/80 px-4 py-3 font-mono text-[12px] leading-relaxed text-ops-text/90 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
-              {displayCommand || JSON.stringify(message?.toolCall?.args)}
+              {isCommandTool ? displayCommand : argsJson}
             </code>
           </div>
 
@@ -153,7 +169,7 @@ export function CommandExecutionCard({
                   </div>
                   <div>
                     <div className="text-[10px] font-black uppercase tracking-[0.18em] text-ops-warning">Risk Checkpoint</div>
-                    <div className="mt-1 text-sm font-semibold text-ops-text">This command needs operator approval before execution.</div>
+                    <div className="mt-1 text-sm font-semibold text-ops-text">This {isCommandTool ? 'command' : 'tool call'} needs operator approval before execution.</div>
                   </div>
                 </div>
                 <span className="rounded-full border border-ops-warning/25 bg-ops-deep/45 px-2.5 py-1 text-[9px] font-black uppercase tracking-[0.14em] text-ops-warning/80">Needs Approval</span>
@@ -161,7 +177,7 @@ export function CommandExecutionCard({
 
               {(message?.text || approvalEvent?.reason) && <div className="mb-4 rounded-2xl border border-ops-warning/15 bg-ops-deep/38 px-3 py-2 text-[12px] leading-relaxed text-ops-text/78">{message?.text || approvalEvent?.reason}</div>}
 
-              {showWhitelistOptions ? (
+              {isCommandTool && showWhitelistOptions ? (
                 <div className="mb-4 rounded-2xl border border-ops-border/20 bg-ops-deep/45 p-3">
                   <div className="mb-2 text-[10px] font-black uppercase tracking-[0.14em] text-ops-muted/68">Whitelist prefix</div>
                   <div className="mb-3 flex flex-wrap gap-2">
@@ -186,21 +202,23 @@ export function CommandExecutionCard({
               ) : null}
 
               <div className="flex flex-wrap items-center justify-between gap-3">
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (!showWhitelistOptions) {
-                      setAllowPrefix(allowPrefixOptions[0] ?? '')
-                      setShowWhitelistOptions(true)
-                      return
-                    }
-                    onApprove?.(allowPrefix)
-                  }}
-                  className="rounded-full border border-ops-cyan/25 bg-ops-cyan/8 px-3.5 py-2 text-[11px] font-black uppercase tracking-[0.12em] text-ops-cyan transition-colors hover:border-ops-cyan/45 hover:bg-ops-cyan/14 disabled:cursor-not-allowed disabled:opacity-45"
-                  disabled={showWhitelistOptions && !allowPrefix.trim()}
-                >
-                  {showWhitelistOptions ? 'Approve + Trust Prefix' : 'Trust command prefix'}
-                </button>
+                {isCommandTool ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!showWhitelistOptions) {
+                        setAllowPrefix(allowPrefixOptions[0] ?? '')
+                        setShowWhitelistOptions(true)
+                        return
+                      }
+                      onApprove?.(allowPrefix)
+                    }}
+                    className="rounded-full border border-ops-cyan/25 bg-ops-cyan/8 px-3.5 py-2 text-[11px] font-black uppercase tracking-[0.12em] text-ops-cyan transition-colors hover:border-ops-cyan/45 hover:bg-ops-cyan/14 disabled:cursor-not-allowed disabled:opacity-45"
+                    disabled={showWhitelistOptions && !allowPrefix.trim()}
+                  >
+                    {showWhitelistOptions ? 'Approve + Trust Prefix' : 'Trust command prefix'}
+                  </button>
+                ) : <span />}
                 <div className="flex items-center gap-2">
                   <button type="button" onClick={onReject} className="rounded-full border border-ops-danger/25 bg-ops-danger/8 px-4 py-2 text-[11px] font-black uppercase tracking-[0.12em] text-ops-danger transition-colors hover:border-ops-danger/45 hover:bg-ops-danger/12">Reject</button>
                   <button type="button" onClick={() => onApprove?.()} className="rounded-full border border-ops-warning/35 bg-ops-warning px-4 py-2 text-[11px] font-black uppercase tracking-[0.12em] text-ops-deep shadow-[0_0_28px_rgba(245,158,11,0.22)] transition-colors hover:bg-amber-300">Approve Once</button>

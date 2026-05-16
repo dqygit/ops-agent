@@ -1,8 +1,9 @@
 __pycache__/
 .worktrees/
-.claude/
 .pytest_cache/
+.claude/
 .venv/
+venv/
 docs/superpowers/
 .python-version
 build/
@@ -27,5 +28,4 @@ ops-agent-backend.spec
 # Desktop bundle resources
 web/bin/
 logs/
-.agents/
 .playwright-mcp/

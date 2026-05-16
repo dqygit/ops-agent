@@ -125,6 +125,79 @@ class ModelConnectionTestResponse(BaseModel):
     message: str
 
 
+class MCPToolView(BaseModel):
+    id: str
+    original_name: str
+    exposed_name: str
+    description: str
+    input_schema: dict[str, Any] = Field(default_factory=dict)
+    approval_policy: Literal["allow", "ask", "deny"]
+    enabled: bool
+    discovered: bool
+    last_discovered_at: str | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
+
+
+class MCPServerView(BaseModel):
+    id: str
+    name: str
+    slug: str
+    enabled: bool
+    transport: Literal["stdio", "http_sse"]
+    command: str = ""
+    args: list[str] = Field(default_factory=list)
+    env: dict[str, str] = Field(default_factory=dict)
+    url: str = ""
+    headers: dict[str, str] = Field(default_factory=dict)
+    timeout_seconds: int
+    connection_status: Literal["untested", "ok", "failed"]
+    discovery_status: Literal["never", "ok", "failed"]
+    last_error: str
+    last_discovered_at: str | None = None
+    last_refresh_succeeded: bool
+    tools: list[MCPToolView] = Field(default_factory=list)
+    created_at: str | None = None
+    updated_at: str | None = None
+
+
+class MCPServerCreate(BaseModel):
+    name: str
+    transport: Literal["stdio", "http_sse"]
+    command: str = ""
+    args: list[str] = Field(default_factory=list)
+    env: dict[str, str] = Field(default_factory=dict)
+    url: str = ""
+    headers: dict[str, str] = Field(default_factory=dict)
+    timeout_seconds: int = 30
+
+
+class MCPServerUpdate(BaseModel):
+    name: str | None = None
+    transport: Literal["stdio", "http_sse"] | None = None
+    command: str | None = None
+    args: list[str] | None = None
+    env: dict[str, str] | None = None
+    url: str | None = None
+    headers: dict[str, str] | None = None
+    timeout_seconds: int | None = None
+
+
+class MCPServerEnableRequest(BaseModel):
+    enabled: bool
+
+
+class MCPToolUpdate(BaseModel):
+    enabled: bool | None = None
+    approval_policy: Literal["allow", "ask", "deny"] | None = None
+
+
+class MCPConnectionTestResponse(BaseModel):
+    success: bool
+    message: str
+    server: MCPServerView | None = None
+
+
 class SSHKeyView(BaseModel):
     id: int
     name: str

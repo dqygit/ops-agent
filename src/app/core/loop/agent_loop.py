@@ -16,6 +16,7 @@ from collections.abc import Generator, Iterator
 from typing import Any
 
 logger = logging.getLogger(__name__)
+_SECRET_ARG_KEY_RE = re.compile(r"(token|password|passwd|secret|api[_-]?key|authorization|cookie|credential)", re.IGNORECASE)
 
 from app.core.llm.types import LLMCompletionResponse, LLMMessage
 from app.core.llm.factory import build_llm_provider
@@ -32,7 +33,7 @@ from app.core.loop.message_manager import MessageManager
 from app.core.loop.prompts import (
     build_manual_skill_system_prompt,
 )
-from app.core.tool.handler import ToolHandler
+from app.core.tool.handler import ToolDisplayMetadata, ToolHandler
 
 
 EventCallback = Any
@@ -42,6 +43,70 @@ class AgentLoop:
     def __init__(self, *, tools: list[ToolHandler], request_builder: AgentLLMRequestBuilder | None = None) -> None:
         self._tools = {t.definition.name: t for t in tools}
         self._request_builder = request_builder or AgentLLMRequestBuilder()
+
+    def _get_tool_display_metadata(self, handler: ToolHandler | None, args: dict[str, Any]) -> ToolDisplayMetadata:
+        if handler is None:
+            return ToolDisplayMetadata()
+        display_metadata = getattr(handler, "display_metadata", None)
+        if display_metadata is None:
+            return ToolDisplayMetadata()
+        return display_metadata(args)
+
+    def _args_for_display(self, handler: ToolHandler | None, args: dict[str, Any]) -> dict[str, Any]:
+        metadata = self._get_tool_display_metadata(handler, args)
+        if metadata.extra.get("kind") != "mcp":
+            return args
+        return self._redact_sensitive_args(args)
+
+    def _redact_sensitive_args(self, value: Any) -> Any:
+        if isinstance(value, dict):
+            return {
+                key: "[redacted]" if _SECRET_ARG_KEY_RE.search(str(key)) else self._redact_sensitive_args(item)
+                for key, item in value.items()
+            }
+        if isinstance(value, list):
+            return [self._redact_sensitive_args(item) for item in value]
+        return value
+
+    def _prepare_tool_args(self, handler: ToolHandler, args: dict[str, Any], state: LoopState) -> dict[str, Any]:
+        metadata = self._get_tool_display_metadata(handler, args)
+        if metadata.extra.get("kind") != "command":
+            return args
+        prepared = dict(args)
+        prepared.setdefault("asset_type", state.context.asset_type)
+        prepared["shell_type"] = state.context.shell_type
+        prepared["execution_profile"] = state.context.execution_profile
+        if state.context.device_vendor:
+            prepared["device_vendor"] = state.context.device_vendor
+        return prepared
+
+    def _build_tool_call_payload(
+        self,
+        *,
+        handler: ToolHandler | None,
+        tool_call_id: str | None,
+        tool_name: str | None,
+        args: dict[str, Any],
+        command: str | None = None,
+    ) -> dict[str, Any]:
+        metadata = self._get_tool_display_metadata(handler, args)
+        payload: dict[str, Any] = {
+            "id": tool_call_id,
+            "name": tool_name,
+            "args": self._args_for_display(handler, args),
+        }
+        if metadata.description:
+            payload["description"] = metadata.description
+        if metadata.display_text:
+            payload["displayText"] = metadata.display_text
+        protected_keys = {"id", "name", "args", "command", "description", "displayText"}
+        for key, value in metadata.extra.items():
+            if key not in protected_keys:
+                payload[key] = value
+        normalized_command = (command or "").strip()
+        if normalized_command:
+            payload["command"] = normalized_command
+        return payload
 
     def run(self, state: LoopState) -> Iterator[LoopEvent]:
         manager = MessageManager(runtime_id=state.context.runtime_id)
@@ -103,14 +168,21 @@ class AgentLoop:
             handler = self._tools.get(tool_name)
         
         # Reuse the ask message ID to replace it with tool execution message
-        command = args.get("command", "")
+        command = str(args.get("command", "")).strip()
+        tool_call_payload = self._build_tool_call_payload(
+            handler=handler,
+            tool_call_id=state.pending_tool_call_id,
+            tool_name=tool_name,
+            args=args,
+            command=command,
+        )
         if reuse_id:
             yield from manager.resume_message(message_id=reuse_id, message_type="say", say_type="tool_use")
-            yield from manager.update(tool_call={"id": state.pending_tool_call_id, "name": tool_name, "command": command, "args": args})
+            yield from manager.update(tool_call=tool_call_payload)
         else:
             # Fallback: create a new message if no ID to reuse
             yield from manager.begin_message(message_type="say", say_type="tool_use")
-            yield from manager.update(tool_call={"id": state.pending_tool_call_id, "name": tool_name, "command": command, "args": args})
+            yield from manager.update(tool_call=tool_call_payload)
 
         if handler is None:
             ok, output = False, f"Unsupported tool: {tool_name}"
@@ -416,11 +488,7 @@ class AgentLoop:
                     step = plan_step
                     step.working_directory = str(working_directory) if working_directory else None
 
-                args.setdefault("asset_type", state.context.asset_type)
-                args["shell_type"] = state.context.shell_type
-                args["execution_profile"] = state.context.execution_profile
-                if state.context.device_vendor:
-                    args["device_vendor"] = state.context.device_vendor
+                args = self._prepare_tool_args(handler, args, state)
 
                 action, reason = handler.needs_approval(args)
                 if action == "deny":
@@ -460,12 +528,13 @@ class AgentLoop:
                         ask_type="command",
                     )
                     yield from manager.finalize(
-                        tool_call={
-                            "id": tool_call.id,
-                            "name": tool_call.name,
-                            "command": args.get("command", command),
-                            "args": args,
-                        }
+                        tool_call=self._build_tool_call_payload(
+                            handler=handler,
+                            tool_call_id=tool_call.id,
+                            tool_name=tool_call.name,
+                            args=args,
+                            command=args.get("command", command),
+                        )
                     )
                     # Save the message ID so resume_with_approval can reuse it
                     state.pending_message_id = manager.last_finalized_id
@@ -477,12 +546,13 @@ class AgentLoop:
                 # Emit a 'say' message for tool execution
                 yield from manager.begin_message(message_type="say", say_type="tool_use")
                 yield from manager.update(
-                    tool_call={
-                        "id": tool_call.id,
-                        "name": tool_call.name,
-                        "command": args.get("command", command),
-                        "args": args,
-                    }
+                    tool_call=self._build_tool_call_payload(
+                        handler=handler,
+                        tool_call_id=tool_call.id,
+                        tool_name=tool_call.name,
+                        args=args,
+                        command=args.get("command", command),
+                    )
                 )
                 
                 # handler.execute should yield output deltas to the manager

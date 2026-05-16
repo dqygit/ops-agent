@@ -1,7 +1,7 @@
 import type { FormEvent } from 'react'
-import type { AssetGroup, ModelConfig, SSHKey, SkillPackage } from '../../types/ops'
+import type { AssetGroup, MCPApprovalPolicy, MCPServer, MCPTool, MCPTransport, ModelConfig, SSHKey, SkillPackage } from '../../types/ops'
 
-export type SettingsSection = 'groups' | 'models' | 'sshKeys' | 'permissions' | 'skills'
+export type SettingsSection = 'groups' | 'models' | 'sshKeys' | 'permissions' | 'skills' | 'mcp'
 
 export type GroupForm = {
   name: string
@@ -33,6 +33,17 @@ export type PermissionsForm = {
   deny: string[]
   allowInput: string
   denyInput: string
+}
+
+export type MCPServerForm = {
+  name: string
+  transport: MCPTransport
+  command: string
+  args: string
+  env: string
+  url: string
+  headers: string
+  timeoutSeconds: string
 }
 
 export type SettingsDialogProps = {
@@ -103,4 +114,28 @@ export type SkillsSectionProps = {
   loading: boolean
   error: string | null
   onRetry: () => void
+}
+
+export type MCPSectionProps = {
+  servers: MCPServer[]
+  serverForm: MCPServerForm
+  showServerForm: boolean
+  editingServer: MCPServer | null
+  selectedServerId: string | null
+  loading: boolean
+  error: string | null
+  saving: boolean
+  testResult: string | null
+  onRetry: () => void
+  onStartCreate: () => void
+  onStartEdit: (server: MCPServer) => void
+  onStartDelete: (server: MCPServer) => void
+  onSelectServer: (serverId: string) => void
+  onFormChange: (form: MCPServerForm) => void
+  onCancelForm: () => void
+  onSave: (event: FormEvent<HTMLFormElement>) => void
+  onTest: (server: MCPServer) => void
+  onRefresh: (server: MCPServer) => void
+  onSetEnabled: (server: MCPServer, enabled: boolean) => void
+  onUpdateTool: (tool: MCPTool, updates: { enabled?: boolean; approvalPolicy?: MCPApprovalPolicy }) => void
 }

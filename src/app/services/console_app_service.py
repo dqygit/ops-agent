@@ -20,6 +20,7 @@ from app.db.repositories.assets import get_asset
 from app.db.repositories.models import get_default_model_config
 from app.services.approval_service import get_approval_service
 from app.services.context_manager import ContextManager, JsonObject
+from app.services.mcp_service import McpService
 from app.services.model_service import ModelService
 from app.services.skill_service import SkillService
 from app.services.terminal_service import TerminalService
@@ -94,15 +95,21 @@ class ConsoleAppService:
         *,
         model_service: ModelService | None = None,
         skill_service: SkillService | None = None,
+        mcp_service: McpService | None = None,
     ) -> None:
         self._model_service = model_service or ModelService()
         self._skill_service = skill_service or SkillService()
+        self._mcp_service = mcp_service or McpService()
         self.runtime_manager = LoopRuntimeManager(
-            tools_factory=lambda ts: [
-                LoadSkillHandler(self._skill_service),
-                ExecuteCommandHandler(_TerminalSessionAdapter(ts, self.runtime_manager)),
-            ]
+            tools_factory=self._build_tool_handlers,
         )
+
+    def _build_tool_handlers(self, ts: TerminalService) -> list[Any]:
+        return [
+            LoadSkillHandler(self._skill_service),
+            ExecuteCommandHandler(_TerminalSessionAdapter(ts, self.runtime_manager)),
+            *self._mcp_service.build_tool_handlers(),
+        ]
 
     def build_orchestrator(self, terminal_service: TerminalService) -> TaskOrchestrator:
         return TaskOrchestrator(self, terminal_service)

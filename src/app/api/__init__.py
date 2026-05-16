@@ -7,6 +7,7 @@ from app.api.assets import router as assets_router
 from app.api.approval import router as approval_router
 from app.api.groups import router as groups_router
 from app.api.health import router as health_router
+from app.api.mcp import router as mcp_router
 from app.api.models import router as models_router
 from app.api.console import router as console_router
 from app.api.conversations import router as conversations_router
@@ -29,6 +30,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 app = FastAPI(title="Ops Agent API", lifespan=lifespan)
 app.include_router(health_router)
 app.include_router(models_router)
+app.include_router(mcp_router)
 app.include_router(assets_router)
 app.include_router(approval_router)
 app.include_router(terminal_router)
@@ -50,6 +52,7 @@ __all__ = [
     "console_router",
     "conversations_router",
     "lifespan",
+    "mcp_router",
     "models_router",
     "skills_router",
     "ssh_keys_router",

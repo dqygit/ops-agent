@@ -12,6 +12,7 @@ from app.core.loop.loop_events import (
 )
 from app.core.loop.loop_state import LoopState
 from app.core.loop.message_manager import MessageManager
+from app.core.tool.handler import ToolDisplayMetadata
 from app.core.tool.schema import LLMToolDefinition
 from app.core.approval import ApprovalContext
 from app.core.connectors.execution import ExecutionContext
@@ -56,6 +57,14 @@ class ExecuteCommandHandler:
         )
         action, reason = get_approval_service().check_command(command, context)
         return action, reason
+
+    def display_metadata(self, args: dict[str, Any]) -> ToolDisplayMetadata:
+        command = str(args.get("command", "")).strip()
+        return ToolDisplayMetadata(
+            description="Execute terminal command.",
+            display_text=command or "Execute terminal command",
+            extra={"kind": "command"},
+        )
 
     def execute(self, *, state: LoopState, step_id: str, args: dict[str, Any], manager: MessageManager | None = None) -> Iterator[LoopEvent]:
         ctx = state.context

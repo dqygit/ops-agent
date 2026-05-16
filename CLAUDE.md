@@ -35,10 +35,7 @@ cd web && pnpm tauri:dev
 ### 验证
 
 ```bash
-PYTHONPATH=src pytest
-PYTHONPATH=src pytest tests/test_openai_compatible_provider.py
-PYTHONPATH=src pytest tests/test_openai_compatible_provider.py::test_json_mode_uses_supported_openai_response_format_type
-pyright
+source .venv/bin/activate  &&  pyright
 cd web && pnpm build
 cd web/src-tauri && cargo check
 ```
