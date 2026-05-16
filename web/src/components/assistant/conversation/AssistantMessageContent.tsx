@@ -1,5 +1,6 @@
 import type { AgentMessage } from '../../../types/ops'
 import { useMemo, useState } from 'react'
+import { useAppearance } from '../../../hooks/useAppearance'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { PROSE_CLASS } from './types'
@@ -23,6 +24,7 @@ export function AssistantMessageContent({
   onReject, 
   pendingApprovalRuntimeId 
 }: AssistantMessageContentProps) {
+  const { t } = useAppearance()
   const finalContent = useMemo(() => {
     if (message) return message.text || ''
     return content || ''
@@ -76,7 +78,7 @@ export function AssistantMessageContent({
             <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-ops-cyan/70" style={{ animationDelay: '200ms' }} />
             <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-ops-cyan/70" style={{ animationDelay: '400ms' }} />
           </div>
-          <span className="text-[10px] font-black uppercase tracking-[0.16em] text-ops-muted/55">Thinking</span>
+          <span className="text-[10px] font-black uppercase tracking-[0.16em] text-ops-muted/55">{t('conversation.thinking')}</span>
         </div>
       )
     }
@@ -88,7 +90,7 @@ export function AssistantMessageContent({
       <div className="pointer-events-none absolute inset-y-4 left-0 w-px bg-gradient-to-b from-transparent via-ops-cyan/45 to-transparent" />
       <div className="mb-3 flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.16em] text-ops-muted/55">
         <span className="flex h-5 w-5 items-center justify-center rounded-full border border-ops-cyan/18 bg-ops-cyan/8 text-[11px] text-ops-cyan">✦</span>
-        Agent Response
+        {t('conversation.agentResponse')}
         {isStreaming && <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-ops-cyan" />}
       </div>
 
@@ -102,7 +104,7 @@ export function AssistantMessageContent({
               <div className={`flex h-4 w-4 items-center justify-center rounded-full border border-ops-cyan/25 bg-ops-deep/50 transition-transform duration-200 ${isThinkExpanded ? 'rotate-180' : ''}`}>
                 <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="m6 9 6 6 6-6"/></svg>
               </div>
-              <span>{parsed.isStillThinking ? 'Thinking in progress' : 'Thought Process'}</span>
+              <span>{parsed.isStillThinking ? t('conversation.thinkingInProgress') : t('conversation.thoughtProcess')}</span>
               {parsed.isStillThinking && isStreaming && <span className="h-1 w-1 animate-pulse rounded-full bg-ops-cyan" />}
             </button>
 

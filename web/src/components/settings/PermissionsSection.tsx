@@ -1,4 +1,5 @@
 import type { KeyboardEvent } from 'react'
+import { useAppearance } from '../../hooks/useAppearance'
 import type { PermissionsForm, PermissionsSectionProps } from './settingsTypes'
 
 function addPrefix(form: PermissionsForm, key: 'allow' | 'deny'): PermissionsForm {
@@ -28,6 +29,7 @@ type PrefixEditorProps = {
 }
 
 function PrefixEditor({ title, description, placeholder, tone, values, inputValue, saving, onInputChange, onAdd, onRemove }: PrefixEditorProps) {
+  const { t } = useAppearance()
   const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
     if (event.key === 'Enter') {
       event.preventDefault()
@@ -52,11 +54,11 @@ function PrefixEditor({ title, description, placeholder, tone, values, inputValu
           placeholder={placeholder}
           disabled={saving}
         />
-        <button type="button" className="button px-6" disabled={saving || !inputValue.trim()} onClick={onAdd}>添加</button>
+        <button type="button" className="button px-6" disabled={saving || !inputValue.trim()} onClick={onAdd}>{t('common.add')}</button>
       </div>
       <div className="flex min-h-[44px] flex-wrap gap-2">
         {values.length === 0 ? (
-          <span className="rounded-full border border-dashed border-ops-border/30 px-3 py-1.5 text-[10px] text-ops-muted">暂无命令前缀</span>
+          <span className="rounded-full border border-dashed border-ops-border/30 px-3 py-1.5 text-[10px] text-ops-muted">{t('settings.noCommandPrefixes')}</span>
         ) : values.map((value) => (
           <button
             key={value}
@@ -64,7 +66,7 @@ function PrefixEditor({ title, description, placeholder, tone, values, inputValu
             className={`rounded-full border px-3 py-1.5 font-mono text-[11px] font-bold transition-colors hover:border-ops-danger/40 hover:text-ops-danger ${accent}`}
             onClick={() => onRemove(value)}
             disabled={saving}
-            title="点击移除"
+            title={t('settings.removePrefix')}
           >
             {value} <span className="ml-1 opacity-70">×</span>
           </button>
@@ -75,20 +77,22 @@ function PrefixEditor({ title, description, placeholder, tone, values, inputValu
 }
 
 export function PermissionsSection({ permissionsForm, saving, onFormChange, onSave }: PermissionsSectionProps) {
+  const { t } = useAppearance()
+
   return (
     <div className="flex flex-col gap-8">
       <div className="flex items-center justify-between pb-4 border-b border-ops-border/20">
         <div>
-          <h4 className="text-[14px] font-bold tracking-[0.15em] text-ops-text">命令审批策略</h4>
-          <p className="text-[10px] font-medium text-ops-muted mt-1 tracking-wider opacity-60">按命令前缀匹配，适用于本地、SSH、网络设备和串口会话。</p>
+          <h4 className="text-[14px] font-bold tracking-[0.15em] text-ops-text">{t('settings.permissionsTitle')}</h4>
+          <p className="text-[10px] font-medium text-ops-muted mt-1 tracking-wider opacity-60">{t('settings.permissionsDescription')}</p>
         </div>
       </div>
 
       <form className="bg-ops-deep/40 p-6 rounded-2xl border border-ops-border/20 flex flex-col gap-8" onSubmit={onSave}>
         <PrefixEditor
-          title="命令白名单"
-          description="匹配的命令无需人工审批。添加 * 可以允许所有命令。"
-          placeholder="输入命令前缀（例如 'show'）"
+          title={t('settings.allowCommands')}
+          description={t('settings.allowCommandsDescription')}
+          placeholder={t('settings.allowCommandPlaceholder')}
           tone="allow"
           values={permissionsForm.allow}
           inputValue={permissionsForm.allowInput}
@@ -99,9 +103,9 @@ export function PermissionsSection({ permissionsForm, saving, onFormChange, onSa
         />
 
         <PrefixEditor
-          title="拒绝的命令"
-          description="匹配的命令会自动拒绝，无需用户批准；与允许命令冲突时，拒绝优先。"
-          placeholder="输入要拒绝的命令前缀（例如 'rm -rf'）"
+          title={t('settings.deniedCommands')}
+          description={t('settings.deniedCommandsDescription')}
+          placeholder={t('settings.deniedCommandPlaceholder')}
           tone="deny"
           values={permissionsForm.deny}
           inputValue={permissionsForm.denyInput}
@@ -112,8 +116,8 @@ export function PermissionsSection({ permissionsForm, saving, onFormChange, onSa
         />
 
         <div className="flex items-center justify-between gap-3 pt-6 border-t border-ops-border/20">
-          <p className="text-[10px] text-ops-muted max-w-[460px]">前缀匹配要求命令完全相等或后面紧跟空格，例如 git 匹配 git status，但不匹配 github。</p>
-          <button type="submit" className="button button-primary px-8" disabled={saving}>{saving ? '保存中...' : '保存策略'}</button>
+          <p className="text-[10px] text-ops-muted max-w-[460px]">{t('settings.prefixMatchHelp')}</p>
+          <button type="submit" className="button button-primary px-8" disabled={saving}>{saving ? t('settings.saving') : t('settings.savePolicy')}</button>
         </div>
       </form>
     </div>

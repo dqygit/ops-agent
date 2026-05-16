@@ -4,6 +4,35 @@
 @tailwind components;
 @tailwind utilities;
 
+:root,
+:root[data-theme='dark'] {
+  --ops-bg: 11 15 25;
+  --ops-panel: 21 27 40;
+  --ops-strong: 30 41 59;
+  --ops-deep: 5 8 15;
+  --ops-border: 51 65 85;
+  --ops-text: 241 245 249;
+  --ops-muted: 148 163 184;
+  --ops-green: 16 185 129;
+  --ops-cyan: 6 182 212;
+  --ops-warning: 245 158 11;
+  --ops-danger: 239 68 68;
+}
+
+:root[data-theme='light'] {
+  --ops-bg: 241 245 249;
+  --ops-panel: 255 255 255;
+  --ops-strong: 226 232 240;
+  --ops-deep: 248 250 252;
+  --ops-border: 148 163 184;
+  --ops-text: 15 23 42;
+  --ops-muted: 71 85 105;
+  --ops-green: 5 150 105;
+  --ops-cyan: 8 145 178;
+  --ops-warning: 217 119 6;
+  --ops-danger: 220 38 38;
+}
+
 @layer base {
   body {
     @apply bg-ops-bg text-ops-text font-sans antialiased m-0 p-0 overflow-hidden;
@@ -26,16 +55,16 @@
 
   .button-primary {
     @apply border-ops-cyan/40 text-ops-cyan hover:border-ops-cyan/60 hover:shadow-glow;
-    background-color: rgba(6, 182, 212, 0.1);
+    background-color: rgb(var(--ops-cyan) / 0.1);
   }
 
   .button-primary:hover {
-    background-color: rgba(6, 182, 212, 0.15);
+    background-color: rgb(var(--ops-cyan) / 0.15);
   }
 
   .button-danger {
     @apply border-ops-danger/40 text-ops-danger hover:border-ops-danger/60;
-    background-color: rgba(239, 68, 68, 0.1);
+    background-color: rgb(var(--ops-danger) / 0.1);
   }
 
   .button-danger:hover {
@@ -50,12 +79,12 @@
 
   .button-mini-primary {
     @apply border-ops-cyan/30 text-ops-cyan hover:border-ops-cyan/50 hover:shadow-glow;
-    background-color: rgba(6, 182, 212, 0.05);
+    background-color: rgb(var(--ops-cyan) / 0.05);
   }
 
   .button-mini-danger {
     @apply border-ops-danger/30 text-ops-danger hover:border-ops-danger/50;
-    background-color: rgba(239, 68, 68, 0.05);
+    background-color: rgb(var(--ops-danger) / 0.05);
   }
 
   .settings-error {

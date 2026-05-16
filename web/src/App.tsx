@@ -13,10 +13,12 @@ import { useAssetCatalog } from './hooks/console/useAssetCatalog'
 import { useConsoleBootstrap } from './hooks/console/useConsoleBootstrap'
 import { useConversationState } from './hooks/console/useConversationState'
 import { useTerminalSessions } from './hooks/console/useTerminalSessions'
+import { useAppearance } from './hooks/useAppearance'
 
 type ActiveModal = 'settings' | null
 
 export function App() {
+  const { t } = useAppearance()
   const [activeModal, setActiveModal] = useState<ActiveModal>(null)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [runMode, setRunMode] = useState<RunMode>('agent')
@@ -186,8 +188,8 @@ export function App() {
 
         setLoadError(
           error instanceof Error
-            ? `Failed to load conversations: ${error.message}`
-            : 'Failed to load conversations.'
+            ? t('app.loadingConversations', { message: error.message })
+            : t('app.loadingConversationsFallback')
         )
         setIsConsoleInitialized(false)
       }
@@ -207,6 +209,7 @@ export function App() {
     loadError,
     refreshConversationList,
     setLoadError,
+    t,
   ])
 
   if (loadError && bootstrap.assets.length === 0) {
@@ -284,17 +287,17 @@ export function App() {
               />
             ) : loadError ? (
               <section className={centerFallbackClassName}>
-                <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_50%,rgba(239,68,68,0.05),transparent_80%)] pointer-events-none" />
+                <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_50%,rgb(var(--ops-danger)/0.05),transparent_80%)] pointer-events-none" />
                 <p className="text-ops-danger font-bold tracking-[0.1em] text-[11px] shadow-glow">{loadError}</p>
               </section>
             ) : (
               <section className={centerFallbackClassName}>
-                <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_50%,rgba(6,182,212,0.03),transparent_80%)] pointer-events-none" />
+                <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_50%,rgb(var(--ops-cyan)/0.04),transparent_80%)] pointer-events-none" />
                 <div className="flex flex-col items-center gap-4">
                   <div className="h-12 w-12 rounded-2xl border border-ops-border/20 bg-ops-panel/40 flex items-center justify-center text-ops-muted/30">
                     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /><path d="M9 10a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z" /></svg>
                   </div>
-                  <p className="text-ops-muted/40 font-bold tracking-[0.1em] text-[10px]">Awaiting Target Selection</p>
+                  <p className="text-ops-muted/40 font-bold tracking-[0.1em] text-[10px]">{t('app.awaitingTargetSelection')}</p>
                 </div>
               </section>
             )}

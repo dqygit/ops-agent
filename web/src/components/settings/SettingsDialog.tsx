@@ -27,7 +27,9 @@ import {
   updateModelConfig,
   updateSSHKey,
 } from '../../api'
+import { useAppearance } from '../../hooks/useAppearance'
 import type { AssetGroup, MCPServer, MCPTool, ModelConfig, SSHKey, SkillPackage } from '../../types/ops'
+import { AppearanceSection } from './AppearanceSection'
 import { DeleteConfirmDialog } from './DeleteConfirmDialog'
 import { GroupsSection } from './GroupsSection'
 import { McpSection } from './McpSection'
@@ -138,7 +140,8 @@ function modelToForm(config: ModelConfig): ModelForm {
 }
 
 export function SettingsDialog({ initialGroups, selectedModel, sshKeys: initialSSHKeys, onSelectedModelChange, onGroupsChange, onModelOptionsChange, onSSHKeysChange, onClose }: SettingsDialogProps) {
-  const [activeSection, setActiveSection] = useState<SettingsSection>('groups')
+  const { language, themeMode, resolvedTheme, setLanguage, setThemeMode, t } = useAppearance()
+  const [activeSection, setActiveSection] = useState<SettingsSection>('appearance')
   const [groups, setGroups] = useState<AssetGroup[]>(initialGroups)
   const [modelConfigs, setModelConfigs] = useState<ModelConfig[]>([])
   const [sshKeys, setSSHKeys] = useState<SSHKey[]>(initialSSHKeys)
@@ -637,24 +640,33 @@ export function SettingsDialog({ initialGroups, selectedModel, sshKeys: initialS
       <section className="w-[880px] max-w-[95vw] h-[640px] max-h-[90vh] bg-ops-panel/90 border border-ops-border/40 rounded-2xl shadow-2xl flex flex-col overflow-hidden backdrop-blur-xl animate-in zoom-in-95 duration-300" role="dialog" aria-modal="true" aria-labelledby="settings-title">
         <div className="flex items-center justify-between p-6 border-b border-ops-border/20 bg-ops-panel shrink-0">
           <div>
-            <h3 id="settings-title" className="text-[16px] font-bold  text-ops-cyan">System Configuration</h3>
-            <p className="text-[11px] font-medium text-ops-muted mt-1 tracking-wider opacity-60">Manage your workspace environments and AI models.</p>
+            <h3 id="settings-title" className="text-[16px] font-bold  text-ops-cyan">{t('settings.title')}</h3>
+            <p className="text-[11px] font-medium text-ops-muted mt-1 tracking-wider opacity-60">{t('settings.description')}</p>
           </div>
-          <button type="button" className="h-8 px-4 text-[11px] font-bold  tracking-widest rounded-lg transition-all duration-200 text-ops-muted hover:text-ops-text hover:bg-ops-border/30 active:scale-95" onClick={onClose}>Close</button>
+          <button type="button" className="h-8 px-4 text-[11px] font-bold  tracking-widest rounded-lg transition-all duration-200 text-ops-muted hover:text-ops-text hover:bg-ops-border/30 active:scale-95" onClick={onClose}>{t('common.close')}</button>
         </div>
         <div className="flex flex-1 overflow-hidden">
-          <nav className="w-[220px] border-r border-ops-border/20 bg-ops-deep/40 p-4 flex flex-col gap-2 shrink-0 overflow-y-auto" aria-label="Settings Navigation">
-            <button type="button" className={`w-full text-left px-4 py-3 rounded-xl transition-all duration-200 text-[11px] font-bold  active:scale-[0.98] ${activeSection === 'groups' ? 'bg-ops-cyan/15 text-ops-cyan shadow-glow border border-ops-cyan/30' : 'text-ops-muted hover:text-ops-text hover:bg-ops-panel/60 border border-transparent'}`} onClick={() => setActiveSection('groups')}>Infrastructure Groups</button>
-            <button type="button" className={`w-full text-left px-4 py-3 rounded-xl transition-all duration-200 text-[11px] font-bold  active:scale-[0.98] ${activeSection === 'models' ? 'bg-ops-cyan/15 text-ops-cyan shadow-glow border border-ops-cyan/30' : 'text-ops-muted hover:text-ops-text hover:bg-ops-panel/60 border border-transparent'}`} onClick={() => setActiveSection('models')}>AI Model Configs</button>
-            <button type="button" className={`w-full text-left px-4 py-3 rounded-xl transition-all duration-200 text-[11px] font-bold  active:scale-[0.98] ${activeSection === 'sshKeys' ? 'bg-ops-cyan/15 text-ops-cyan shadow-glow border border-ops-cyan/30' : 'text-ops-muted hover:text-ops-text hover:bg-ops-panel/60 border border-transparent'}`} onClick={() => setActiveSection('sshKeys')}>Identity Keys (SSH)</button>
-            <button type="button" className={`w-full text-left px-4 py-3 rounded-xl transition-all duration-200 text-[11px] font-bold  active:scale-[0.98] ${activeSection === 'permissions' ? 'bg-ops-cyan/15 text-ops-cyan shadow-glow border border-ops-cyan/30' : 'text-ops-muted hover:text-ops-text hover:bg-ops-panel/60 border border-transparent'}`} onClick={() => setActiveSection('permissions')}>Command Permissions</button>
-            <button type="button" className={`w-full text-left px-4 py-3 rounded-xl transition-all duration-200 text-[11px] font-bold  active:scale-[0.98] ${activeSection === 'skills' ? 'bg-ops-cyan/15 text-ops-cyan shadow-glow border border-ops-cyan/30' : 'text-ops-muted hover:text-ops-text hover:bg-ops-panel/60 border border-transparent'}`} onClick={() => setActiveSection('skills')}>Skill Packages</button>
-            <button type="button" className={`w-full text-left px-4 py-3 rounded-xl transition-all duration-200 text-[11px] font-bold  active:scale-[0.98] ${activeSection === 'mcp' ? 'bg-ops-cyan/15 text-ops-cyan shadow-glow border border-ops-cyan/30' : 'text-ops-muted hover:text-ops-text hover:bg-ops-panel/60 border border-transparent'}`} onClick={() => setActiveSection('mcp')}>MCP Servers</button>
+          <nav className="w-[220px] border-r border-ops-border/20 bg-ops-deep/40 p-4 flex flex-col gap-2 shrink-0 overflow-y-auto" aria-label={t('settings.navigation')}>
+            <button type="button" className={`w-full text-left px-4 py-3 rounded-xl transition-all duration-200 text-[11px] font-bold  active:scale-[0.98] ${activeSection === 'appearance' ? 'bg-ops-cyan/15 text-ops-cyan shadow-glow border border-ops-cyan/30' : 'text-ops-muted hover:text-ops-text hover:bg-ops-panel/60 border border-transparent'}`} onClick={() => setActiveSection('appearance')}>{t('settings.appearance')}</button>
+            <button type="button" className={`w-full text-left px-4 py-3 rounded-xl transition-all duration-200 text-[11px] font-bold  active:scale-[0.98] ${activeSection === 'groups' ? 'bg-ops-cyan/15 text-ops-cyan shadow-glow border border-ops-cyan/30' : 'text-ops-muted hover:text-ops-text hover:bg-ops-panel/60 border border-transparent'}`} onClick={() => setActiveSection('groups')}>{t('settings.groups')}</button>
+            <button type="button" className={`w-full text-left px-4 py-3 rounded-xl transition-all duration-200 text-[11px] font-bold  active:scale-[0.98] ${activeSection === 'models' ? 'bg-ops-cyan/15 text-ops-cyan shadow-glow border border-ops-cyan/30' : 'text-ops-muted hover:text-ops-text hover:bg-ops-panel/60 border border-transparent'}`} onClick={() => setActiveSection('models')}>{t('settings.models')}</button>
+            <button type="button" className={`w-full text-left px-4 py-3 rounded-xl transition-all duration-200 text-[11px] font-bold  active:scale-[0.98] ${activeSection === 'sshKeys' ? 'bg-ops-cyan/15 text-ops-cyan shadow-glow border border-ops-cyan/30' : 'text-ops-muted hover:text-ops-text hover:bg-ops-panel/60 border border-transparent'}`} onClick={() => setActiveSection('sshKeys')}>{t('settings.sshKeys')}</button>
+            <button type="button" className={`w-full text-left px-4 py-3 rounded-xl transition-all duration-200 text-[11px] font-bold  active:scale-[0.98] ${activeSection === 'permissions' ? 'bg-ops-cyan/15 text-ops-cyan shadow-glow border border-ops-cyan/30' : 'text-ops-muted hover:text-ops-text hover:bg-ops-panel/60 border border-transparent'}`} onClick={() => setActiveSection('permissions')}>{t('settings.permissions')}</button>
+            <button type="button" className={`w-full text-left px-4 py-3 rounded-xl transition-all duration-200 text-[11px] font-bold  active:scale-[0.98] ${activeSection === 'skills' ? 'bg-ops-cyan/15 text-ops-cyan shadow-glow border border-ops-cyan/30' : 'text-ops-muted hover:text-ops-text hover:bg-ops-panel/60 border border-transparent'}`} onClick={() => setActiveSection('skills')}>{t('settings.skills')}</button>
+            <button type="button" className={`w-full text-left px-4 py-3 rounded-xl transition-all duration-200 text-[11px] font-bold  active:scale-[0.98] ${activeSection === 'mcp' ? 'bg-ops-cyan/15 text-ops-cyan shadow-glow border border-ops-cyan/30' : 'text-ops-muted hover:text-ops-text hover:bg-ops-panel/60 border border-transparent'}`} onClick={() => setActiveSection('mcp')}>{t('settings.mcp')}</button>
           </nav>
           <div className="flex-1 p-6 overflow-y-auto bg-ops-panel/50 relative">
-            {error ? <div className="p-4 mb-6 rounded-md bg-red-500/10 border border-red-500/20 text-red-500 text-sm flex items-center justify-between">{error}<button type="button" className="px-3 py-1.5 rounded-md bg-ops-border/20 hover:bg-ops-border/30 transition-colors text-ops-text text-sm" onClick={() => void loadSettings()}>Retry</button></div> : null}
-            {loading ? (
-              <div className="flex items-center justify-center h-40 text-ops-muted text-sm">Loading...</div>
+            {error ? <div className="p-4 mb-6 rounded-md bg-red-500/10 border border-red-500/20 text-red-500 text-sm flex items-center justify-between">{error}<button type="button" className="px-3 py-1.5 rounded-md bg-ops-border/20 hover:bg-ops-border/30 transition-colors text-ops-text text-sm" onClick={() => void loadSettings()}>{t('common.retry')}</button></div> : null}
+            {activeSection === 'appearance' ? (
+              <AppearanceSection
+                language={language}
+                themeMode={themeMode}
+                resolvedTheme={resolvedTheme}
+                onLanguageChange={setLanguage}
+                onThemeModeChange={setThemeMode}
+              />
+            ) : loading ? (
+              <div className="flex items-center justify-center h-40 text-ops-muted text-sm">{t('settings.loading')}</div>
             ) : activeSection === 'groups' ? (
               <GroupsSection
                 groups={groups}
@@ -744,7 +756,7 @@ export function SettingsDialog({ initialGroups, selectedModel, sshKeys: initialS
         {deletingGroup ? (
           <DeleteConfirmDialog
             titleId="delete-group-title"
-            title="Confirm Group Deletion?"
+            title={t('settings.confirmGroupDeletion')}
             message={deletingGroup.name}
             saving={saving}
             onCancel={() => setDeletingGroup(null)}
@@ -754,8 +766,8 @@ export function SettingsDialog({ initialGroups, selectedModel, sshKeys: initialS
         {deletingModel ? (
           <DeleteConfirmDialog
             titleId="delete-model-title"
-            title="Confirm Model Deletion?"
-            message={deletingModel.isDefault ? 'The default model cannot be deleted. Please set another model as default first.' : deletingModel.name}
+            title={t('settings.confirmModelDeletion')}
+            message={deletingModel.isDefault ? t('settings.defaultModelCannotDelete') : deletingModel.name}
             saving={saving}
             confirmDisabled={deletingModel.isDefault}
             onCancel={() => setDeletingModel(null)}
@@ -765,7 +777,7 @@ export function SettingsDialog({ initialGroups, selectedModel, sshKeys: initialS
         {deletingSSHKey ? (
           <DeleteConfirmDialog
             titleId="delete-ssh-key-title"
-            title="Confirm SSH Key Deletion?"
+            title={t('settings.confirmSshKeyDeletion')}
             message={deletingSSHKey.name}
             saving={saving}
             onCancel={() => setDeletingSSHKey(null)}
@@ -775,7 +787,7 @@ export function SettingsDialog({ initialGroups, selectedModel, sshKeys: initialS
         {deletingMCPServer ? (
           <DeleteConfirmDialog
             titleId="delete-mcp-server-title"
-            title="Confirm MCP Server Deletion?"
+            title={t('settings.confirmMcpServerDeletion')}
             message={deletingMCPServer.name}
             saving={saving}
             onCancel={() => setDeletingMCPServer(null)}

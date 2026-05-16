@@ -1,3 +1,4 @@
+import { useAppearance } from '../../hooks/useAppearance'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { getSkills } from '../../api'
 import type { RunMode } from '../../types/api'
@@ -17,14 +18,14 @@ type PromptInputProps = {
   onRun: (prompt: string, selectedSkillName?: string | null) => Promise<void>
 }
 
-const MODE_DESCRIPTION: Record<RunMode, string> = {
-  agent: 'Dynamic task execution with realtime tool invocation. Best for exploration.',
-  plan: 'Structured multi-step planning with sequential execution and state tracking.',
+const MODE_DESCRIPTION_KEY: Record<RunMode, 'assistant.agentDescription' | 'assistant.planDescription'> = {
+  agent: 'assistant.agentDescription',
+  plan: 'assistant.planDescription',
 }
 
-const MODE_LABEL: Record<RunMode, string> = {
-  agent: 'Agent',
-  plan: 'Plan',
+const MODE_LABEL_KEY: Record<RunMode, 'assistant.agent' | 'assistant.plan'> = {
+  agent: 'assistant.agent',
+  plan: 'assistant.plan',
 }
 
 function contextStatusColor(status: ConversationContextStatus | null) {
@@ -78,6 +79,7 @@ export function PromptInput({
   onRunModeChange,
   onRun,
 }: PromptInputProps) {
+  const { t } = useAppearance()
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
   const skillsRequestRef = useRef<Promise<SkillPackage[]> | null>(null)
   const [skillPackages, setSkillPackages] = useState<SkillPackage[] | null>(null)
@@ -177,7 +179,7 @@ export function PromptInput({
       <div className="relative overflow-hidden rounded-[27px] border border-white/[0.04] bg-[radial-gradient(circle_at_18%_0%,rgba(6,182,212,0.14),transparent_34%),linear-gradient(180deg,rgba(21,27,40,0.92),rgba(5,8,15,0.96))]">
         <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(90deg,rgba(255,255,255,0.025)_1px,transparent_1px),linear-gradient(180deg,rgba(255,255,255,0.018)_1px,transparent_1px)] bg-[size:28px_28px] opacity-40" />
         <div className="relative flex items-center gap-3 border-b border-white/[0.04] px-4 py-3">
-          <div className="flex min-w-0 flex-1 items-center gap-2" aria-label="Context">
+          <div className="flex min-w-0 flex-1 items-center gap-2" aria-label={t('assistant.context')}>
             <span className="relative flex h-2.5 w-2.5 shrink-0">
               <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-ops-cyan opacity-30" />
               <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-ops-cyan shadow-glow" />
@@ -191,10 +193,10 @@ export function PromptInput({
           </div>
           <div className="hidden items-center gap-1.5 rounded-full border border-ops-border/20 bg-ops-deep/60 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.14em] text-ops-muted/55 xl:flex">
             <span className="text-ops-cyan/70">Enter</span>
-            <span>send</span>
+            <span>{t('assistant.enterSend')}</span>
             <span className="mx-1 h-1 w-1 rounded-full bg-ops-border/60" />
             <span className="text-ops-cyan/70">Shift Enter</span>
-            <span>line</span>
+            <span>{t('assistant.shiftEnterLine')}</span>
           </div>
           <span
             className="ml-auto inline-flex shrink-0 items-center gap-1.5 rounded-full border border-ops-border/25 bg-ops-deep/65 px-2 py-1 font-mono text-[10px] text-ops-muted/75"
@@ -213,7 +215,7 @@ export function PromptInput({
         </div>
 
         <label className="sr-only" htmlFor="prompt-input">
-          Command Input
+          {t('assistant.commandInput')}
         </label>
         <div className="relative">
           <textarea
@@ -228,21 +230,21 @@ export function PromptInput({
                 void submitPrompt()
               }
             }}
-            placeholder="Describe the operation, paste logs, or type / to pick a skill..."
+            placeholder={t('assistant.promptPlaceholder')}
           />
 
           {shouldShowSlashSuggestions ? (
             <div
               className="absolute left-4 right-20 top-[calc(100%-0.5rem)] z-20 overflow-hidden rounded-2xl border border-ops-cyan/20 bg-ops-deep/95 shadow-[0_18px_60px_rgba(0,0,0,0.45)] backdrop-blur-xl"
               role="listbox"
-              aria-label="Available skills"
+              aria-label={t('assistant.availableSkills')}
             >
               <div className="border-b border-white/[0.04] px-4 py-2 text-[10px] font-bold uppercase tracking-[0.14em] text-ops-muted/65">
-                Slash skills
+                {t('assistant.slashSkills')}
               </div>
               <div className="max-h-64 overflow-y-auto py-2">
                 {skillsLoading ? (
-                  <div className="px-4 py-3 text-sm text-ops-muted/70">Loading skills...</div>
+                  <div className="px-4 py-3 text-sm text-ops-muted/70">{t('assistant.loadingSkills')}</div>
                 ) : filteredSkillPackages.length > 0 ? (
                   filteredSkillPackages.map((skill) => (
                     <button
@@ -257,11 +259,11 @@ export function PromptInput({
                       aria-label={`/${skill.name}`}
                     >
                       <span className="font-mono text-[13px] text-ops-cyan">/{skill.name}</span>
-                      <span className="text-[11px] leading-5 text-ops-muted/80">{skill.description || 'No description provided.'}</span>
+                      <span className="text-[11px] leading-5 text-ops-muted/80">{skill.description || t('settings.noDescription')}</span>
                     </button>
                   ))
                 ) : (
-                  <div className="px-4 py-3 text-sm text-ops-muted/70">No matching valid skills.</div>
+                  <div className="px-4 py-3 text-sm text-ops-muted/70">{t('assistant.noMatchingSkills')}</div>
                 )}
               </div>
             </div>
@@ -277,7 +279,7 @@ export function PromptInput({
               void submitPrompt()
             }}
             disabled={!prompt.trim()}
-            aria-label="Run Mission"
+            aria-label={t('assistant.runMission')}
           >
             <svg aria-hidden="true" viewBox="0 0 24 24" focusable="false" className="h-5 w-5 fill-current"><path d="M5 3.8 20.2 12 5 20.2v-6.1L13.4 12 5 9.9z" /></svg>
           </button>
@@ -291,9 +293,9 @@ export function PromptInput({
               <div
                 className="inline-flex items-center rounded-full border border-ops-border/20 bg-ops-deep/75 p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]"
                 role="radiogroup"
-                aria-label="Mode"
+                aria-label={t('assistant.mode')}
               >
-                {(Object.keys(MODE_LABEL) as RunMode[]).map((mode) => {
+                {(Object.keys(MODE_LABEL_KEY) as RunMode[]).map((mode) => {
                   const isActive = runMode === mode
                   return (
                     <button
@@ -301,7 +303,7 @@ export function PromptInput({
                       type="button"
                       role="radio"
                       aria-checked={isActive}
-                      title={MODE_DESCRIPTION[mode]}
+                      title={t(MODE_DESCRIPTION_KEY[mode])}
                       onClick={() => onRunModeChange(mode)}
                       className={`inline-flex items-center gap-2 rounded-full border px-3.5 py-1.5 text-[10px] font-black uppercase tracking-[0.12em] transition-all duration-200 active:scale-95 ${isActive
                         ? mode === 'agent'
@@ -315,13 +317,13 @@ export function PromptInput({
                       ) : (
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><circle cx="12" cy="12" r="3" /><path d="M12 1v6M12 17v6M4.22 4.22l4.24 4.24M15.54 15.54l4.24 4.24M1 12h6M17 12h6M4.22 19.78l4.24-4.24M15.54 8.46l4.24-4.24" /></svg>
                       )}
-                      {MODE_LABEL[mode]}
+                      {t(MODE_LABEL_KEY[mode])}
                     </button>
                   )
                 })}
               </div>
               <span className="hidden max-w-[280px] truncate text-[10px] font-bold tracking-[0.08em] text-ops-muted/35 transition-all duration-300 group-hover:text-ops-muted/70 lg:inline">
-                {MODE_DESCRIPTION[runMode]}
+                {t(MODE_DESCRIPTION_KEY[runMode])}
               </span>
             </div>
           </div>

@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
+import { useAppearance } from '../../hooks/useAppearance'
 import { FitAddon } from '@xterm/addon-fit'
-import { Terminal } from '@xterm/xterm'
+import { Terminal, type ITheme } from '@xterm/xterm'
 import '@xterm/xterm/css/xterm.css'
 
 type TerminalOutputProps = {
@@ -19,7 +20,54 @@ function stripReplayControlSequences(value: string) {
     .replace(/\u001b\[\?9001l/g, '')
 }
 
+const darkTerminalTheme: ITheme = {
+  background: 'rgb(11, 15, 25)',
+  foreground: 'rgb(241, 245, 249)',
+  cursor: 'rgb(var(--ops-cyan))',
+  selectionBackground: 'rgb(var(--ops-cyan) / 0.3)',
+  black: 'rgb(30, 41, 59)',
+  red: 'rgb(var(--ops-danger))',
+  green: 'rgb(var(--ops-green))',
+  yellow: 'rgb(var(--ops-warning))',
+  blue: 'rgb(59, 130, 246)',
+  magenta: 'rgb(139, 92, 246)',
+  cyan: 'rgb(var(--ops-cyan))',
+  white: 'rgb(241, 245, 249)',
+  brightBlack: 'rgb(71, 85, 105)',
+  brightRed: 'rgb(248, 113, 113)',
+  brightGreen: 'rgb(52, 211, 153)',
+  brightYellow: 'rgb(251, 191, 36)',
+  brightBlue: 'rgb(96, 165, 250)',
+  brightMagenta: 'rgb(167, 139, 250)',
+  brightCyan: 'rgb(34, 211, 238)',
+  brightWhite: 'rgb(255, 255, 255)',
+}
+
+const lightTerminalTheme: ITheme = {
+  background: 'rgb(var(--ops-deep))',
+  foreground: 'rgb(var(--ops-text))',
+  cursor: 'rgb(var(--ops-cyan))',
+  selectionBackground: 'rgb(var(--ops-cyan) / 0.22)',
+  black: 'rgb(15, 23, 42)',
+  red: 'rgb(var(--ops-danger))',
+  green: 'rgb(var(--ops-green))',
+  yellow: 'rgb(var(--ops-warning))',
+  blue: 'rgb(37, 99, 235)',
+  magenta: 'rgb(124, 58, 237)',
+  cyan: 'rgb(var(--ops-cyan))',
+  white: 'rgb(248, 250, 252)',
+  brightBlack: 'rgb(100, 116, 139)',
+  brightRed: 'rgb(220, 38, 38)',
+  brightGreen: 'rgb(5, 150, 105)',
+  brightYellow: 'rgb(217, 119, 6)',
+  brightBlue: 'rgb(29, 78, 216)',
+  brightMagenta: 'rgb(109, 40, 217)',
+  brightCyan: 'rgb(8, 145, 178)',
+  brightWhite: 'rgb(255, 255, 255)',
+}
+
 export function TerminalOutput({ sessionKey, output, onInput, onResize }: TerminalOutputProps) {
+  const { t, resolvedTheme } = useAppearance()
   const containerRef = useRef<HTMLDivElement | null>(null)
   const terminalHostRef = useRef<HTMLDivElement | null>(null)
   const terminalRef = useRef<Terminal | null>(null)
@@ -58,28 +106,7 @@ export function TerminalOutput({ sessionKey, output, onInput, onResize }: Termin
       cursorBlink: true,
       fontFamily: 'Cascadia Code, JetBrains Mono, Consolas, monospace',
       fontSize: 13,
-      theme: {
-        background: '#0B0F19',
-        foreground: '#F1F5F9',
-        cursor: '#06B6D4',
-        selectionBackground: 'rgba(6, 182, 212, 0.3)',
-        black: '#1E293B',
-        red: '#EF4444',
-        green: '#10B981',
-        yellow: '#F59E0B',
-        blue: '#3B82F6',
-        magenta: '#8B5CF6',
-        cyan: '#06B6D4',
-        white: '#F1F5F9',
-        brightBlack: '#475569',
-        brightRed: '#F87171',
-        brightGreen: '#34D399',
-        brightYellow: '#FBBF24',
-        brightBlue: '#60A5FA',
-        brightMagenta: '#A78BFA',
-        brightCyan: '#22D3EE',
-        brightWhite: '#FFFFFF',
-      },
+      theme: resolvedTheme === 'light' ? lightTerminalTheme : darkTerminalTheme,
     })
     const fitAddon = new FitAddon()
     terminal.loadAddon(fitAddon)
@@ -119,7 +146,16 @@ export function TerminalOutput({ sessionKey, output, onInput, onResize }: Termin
       fitAddonRef.current = null
       writtenLengthRef.current = 0
     }
-  }, [])
+  }, [resolvedTheme])
+
+  useEffect(() => {
+    const terminal = terminalRef.current
+    if (terminal === null) {
+      return
+    }
+
+    terminal.options.theme = resolvedTheme === 'light' ? lightTerminalTheme : darkTerminalTheme
+  }, [resolvedTheme])
 
   // Handle session change and output updates
   useEffect(() => {
@@ -169,8 +205,8 @@ export function TerminalOutput({ sessionKey, output, onInput, onResize }: Termin
   return (
     <div
       ref={containerRef}
-      className="relative flex-1 w-full overflow-hidden bg-ops-bg p-3 focus:outline-none"
-      aria-label="Terminal Session"
+      className="relative flex-1 w-full overflow-hidden bg-ops-deep p-3 text-ops-text focus:outline-none"
+      aria-label={t('terminal.session')}
       onMouseDown={() => {
         terminalRef.current?.focus()
       }}

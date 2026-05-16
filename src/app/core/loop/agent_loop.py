@@ -80,6 +80,10 @@ class AgentLoop:
             prepared["device_vendor"] = state.context.device_vendor
         return prepared
 
+    def _is_missing_command(self, handler: ToolHandler, args: dict[str, Any]) -> bool:
+        metadata = self._get_tool_display_metadata(handler, args)
+        return metadata.extra.get("kind") == "command" and not str(args.get("command", "")).strip()
+
     def _build_tool_call_payload(
         self,
         *,
@@ -469,9 +473,20 @@ class AgentLoop:
                     )
                     continue
 
-                args = tool_call.arguments
+                args = self._prepare_tool_args(handler, tool_call.arguments, state)
                 command = str(args.get("command", "")).strip()
                 working_directory = args.get("working_directory")
+
+                if self._is_missing_command(handler, args):
+                    state.messages.append(
+                        LLMMessage(
+                            role="tool",
+                            content="Command tool call missing required 'command' argument. Please provide the exact command to execute.",
+                            tool_call_id=tool_call.id,
+                            name=tool_call.name,
+                        )
+                    )
+                    continue
 
                 if plan_step is None:
                     step = LoopRuntimeStep(
@@ -487,8 +502,6 @@ class AgentLoop:
                 else:
                     step = plan_step
                     step.working_directory = str(working_directory) if working_directory else None
-
-                args = self._prepare_tool_args(handler, args, state)
 
                 action, reason = handler.needs_approval(args)
                 if action == "deny":

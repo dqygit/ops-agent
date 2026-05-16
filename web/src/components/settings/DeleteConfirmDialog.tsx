@@ -1,3 +1,4 @@
+import { useAppearance } from '../../hooks/useAppearance'
 type DeleteConfirmDialogProps = {
   titleId: string
   title: string
@@ -9,6 +10,8 @@ type DeleteConfirmDialogProps = {
 }
 
 export function DeleteConfirmDialog({ titleId, title, message, saving, confirmDisabled, onCancel, onConfirm }: DeleteConfirmDialogProps) {
+  const { t } = useAppearance()
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-ops-bg/60 backdrop-blur-sm animate-in fade-in duration-300" role="presentation">
       <div className="w-[420px] max-w-[90vw] bg-ops-panel/90 border border-ops-border/40 rounded-2xl p-8 shadow-2xl flex flex-col gap-6 backdrop-blur-xl animate-in zoom-in-95 duration-300" role="dialog" aria-modal="true" aria-labelledby={titleId}>
@@ -19,17 +22,17 @@ export function DeleteConfirmDialog({ titleId, title, message, saving, confirmDi
           <h3 id={titleId} className="text-lg font-bold  tracking-wider">{title}</h3>
         </div>
         <p className="text-[13px] leading-relaxed text-ops-text/80">
-          Confirming decommission of <span className="font-bold text-ops-cyan">{message}</span>. This procedure is destructive and irreversible.
+          {t('settings.confirmDecommission', { name: message })}
         </p>
         <div className="flex items-center justify-end gap-3 pt-2">
-          <button type="button" className="button px-6" onClick={onCancel} disabled={saving}>Abort</button>
+          <button type="button" className="button px-6" onClick={onCancel} disabled={saving}>{t('settings.abort')}</button>
           <button
             type="button"
             className="button button-danger px-8"
             onClick={onConfirm}
             disabled={saving || confirmDisabled}
           >
-            {saving ? 'Processing...' : 'Confirm Destruction'}
+            {saving ? t('settings.processing') : t('settings.confirmDestruction')}
           </button>
         </div>
       </div>

@@ -1,4 +1,5 @@
 import { SelectField } from '../layout/SelectField'
+import { useAppearance } from '../../hooks/useAppearance'
 
 type ModelSelectorProps = {
   models: string[]
@@ -7,10 +8,12 @@ type ModelSelectorProps = {
 }
 
 export function ModelSelector({ models, selectedModel, onModelChange }: ModelSelectorProps) {
+  const { t } = useAppearance()
+
   return (
     <SelectField
       id="model-selector"
-      label="Model selector"
+      label={t('assistant.modelSelector')}
       value={selectedModel}
       options={models.map((model) => ({ label: model, value: model }))}
       onChange={(event) => onModelChange(event.target.value)}

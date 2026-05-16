@@ -1,3 +1,4 @@
+import { useAppearance } from '../../../hooks/useAppearance'
 import type { EventItem } from '../../../types/ops'
 import { AssistantMessageContent } from './AssistantMessageContent'
 
@@ -9,12 +10,14 @@ type EventCardProps = {
 }
 
 export function EventCard({ event }: EventCardProps) {
+  const { t } = useAppearance()
+
   if (event.kind === 'error') {
     return (
       <div className="my-1 rounded-2xl border border-ops-danger/35 bg-[linear-gradient(135deg,rgba(239,68,68,0.14),rgba(15,23,42,0.58))] p-4 shadow-[0_16px_40px_rgba(0,0,0,0.22)]" role="alert">
         <div className="mb-2 flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.16em] text-ops-danger">
           <span className="h-1.5 w-1.5 rounded-full bg-ops-danger" />
-          System Error
+          {t('conversation.systemError')}
         </div>
         <p className="m-0 whitespace-pre-wrap font-mono text-xs leading-relaxed text-ops-text/90">{event.text}</p>
       </div>
@@ -29,7 +32,7 @@ export function EventCard({ event }: EventCardProps) {
           <div className="mb-3 flex items-center justify-between gap-4">
             <span className="inline-flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.16em] text-ops-cyan/90">
               <span className="h-1.5 w-1.5 rounded-full bg-ops-cyan shadow-glow" />
-              Operator
+              {t('conversation.operator')}
             </span>
           </div>
           <p className="m-0 whitespace-pre-wrap text-[14px] font-medium leading-7 text-ops-text">{event.text}</p>
@@ -43,7 +46,7 @@ export function EventCard({ event }: EventCardProps) {
       <div className="my-2 rounded-2xl border border-ops-danger/35 bg-ops-danger/10 p-5 shadow-[0_16px_40px_rgba(0,0,0,0.2)]">
         <div className="mb-3 flex items-center gap-2 text-ops-danger">
           <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><circle cx="12" cy="12" r="10" /><line x1="15" y1="9" x2="9" y2="15" /><line x1="9" y1="9" x2="15" y2="15" /></svg>
-          <span className="text-[10px] font-black uppercase tracking-[0.18em]">Access Denied</span>
+          <span className="text-[10px] font-black uppercase tracking-[0.18em]">{t('conversation.accessDenied')}</span>
         </div>
         <p className="m-0 whitespace-pre-wrap rounded-xl border border-ops-danger/15 bg-ops-deep/45 p-3 font-mono text-[12px] leading-relaxed text-ops-text/80">{event.command || event.text}</p>
       </div>
@@ -61,11 +64,11 @@ export function EventCard({ event }: EventCardProps) {
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5" /></svg>
             </span>
             <div>
-              <div className="text-[10px] font-black uppercase tracking-[0.18em] text-ops-green">Run Complete</div>
-              <div className="mt-0.5 text-[12px] text-ops-muted/68">Final execution summary</div>
+              <div className="text-[10px] font-black uppercase tracking-[0.18em] text-ops-green">{t('conversation.runComplete')}</div>
+              <div className="mt-0.5 text-[12px] text-ops-muted/68">{t('conversation.finalSummary')}</div>
             </div>
           </div>
-          <span className="rounded-full border border-ops-green/25 bg-ops-green/8 px-2.5 py-1 text-[9px] font-black uppercase tracking-[0.14em] text-ops-green">Finished</span>
+          <span className="rounded-full border border-ops-green/25 bg-ops-green/8 px-2.5 py-1 text-[9px] font-black uppercase tracking-[0.14em] text-ops-green">{t('conversation.finished')}</span>
         </div>
         <AssistantMessageContent content={event.text} />
       </section>

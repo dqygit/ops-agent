@@ -1,3 +1,4 @@
+import { useAppearance } from '../../hooks/useAppearance'
 import type { ConversationSummary, EventItem } from '../../types/ops'
 
 type ConversationListProps = {
@@ -94,8 +95,10 @@ function getInitial(title: string) {
 }
 
 export function ConversationList({ items, activeConversationId, onSelect, onDelete }: ConversationListProps) {
+  const { t } = useAppearance()
+
   return (
-    <div className="flex h-full flex-col bg-[#070b09]" aria-label="Conversation List">
+    <div className="flex h-full flex-col bg-ops-bg" aria-label={t('conversation.list')}>
       <div className="flex-1 overflow-y-auto p-2.5">
         {items.length > 0 ? (
           <ul className="flex flex-col gap-1.5" role="list">
@@ -103,7 +106,7 @@ export function ConversationList({ items, activeConversationId, onSelect, onDele
               const isActive = item.id === activeConversationId
               const status = getStatusMeta(normalizeStatusKind(item.lastEventKind))
               const isUntitled = !item.title || item.title.trim() === '' || item.title.trim() === 'New'
-              const displayTitle = isUntitled ? 'Untitled Session' : item.title
+              const displayTitle = isUntitled ? t('conversation.untitledSession') : item.title
 
               return (
                 <li key={item.id} className="group relative">
@@ -158,7 +161,7 @@ export function ConversationList({ items, activeConversationId, onSelect, onDele
                       event.stopPropagation()
                       onDelete(item.id)
                     }}
-                    aria-label={`Delete session ${displayTitle}`}
+                    aria-label={t('conversation.deleteSession', { title: displayTitle })}
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6L6 18M6 6l12 12" /></svg>
                   </button>
@@ -170,8 +173,8 @@ export function ConversationList({ items, activeConversationId, onSelect, onDele
           <div className="rounded-2xl border border-dashed border-ops-border/20 bg-[linear-gradient(180deg,rgba(34,211,238,0.06),rgba(15,23,42,0.16))] px-4 py-6 text-xs text-ops-muted">
             <div className="flex flex-col gap-3">
               <div className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-ops-cyan/15 bg-ops-cyan/10 text-ops-cyan text-lg font-black shadow-glow">+</div>
-              <div className="text-sm font-bold text-ops-text  tracking-widest">No Sessions Found</div>
-              <div className="leading-relaxed text-ops-muted font-medium">Initialize a new mission to track your operations and AI interactions.</div>
+              <div className="text-sm font-bold text-ops-text  tracking-widest">{t('conversation.noSessions')}</div>
+              <div className="leading-relaxed text-ops-muted font-medium">{t('conversation.noSessionsDescription')}</div>
             </div>
           </div>
         )}

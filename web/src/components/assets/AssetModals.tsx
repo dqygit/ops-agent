@@ -1,5 +1,6 @@
 import { type FormEvent, forwardRef, useImperativeHandle, useState, useEffect } from 'react'
 import type { Asset, AssetGroup, SSHKey } from '../../types/ops'
+import { useAppearance } from '../../hooks/useAppearance'
 
 type ActiveModal = 'add-asset' | 'edit-asset' | 'delete-asset' | null
 
@@ -71,6 +72,7 @@ interface AssetModalsProps {
 
 export const AssetModals = forwardRef<AssetModalsRef, AssetModalsProps>(
   ({ groups, sshKeys, onAddAsset, onUpdateAsset, onDeleteAsset }, ref) => {
+    const { t } = useAppearance()
     const [activeModal, setActiveModal] = useState<ActiveModal>(null)
     const [targetAsset, setTargetAsset] = useState<Asset | null>(null)
     const [addAssetForm, setAddAssetForm] = useState<AddAssetForm>(emptyAddAssetForm)
@@ -190,7 +192,7 @@ export const AssetModals = forwardRef<AssetModalsRef, AssetModalsProps>(
             <form className="w-[520px] max-w-[90vw] max-h-[90vh] overflow-y-auto bg-ops-panel/90 border border-ops-border/40 rounded-2xl p-8 shadow-2xl flex flex-col gap-6 backdrop-blur-xl animate-in zoom-in-95 duration-300" role="dialog" aria-modal="true" aria-labelledby="add-asset-title" onSubmit={handleAssetSubmit}>
               <div className="flex items-center justify-between pb-4 border-b border-ops-border/20">
                 <h3 id="add-asset-title" className="text-[16px] font-bold  tracking-[0.15em] text-ops-cyan">
-                  {activeModal === 'edit-asset' ? 'Update Infrastructure' : 'New Infrastructure'}
+                  {activeModal === 'edit-asset' ? t('assets.updateInfrastructure') : t('assets.newInfrastructure')}
                 </h3>
                 <button type="button" onClick={closeModal} className="text-ops-muted hover:text-ops-text transition-colors">
                   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6L6 18M6 6l12 12" /></svg>
@@ -198,35 +200,35 @@ export const AssetModals = forwardRef<AssetModalsRef, AssetModalsProps>(
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <label className="flex flex-col gap-2 text-[11px] font-bold  tracking-widest text-ops-muted/70 col-span-2 sm:col-span-1">
-                  Connection Mode
+                  {t('assets.connectionMode')}
                   <select className="field-control" value={addAssetForm.mode} onChange={(event) => updateAddAssetForm('mode', event.target.value as ConnectionMode)}>
-                    <option value="ssh">SSH Protocol</option>
-                    <option value="serial">Serial Connection</option>
+                    <option value="ssh">{t('assets.sshProtocol')}</option>
+                    <option value="serial">{t('assets.serialConnection')}</option>
                   </select>
                 </label>
                 {addAssetForm.mode === 'ssh' ? (
                   <label className="flex flex-col gap-2 text-[11px] font-bold  tracking-widest text-ops-muted/70 col-span-2 sm:col-span-1">
-                    Environment
+                    {t('assets.environment')}
                     <select className="field-control" value={addAssetForm.assetKind} onChange={(event) => updateAddAssetForm('assetKind', event.target.value as AssetKind)}>
-                      <option value="linux">Linux Server</option>
+                      <option value="linux">{t('assets.linuxServer')}</option>
                       <option value="cisco">Cisco IOS</option>
                       <option value="huawei">Huawei VRP</option>
                       <option value="juniper">Juniper JunOS</option>
                       <option value="h3c">H3C Comware</option>
-                      <option value="network">Generic Network</option>
+                      <option value="network">{t('assets.genericNetwork')}</option>
                     </select>
                   </label>
                 ) : (
                   <div className="col-span-2 sm:col-span-1" />
                 )}
                 <label className="flex flex-col gap-2 text-[11px] font-bold  tracking-widest text-ops-muted/70 col-span-2 sm:col-span-1">
-                  Display Name
+                  {t('assets.displayName')}
                   <input className="field-control" value={addAssetForm.name} onChange={(event) => updateAddAssetForm('name', event.target.value)} placeholder={addAssetForm.mode === 'serial' ? 'serial-dev-01' : 'prod-server-01'} required />
                 </label>
                 <label className="flex flex-col gap-2 text-[11px] font-bold  tracking-widest text-ops-muted/70 col-span-2 sm:col-span-1">
-                  Resource Group
+                  {t('assets.resourceGroup')}
                   <select className="field-control" value={addAssetForm.groupId} onChange={(event) => updateAddAssetForm('groupId', event.target.value)}>
-                    <option value="">Default Group</option>
+                    <option value="">{t('settings.defaultGroup')}</option>
                     {groups.map((group) => (
                       <option key={group.id} value={group.id}>{group.name}</option>
                     ))}
@@ -235,30 +237,30 @@ export const AssetModals = forwardRef<AssetModalsRef, AssetModalsProps>(
                 {addAssetForm.mode === 'ssh' ? (
                   <>
                     <label className="flex flex-col gap-2 text-[11px] font-bold  tracking-widest text-ops-muted/70 col-span-2 sm:col-span-1">
-                      Endpoint Host
+                      {t('assets.endpointHost')}
                       <input className="field-control font-mono" value={addAssetForm.host} onChange={(event) => updateAddAssetForm('host', event.target.value)} placeholder="10.0.0.1" required />
                     </label>
                     <label className="flex flex-col gap-2 text-[11px] font-bold  tracking-widest text-ops-muted/70 col-span-2 sm:col-span-1">
-                      Port
+                      {t('assets.port')}
                       <input className="field-control font-mono" type="number" min="1" max="65535" value={addAssetForm.port} onChange={(event) => updateAddAssetForm('port', event.target.value)} placeholder="22" required />
                     </label>
                     <label className="flex flex-col gap-2 text-[11px] font-bold  tracking-widest text-ops-muted/70 col-span-2 sm:col-span-1">
-                      System User
+                      {t('assets.systemUser')}
                       <input className="field-control font-mono" value={addAssetForm.username} onChange={(event) => updateAddAssetForm('username', event.target.value)} placeholder="root" required />
                     </label>
                     <label className="flex flex-col gap-2 text-[11px] font-bold  tracking-widest text-ops-muted/70 col-span-2 sm:col-span-1">
-                      Auth Strategy
+                      {t('assets.authStrategy')}
                       <select className="field-control" value={addAssetForm.authType} onChange={(event) => updateAddAssetForm('authType', event.target.value)}>
-                        <option value="password">Password</option>
-                        <option value="key">SSH Keypair</option>
-                        <option value="password_and_key">2-Factor (Key + Pass)</option>
+                        <option value="password">{t('assets.password')}</option>
+                        <option value="key">{t('assets.sshKeypair')}</option>
+                        <option value="password_and_key">{t('assets.twoFactor')}</option>
                       </select>
                     </label>
                     {['key', 'password_and_key'].includes(addAssetForm.authType) ? (
                       <label className="flex flex-col gap-2 text-[11px] font-bold  tracking-widest text-ops-muted/70 col-span-2 sm:col-span-1">
-                        Select SSH Key
+                        {t('assets.selectSshKey')}
                         <select className="field-control" value={addAssetForm.sshKeyId} onChange={(event) => updateAddAssetForm('sshKeyId', event.target.value)} required>
-                          <option value="">Select identity...</option>
+                          <option value="">{t('assets.selectIdentity')}</option>
                           {sshKeys.map((sshKey) => (
                             <option key={sshKey.id} value={sshKey.id}>{sshKey.name}</option>
                           ))}
@@ -266,7 +268,7 @@ export const AssetModals = forwardRef<AssetModalsRef, AssetModalsProps>(
                       </label>
                     ) : null}
                     <label className="flex flex-col gap-2 text-[11px] font-bold  tracking-widest text-ops-muted/70 col-span-2">
-                      Credential / Passphrase
+                      {t('assets.credentialPassphrase')}
                       <input className="field-control font-mono" type="password" value={addAssetForm.credentialSecret} onChange={(event) => updateAddAssetForm('credentialSecret', event.target.value)} placeholder="••••••••••••" required={activeModal !== 'edit-asset'} />
                     </label>
                   </>
@@ -274,7 +276,7 @@ export const AssetModals = forwardRef<AssetModalsRef, AssetModalsProps>(
                 {addAssetForm.mode === 'serial' ? (
                   <>
                     <label className="flex flex-col gap-1 text-sm text-ops-muted col-span-2 sm:col-span-1">
-                      Serial Port
+                      {t('assets.serialPort')}
                       <input className="field-control" list="serial-ports-list" value={addAssetForm.serialPort} onChange={(event) => updateAddAssetForm('serialPort', event.target.value)} placeholder="COM3 / /dev/ttyUSB0" required />
                       <datalist id="serial-ports-list">
                         {systemSerialPorts.map((port) => (
@@ -285,11 +287,11 @@ export const AssetModals = forwardRef<AssetModalsRef, AssetModalsProps>(
                       </datalist>
                     </label>
                     <label className="flex flex-col gap-1 text-sm text-ops-muted col-span-2 sm:col-span-1">
-                      Baud Rate
+                      {t('assets.baudRate')}
                       <input className="field-control" type="number" value={addAssetForm.baudRate} onChange={(event) => updateAddAssetForm('baudRate', event.target.value)} placeholder="9600" required />
                     </label>
                     <label className="flex flex-col gap-1 text-sm text-ops-muted col-span-2 sm:col-span-1">
-                      Data Bits
+                      {t('assets.dataBits')}
                       <select className="field-control" value={addAssetForm.dataBits} onChange={(event) => updateAddAssetForm('dataBits', event.target.value)}>
                         <option value="5">5</option>
                         <option value="6">6</option>
@@ -298,15 +300,15 @@ export const AssetModals = forwardRef<AssetModalsRef, AssetModalsProps>(
                       </select>
                     </label>
                     <label className="flex flex-col gap-1 text-sm text-ops-muted col-span-2 sm:col-span-1">
-                      Parity
+                      {t('assets.parity')}
                       <select className="field-control" value={addAssetForm.parity} onChange={(event) => updateAddAssetForm('parity', event.target.value)}>
-                        <option value="none">None</option>
-                        <option value="odd">Odd</option>
-                        <option value="even">Even</option>
+                        <option value="none">{t('assets.parityNone')}</option>
+                        <option value="odd">{t('assets.parityOdd')}</option>
+                        <option value="even">{t('assets.parityEven')}</option>
                       </select>
                     </label>
                     <label className="flex flex-col gap-1 text-sm text-ops-muted col-span-2 sm:col-span-1">
-                      Stop Bits
+                      {t('assets.stopBits')}
                       <select className="field-control" value={addAssetForm.stopBits} onChange={(event) => updateAddAssetForm('stopBits', event.target.value)}>
                         <option value="1">1</option>
                         <option value="1.5">1.5</option>
@@ -318,8 +320,8 @@ export const AssetModals = forwardRef<AssetModalsRef, AssetModalsProps>(
               </div>
               {addAssetError ? <div className="settings-error text-center py-2 px-4 bg-ops-danger/10 border border-ops-danger/20 rounded-lg">{addAssetError}</div> : null}
               <div className="flex items-center justify-end gap-3 pt-4 border-t border-ops-border/20">
-                <button type="button" className="button px-6" onClick={closeModal}>Cancel</button>
-                <button type="submit" className="button button-primary px-8 shadow-glow">Authorize & Save</button>
+                <button type="button" className="button px-6" onClick={closeModal}>{t('common.cancel')}</button>
+                <button type="submit" className="button button-primary px-8 shadow-glow">{t('assets.authorizeAndSave')}</button>
               </div>
             </form>
           </div>
@@ -332,13 +334,13 @@ export const AssetModals = forwardRef<AssetModalsRef, AssetModalsProps>(
                 <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-ops-danger/10">
                   <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></svg>
                 </div>
-                <h3 className="text-lg font-bold  tracking-wider">Confirm Deletion</h3>
+                <h3 className="text-lg font-bold  tracking-wider">{t('assets.confirmDeletion')}</h3>
               </div>
               <p className="text-[13px] leading-relaxed text-ops-text/80">
-                Are you sure you want to decommission <span className="font-bold text-ops-cyan">{targetAsset.name}</span>? This action is permanent and cannot be recovered.
+                {t('assets.confirmDeleteAsset', { name: targetAsset.name })}
               </p>
               <div className="flex items-center justify-end gap-3 pt-2">
-                <button type="button" className="button px-6" onClick={closeModal}>Cancel</button>
+                <button type="button" className="button px-6" onClick={closeModal}>{t('common.cancel')}</button>
                 <button
                   type="button"
                   className="button button-danger px-8"
@@ -351,7 +353,7 @@ export const AssetModals = forwardRef<AssetModalsRef, AssetModalsProps>(
                     }
                   }}
                 >
-                  Decommission
+                  {t('assets.decommission')}
                 </button>
               </div>
               {addAssetError ? <p className="settings-error mt-2">{addAssetError}</p> : null}

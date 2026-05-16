@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useAppearance } from '../../../hooks/useAppearance'
 import { stripAnsi } from './utils'
 
 type OutputBlockProps = {
@@ -6,7 +7,8 @@ type OutputBlockProps = {
   label?: string
 }
 
-export function OutputBlock({ text, label = 'Terminal Output' }: OutputBlockProps) {
+export function OutputBlock({ text, label }: OutputBlockProps) {
+  const { t } = useAppearance()
   const [isExpanded, setIsExpanded] = useState(false)
   const cleanText = stripAnsi(text)
   const lines = cleanText.split('\n')
@@ -15,14 +17,14 @@ export function OutputBlock({ text, label = 'Terminal Output' }: OutputBlockProp
   return (
     <div className="flex w-full flex-col gap-0 overflow-hidden rounded-xl border border-ops-border/20 shadow-sm">
       <div className="flex items-center justify-between bg-ops-deep/80 px-4 py-2 border-b border-ops-border/10">
-        <span className="text-[10px] font-bold tracking-[0.2em] text-ops-muted/70">{label}</span>
+        <span className="text-[10px] font-bold tracking-[0.2em] text-ops-muted/70">{label ?? t('conversation.terminalOutput')}</span>
         {shouldTruncate ? (
           <button
             type="button"
             onClick={() => setIsExpanded(!isExpanded)}
             className="text-[10px] font-bold tracking-widest text-ops-cyan hover:text-ops-cyan/80 transition-colors"
           >
-            {isExpanded ? 'Collapse' : `Expand (${lines.length} Lines)`}
+            {isExpanded ? t('conversation.collapse') : t('conversation.expandLines', { count: String(lines.length) })}
           </button>
         ) : null}
       </div>

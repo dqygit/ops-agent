@@ -1,7 +1,9 @@
 import type { FormEvent } from 'react'
+import type { Language } from '../../i18n/translations'
+import type { ResolvedTheme, ThemeMode } from '../../hooks/useAppearance'
 import type { AssetGroup, MCPApprovalPolicy, MCPServer, MCPTool, MCPTransport, ModelConfig, SSHKey, SkillPackage } from '../../types/ops'
 
-export type SettingsSection = 'groups' | 'models' | 'sshKeys' | 'permissions' | 'skills' | 'mcp'
+export type SettingsSection = 'appearance' | 'groups' | 'models' | 'sshKeys' | 'permissions' | 'skills' | 'mcp'
 
 export type GroupForm = {
   name: string
@@ -55,6 +57,14 @@ export type SettingsDialogProps = {
   onModelOptionsChange: (modelOptions: string[]) => void
   onSSHKeysChange: (sshKeys: SSHKey[]) => void
   onClose: () => void
+}
+
+export type AppearanceSectionProps = {
+  language: Language
+  themeMode: ThemeMode
+  resolvedTheme: ResolvedTheme
+  onLanguageChange: (language: Language) => void
+  onThemeModeChange: (themeMode: ThemeMode) => void
 }
 
 export type GroupsSectionProps = {

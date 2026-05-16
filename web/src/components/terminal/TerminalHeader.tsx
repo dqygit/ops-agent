@@ -1,3 +1,4 @@
+import { useAppearance } from '../../hooks/useAppearance'
 import type { Asset } from '../../types/ops'
 import { LOCAL_TERMINAL_ASSET_ID } from '../../hooks/console/consoleShared'
 
@@ -24,16 +25,18 @@ export function TerminalHeader({
   onCopy,
   onReconnect,
 }: TerminalHeaderProps) {
+  const { t } = useAppearance()
+
   return (
     <header className="flex shrink-0 flex-col border-b border-ops-border/20 bg-ops-panel/80 backdrop-blur-xl relative overflow-hidden">
       <div className="absolute top-0 left-0 w-1 h-full bg-ops-cyan/20 pointer-events-none" />
       <div className="flex items-center gap-3 px-3 py-2">
         {/* Tabs (with close button, local terminal is permanent) */}
-        <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto" aria-label="Terminal Tabs">
+        <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto" aria-label={t('terminal.tabs')}>
           {tabs.map((tabAsset) => {
             const isActive = tabAsset.id === activeAssetId
             const isLocal = tabAsset.id === LOCAL_TERMINAL_ASSET_ID
-            const label = tabAsset.name || tabAsset.host || 'Terminal'
+            const label = tabAsset.name || tabAsset.host || t('terminal.terminal')
             return (
               <div
                 key={tabAsset.id}
@@ -47,7 +50,7 @@ export function TerminalHeader({
                   className={`flex min-w-0 items-center gap-2.5 px-4 py-2 text-[10px] font-bold tracking-[0.1em] ${isActive ? 'text-ops-cyan shadow-glow' : 'text-ops-muted/60'
                     }`}
                   onClick={() => onSelectTab(tabAsset.id)}
-                  title={`${label}${isLocal ? ' (Local)' : ''}`}
+                  title={`${label}${isLocal ? ` (${t('terminal.local')})` : ''}`}
                 >
                   <span
                     className={`h-1.5 w-1.5 shrink-0 rounded-full ${isActive ? 'bg-ops-cyan shadow-glow animate-pulse' : 'bg-ops-border/40'}`}
@@ -63,8 +66,8 @@ export function TerminalHeader({
                       event.stopPropagation()
                       onCloseTab(tabAsset.id)
                     }}
-                    aria-label={`Close Terminal ${label}`}
-                    title={`Close ${label}`}
+                    aria-label={t('terminal.closeTerminal', { label })}
+                    title={t('terminal.close', { label })}
                   >
                     <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6L6 18M6 6l12 12" /></svg>
                   </button>
@@ -76,13 +79,13 @@ export function TerminalHeader({
 
         {/* Tool Button Group */}
         <div className="flex shrink-0 items-center gap-1 rounded-xl border border-ops-border/20 bg-ops-panel/60 p-1 shadow-sm">
-          <ToolButton onClick={onClear} title="Clear Screen" aria-label="Clear Terminal">
+          <ToolButton onClick={onClear} title={t('terminal.clearScreen')} aria-label={t('terminal.clearTerminal')}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6" /></svg>
           </ToolButton>
-          <ToolButton onClick={onCopy} title="Copy Buffer" aria-label="Copy Output">
+          <ToolButton onClick={onCopy} title={t('terminal.copyBuffer')} aria-label={t('terminal.copyOutput')}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" /></svg>
           </ToolButton>
-          <ToolButton onClick={onReconnect} title="Reset Socket" aria-label="Reconnect Session">
+          <ToolButton onClick={onReconnect} title={t('terminal.resetSocket')} aria-label={t('terminal.reconnectSession')}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 11-3-6.7M21 4v5h-5" /></svg>
           </ToolButton>
         </div>
@@ -92,7 +95,7 @@ export function TerminalHeader({
         <div className="flex items-center gap-4 border-t border-ops-warning/30 bg-ops-warning/5 px-5 py-2 text-[10px] text-ops-warning animate-in slide-in-from-top duration-300">
           <div className="flex items-center gap-2 shrink-0">
             <span className="h-2 w-2 rounded-full bg-ops-warning shadow-glow animate-pulse" />
-            <span className="font-bold tracking-[0.1em]">Transmission in Progress</span>
+            <span className="font-bold tracking-[0.1em]">{t('terminal.transmissionInProgress')}</span>
           </div>
           <code className="min-w-0 flex-1 truncate font-mono text-[11px] text-ops-text/80 bg-ops-warning/10 px-2 py-0.5 rounded border border-ops-warning/20" title={busyCommand}>
             {busyCommand}

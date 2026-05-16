@@ -4,6 +4,7 @@ import type { RunMode } from '../../types/api'
 import type { Asset, ConversationContextStatus, ConversationSummary, EventItem, PlanStep, RuntimeSnapshot, RuntimeSummary } from '../../types/ops'
 import { ConversationView } from './ConversationView'
 import { PromptInput } from './PromptInput'
+import { useAppearance } from '../../hooks/useAppearance'
 
 type AssistantPanelProps = {
   conversationSummaries: ConversationSummary[]
@@ -79,6 +80,7 @@ export function AssistantPanel({
   onSavePlan,
   onApprovePlan,
 }: AssistantPanelProps) {
+  const { t } = useAppearance()
   const activeConversation = useMemo(
     () => conversationSummaries.find((item) => item.id === activeConversationId) ?? null,
     [activeConversationId, conversationSummaries],
@@ -89,7 +91,7 @@ export function AssistantPanel({
       <header className="relative z-10 flex shrink-0 items-center justify-between border-b border-ops-border/20 bg-ops-panel/80 backdrop-blur-xl px-6 py-4 shadow-2xl">
         <div className="min-w-0 flex-1">
           <h2 className="truncate text-[18px] font-black tracking-tight text-ops-text">
-            {activeConversationTitle || 'Unclassified Mission'}
+            {activeConversationTitle || t('assistant.unclassifiedMission')}
           </h2>
         </div>
         <div className="flex shrink-0 items-center gap-3">
@@ -99,7 +101,7 @@ export function AssistantPanel({
             onClick={onCreateConversation}
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-            New Session
+            {t('assistant.newSession')}
           </button>
         </div>
       </header>
