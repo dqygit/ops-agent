@@ -29,8 +29,8 @@ export function AssetSidebar({ assets, groups, conversationSummaries, activeConv
   const [activeTab, setActiveTab] = useState<'assets' | 'conversations'>('assets')
 
   return (
-    <div className={`h-full flex flex-col border-r border-ops-border/40 bg-ops-panel/50 backdrop-blur-sm transition-[width] duration-300 ease-in-out ${collapsed ? 'w-[72px]' : 'w-[300px]'}`}>
-      <div className={`relative flex items-center border-b border-ops-border/30 px-4 py-4 ${collapsed ? 'justify-center' : 'justify-between'}`}>
+    <div className={`h-full flex flex-col border-r border-ops-border/30 bg-slate-50/70 backdrop-blur-sm transition-[width] duration-300 ease-in-out dark:border-ops-border/40 dark:bg-ops-panel/50 ${collapsed ? 'w-[72px]' : 'w-[300px]'}`}>
+      <div className={`relative flex items-center border-b border-ops-border/15 bg-ops-deep px-4 py-4 dark:border-ops-border/30 dark:bg-transparent ${collapsed ? 'justify-center' : 'justify-between'}`}>
         {collapsed ? (
           <button
             type="button"
@@ -57,7 +57,7 @@ export function AssetSidebar({ assets, groups, conversationSummaries, activeConv
         )}
       </div>
 
-      <div className={`border-b border-ops-border/20 bg-ops-bg/40 ${collapsed ? 'flex flex-col items-center gap-3 px-2 py-4' : 'grid grid-cols-2 gap-2 px-3 py-2.5'}`}>
+      <div className={`border-b border-ops-border/15 bg-ops-deep dark:border-ops-border/20 dark:bg-ops-bg/40 ${collapsed ? 'flex flex-col items-center gap-3 px-2 py-4' : 'grid grid-cols-2 gap-2 px-3 py-2.5'}`}>
         <button
           type="button"
           className={`rounded-lg border transition-all duration-200 active:scale-95 ${collapsed ? 'inline-flex h-10 w-10 items-center justify-center' : 'px-3 py-2 text-[11px] font-bold  tracking-wider'} ${activeTab === 'assets' ? 'border-ops-cyan/40 bg-ops-cyan/10 text-ops-cyan shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]' : 'border-transparent text-ops-muted hover:bg-ops-panel/60 hover:text-ops-text'}`}

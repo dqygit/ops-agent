@@ -33,7 +33,7 @@ export function TerminalPanel({
   onReconnect,
 }: TerminalPanelProps) {
   return (
-    <div className="h-full w-full border-l border-ops-border/40 bg-ops-deep shadow-inner flex flex-col overflow-hidden">
+    <div className="h-full w-full border-l border-ops-border/25 bg-slate-50/70 shadow-[inset_1px_0_0_rgb(255_255_255/0.65)] flex flex-col overflow-hidden dark:border-ops-border/40 dark:bg-ops-deep dark:shadow-inner">
       <TerminalHeader
         asset={asset}
         tabs={tabs}

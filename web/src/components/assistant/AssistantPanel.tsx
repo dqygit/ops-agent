@@ -88,7 +88,7 @@ export function AssistantPanel({
 
   return (
     <div className="flex h-full w-full flex-col overflow-hidden bg-ops-bg">
-      <header className="relative z-10 flex shrink-0 items-center justify-between border-b border-ops-border/20 bg-ops-panel/80 backdrop-blur-xl px-6 py-4 shadow-2xl">
+      <header className="relative z-10 flex shrink-0 items-center justify-between border-b border-ops-border/15 bg-ops-deep px-6 py-4 dark:border-ops-border/20 dark:bg-ops-panel/80 dark:shadow-2xl">
         <div className="min-w-0 flex-1">
           <h2 className="truncate text-[18px] font-black tracking-tight text-ops-text">
             {activeConversationTitle || t('assistant.unclassifiedMission')}

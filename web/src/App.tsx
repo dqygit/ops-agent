@@ -125,7 +125,7 @@ export function App() {
     if (activeRuntimeSnapshot) {
       setRunMode(activeRuntimeSnapshot.mode)
     }
-  }, [activeRuntimeSnapshot?.runtimeId, activeRuntimeSnapshot?.mode])
+  }, [activeRuntimeSnapshot])
 
   const busyCommand = useMemo(() => {
     const commandsInOrder: Array<{ id: string; cmd: string }> = []
@@ -217,7 +217,7 @@ export function App() {
   }
 
   return (
-    <div className="flex h-screen w-screen flex-col overflow-hidden bg-ops-bg text-ops-text">
+    <div className="flex h-screen w-screen flex-col overflow-hidden bg-[linear-gradient(180deg,rgb(var(--ops-panel))_0,rgb(var(--ops-bg))_92px)] text-ops-text dark:bg-ops-bg">
       <TopBar onOpenSettings={() => setActiveModal('settings')} />
 
       <main className="flex flex-1 overflow-hidden">

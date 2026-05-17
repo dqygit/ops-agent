@@ -44,8 +44,8 @@ const darkTerminalTheme: ITheme = {
 }
 
 const lightTerminalTheme: ITheme = {
-  background: 'rgb(var(--ops-deep))',
-  foreground: 'rgb(var(--ops-text))',
+  background: 'rgb(2, 6, 23)',
+  foreground: 'rgb(226, 232, 240)',
   cursor: 'rgb(var(--ops-cyan))',
   selectionBackground: 'rgb(var(--ops-cyan) / 0.22)',
   black: 'rgb(15, 23, 42)',
@@ -130,9 +130,51 @@ export function TerminalOutput({ sessionKey, output, onInput, onResize }: Termin
 
     terminal.onData((data) => emitInput(data))
 
-    const handleResize = () => {
-      fitAddon.fit()
+    let resizeFrameId: number | null = null
+    let resizeNotifyTimeoutId: number | null = null
+    let lastNotifiedSize = { cols: terminal.cols, rows: terminal.rows }
+
+    const notifyResize = () => {
+      if (terminal.cols === lastNotifiedSize.cols && terminal.rows === lastNotifiedSize.rows) {
+        return
+      }
+      lastNotifiedSize = { cols: terminal.cols, rows: terminal.rows }
       onResizeRef.current(terminal.cols, terminal.rows)
+    }
+
+    const scheduleResizeNotify = () => {
+      if (resizeNotifyTimeoutId !== null) {
+        window.clearTimeout(resizeNotifyTimeoutId)
+      }
+      resizeNotifyTimeoutId = window.setTimeout(() => {
+        resizeNotifyTimeoutId = null
+        notifyResize()
+      }, 300)
+    }
+
+    const fitTerminal = () => {
+      resizeFrameId = null
+      fitAddon.fit()
+      scheduleResizeNotify()
+    }
+
+    const scheduleFitTerminal = () => {
+      if (resizeFrameId !== null) {
+        window.cancelAnimationFrame(resizeFrameId)
+      }
+      resizeFrameId = window.requestAnimationFrame(fitTerminal)
+    }
+
+    const handleResize = () => {
+      scheduleFitTerminal()
+    }
+
+    const resizeObserver = new ResizeObserver(() => {
+      scheduleFitTerminal()
+    })
+
+    if (containerRef.current !== null) {
+      resizeObserver.observe(containerRef.current)
     }
 
     window.addEventListener('resize', handleResize)
@@ -140,6 +182,13 @@ export function TerminalOutput({ sessionKey, output, onInput, onResize }: Termin
     fitAddonRef.current = fitAddon
 
     return () => {
+      resizeObserver.disconnect()
+      if (resizeFrameId !== null) {
+        window.cancelAnimationFrame(resizeFrameId)
+      }
+      if (resizeNotifyTimeoutId !== null) {
+        window.clearTimeout(resizeNotifyTimeoutId)
+      }
       window.removeEventListener('resize', handleResize)
       terminal.dispose()
       terminalRef.current = null
@@ -205,7 +254,7 @@ export function TerminalOutput({ sessionKey, output, onInput, onResize }: Termin
   return (
     <div
       ref={containerRef}
-      className="relative flex-1 w-full overflow-hidden bg-ops-deep p-3 text-ops-text focus:outline-none"
+      className="relative flex-1 w-full overflow-hidden bg-slate-950 p-3 text-slate-100 shadow-[inset_0_1px_0_rgb(255_255_255/0.06)] focus:outline-none dark:bg-ops-deep dark:text-ops-text"
       aria-label={t('terminal.session')}
       onMouseDown={() => {
         terminalRef.current?.focus()

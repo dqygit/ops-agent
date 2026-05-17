@@ -181,9 +181,12 @@ export function mergePersistedEventsWithTransient(
     }
   }
 
-  const pendingAssistantEvent = currentEvents.find((event) => event.id === PENDING_ASSISTANT_MESSAGE_ID)
+  const hasTerminalError = deduped.some((event) => event.kind === 'error')
+  const pendingAssistantEvent = hasTerminalError
+    ? undefined
+    : currentEvents.find((event) => event.id === PENDING_ASSISTANT_MESSAGE_ID)
   const transientEvents = currentEvents.filter((event) => (event.kind === 'delta' || 'type' in event) && event.id !== PENDING_ASSISTANT_MESSAGE_ID)
-  const hasAssistantDelta = deduped.some((event) => event.kind === 'delta' || 'type' in event) || transientEvents.length > 0
+  const hasAssistantDelta = hasTerminalError || deduped.some((event) => event.kind === 'delta' || 'type' in event) || transientEvents.length > 0
   const nextEvents = [...deduped]
 
   if (pendingAssistantEvent && !hasAssistantDelta) {
@@ -209,6 +212,13 @@ export function upsertStreamEvent(
   currentEvents: EventItem[],
   event: EventItem
 ): EventItem[] {
+  if (event.kind === 'error') {
+    return normalizePlanEvents([
+      ...currentEvents.filter((currentEvent) => currentEvent.id !== PENDING_ASSISTANT_MESSAGE_ID),
+      event,
+    ])
+  }
+
   if (event.kind !== 'plan') {
     return normalizePlanEvents([...currentEvents, event])
   }

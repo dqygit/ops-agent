@@ -9,7 +9,7 @@ export function TopBar({ onOpenSettings }: TopBarProps) {
   const { t } = useAppearance()
 
   return (
-    <header className="flex h-[60px] shrink-0 items-center justify-between border-b border-ops-border/20 bg-ops-panel/90 backdrop-blur-xl px-6 shadow-2xl z-50">
+    <header className="flex h-[55px] shrink-0 items-center justify-between border-b border-ops-border/15 bg-ops-deep px-6 z-50 dark:border-ops-border/20 dark:bg-ops-panel/80 dark:shadow-2xl">
       <div className="flex items-center gap-5">
         <img
           src={logoUrl}
