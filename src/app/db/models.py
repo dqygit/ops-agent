@@ -76,13 +76,21 @@ class ModelConfigRecord(SQLModel, table=True):
 class ModelUsage(SQLModel, table=True):
     __tablename__: ClassVar[str] = "model_usages"  # pyright: ignore[reportIncompatibleVariableOverride]
     id: int | None = Field(default=None, primary_key=True)
-    task_id: int
+    task_id: int | None = None
+    runtime_id: str = ""
+    conversation_id: str = ""
     model_config_id: int | None = None
     provider: str
     model_name: str
     base_url_snapshot: str
     temperature_snapshot: float
     max_tokens_snapshot: int
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cache_creation_input_tokens: int = 0
+    cache_read_input_tokens: int = 0
+    total_tokens: int = 0
+    call_kind: str = "agent"
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 

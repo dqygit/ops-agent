@@ -4,6 +4,7 @@ from typing import Any, cast
 from anthropic.types import JSONOutputFormatParam, TextBlockParam
 
 from app.core.llm.base import LLMCompletionChunk, LLMCompletionRequest, LLMCompletionResponse
+from app.core.llm.types import LLMTokenUsage
 from app.core.tool import LLMToolCall
 from app.shared.schemas import ModelConfig
 
@@ -35,6 +36,7 @@ class AnthropicLLMProvider:
             yield LLMCompletionChunk(
                 tool_calls=self._extract_tool_calls(getattr(final_message, "content", []) or []),
                 finish_reason=getattr(final_message, "stop_reason", None),
+                usage=self._extract_usage(final_message),
             )
 
     def complete(
@@ -72,6 +74,18 @@ class AnthropicLLMProvider:
             text="".join(text_parts),
             tool_calls=tool_calls,
             finish_reason=getattr(response, "stop_reason", None),
+            usage=self._extract_usage(response),
+        )
+
+    def _extract_usage(self, response: Any) -> LLMTokenUsage | None:
+        usage = getattr(response, "usage", None)
+        if usage is None:
+            return None
+        return LLMTokenUsage(
+            input_tokens=int(getattr(usage, "input_tokens", 0) or 0),
+            output_tokens=int(getattr(usage, "output_tokens", 0) or 0),
+            cache_creation_input_tokens=int(getattr(usage, "cache_creation_input_tokens", 0) or 0),
+            cache_read_input_tokens=int(getattr(usage, "cache_read_input_tokens", 0) or 0),
         )
 
     def _get_client(self, config: ModelConfig):

@@ -7,11 +7,14 @@ from fastapi import APIRouter, HTTPException, Response, status
 from app.api.schemas import (
     ConversationAppendEventsRequest,
     ConversationContextStatusView,
+    ConversationTokenUsageView,
     ConversationCreateRequest,
     ConversationCreateResponse,
     ConversationDetailView,
     ConversationSummaryView,
 )
+from app.db.repositories.model_usage import sum_conversation_usage
+from app.db.session import Session, engine
 from app.services.context_manager import ContextManager, JsonObject
 from app.services.conversation_service import ConversationService
 from app.services.model_service import ModelService
@@ -71,6 +74,15 @@ def get_conversation_context(conversation_id: str) -> ConversationContextStatusV
 
     context_manager = ContextManager(service.base_dir / "context")
     events = cast(list[JsonObject], detail.events or [])
+    with Session(engine) as session:
+        usage = sum_conversation_usage(session, conversation_id)
+    token_usage = ConversationTokenUsageView(
+        input_tokens=usage.input_tokens,
+        output_tokens=usage.output_tokens,
+        cache_creation_input_tokens=usage.cache_creation_input_tokens,
+        cache_read_input_tokens=usage.cache_read_input_tokens,
+        total_tokens=usage.total_tokens,
+    )
     metadata = context_manager.read_metadata(conversation_id)
     source_revision = context_manager.source_revision(events)
     if metadata is None or metadata.source_conversation_revision != source_revision:
@@ -79,10 +91,12 @@ def get_conversation_context(conversation_id: str) -> ConversationContextStatusV
         return ConversationContextStatusView(
             context_percent=result.context_percent,
             context_status=result.context_status,
+            token_usage=token_usage,
         )
     return ConversationContextStatusView(
         context_percent=metadata.context_percent,
         context_status=metadata.context_status,
+        token_usage=token_usage,
     )
 
 

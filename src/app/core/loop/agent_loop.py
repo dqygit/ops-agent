@@ -18,7 +18,7 @@ from typing import Any
 logger = logging.getLogger(__name__)
 _SECRET_ARG_KEY_RE = re.compile(r"(token|password|passwd|secret|api[_-]?key|authorization|cookie|credential)", re.IGNORECASE)
 
-from app.core.llm.types import LLMCompletionResponse, LLMMessage
+from app.core.llm.types import LLMCompletionResponse, LLMMessage, LLMTokenUsage
 from app.core.llm.factory import build_llm_provider
 from app.core.loop.request_builder import AgentLLMRequestBuilder
 from app.core.loop.loop_events import (
@@ -40,9 +40,16 @@ EventCallback = Any
 
 
 class AgentLoop:
-    def __init__(self, *, tools: list[ToolHandler], request_builder: AgentLLMRequestBuilder | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        tools: list[ToolHandler],
+        request_builder: AgentLLMRequestBuilder | None = None,
+        usage_callback: Any | None = None,
+    ) -> None:
         self._tools = {t.definition.name: t for t in tools}
         self._request_builder = request_builder or AgentLLMRequestBuilder()
+        self._usage_callback = usage_callback
 
     def _get_tool_display_metadata(self, handler: ToolHandler | None, args: dict[str, Any]) -> ToolDisplayMetadata:
         if handler is None:
@@ -67,6 +74,13 @@ class AgentLoop:
         if isinstance(value, list):
             return [self._redact_sensitive_args(item) for item in value]
         return value
+
+    def _record_usage(self, state: LoopState, usage: LLMTokenUsage | None, *, call_kind: str) -> None:
+        if usage is None or self._usage_callback is None:
+            return
+        if usage.total_tokens <= 0:
+            return
+        self._usage_callback(state, usage, call_kind)
 
     def _prepare_tool_args(self, handler: ToolHandler, args: dict[str, Any], state: LoopState) -> dict[str, Any]:
         metadata = self._get_tool_display_metadata(handler, args)
@@ -289,12 +303,15 @@ class AgentLoop:
         request = self._request_builder.build_plan_summary_request(state=state, step_lines=step_lines)
 
         summary_parts: list[str] = []
+        usage: LLMTokenUsage | None = None
         for chunk in provider.stream_complete(config=ctx.model_config, request=request):
             if chunk.delta:
                 summary_parts.append(chunk.delta)
                 yield from manager.update(text=chunk.delta)
             if chunk.thinking_delta:
                 yield from manager.update(thinking=chunk.thinking_delta)
+            usage = chunk.usage or usage
+        self._record_usage(state, usage, call_kind="plan_summary")
 
         summary = "".join(summary_parts).strip() or "Plan execution completed."
         if summary_parts:
@@ -311,6 +328,7 @@ class AgentLoop:
         request = self._request_builder.build_plan_generation_request(state=state)
         try:
             response = provider.complete(config=ctx.model_config, request=request)
+            self._record_usage(state, response.usage, call_kind="plan_generation")
             payload = json.loads(self._extract_json_payload(response.text))
             raw_steps = payload.get("steps") or []
             if not isinstance(raw_steps, list):
@@ -401,7 +419,8 @@ class AgentLoop:
             response_thinking_parts: list[str] = []
             response_tool_calls = []
             finish_reason: str | None = None
-            
+            usage: LLMTokenUsage | None = None
+
             # Start a new assistant message for the LLM response
             yield from manager.begin_message(message_type="say", say_type="text")
 
@@ -423,6 +442,8 @@ class AgentLoop:
                     response_tool_calls = chunk.tool_calls
                 if chunk.finish_reason:
                     finish_reason = chunk.finish_reason
+                usage = chunk.usage or usage
+            self._record_usage(state, usage, call_kind="agent")
 
             thinking_content = "".join(response_thinking_parts)
             if thinking_content:
@@ -433,6 +454,7 @@ class AgentLoop:
                 tool_calls=response_tool_calls,
                 finish_reason=finish_reason,
                 thinking=thinking_content,
+                usage=usage,
             )
 
             if response.text or response.tool_calls:

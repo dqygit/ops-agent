@@ -62,8 +62,8 @@ export function normalizePlanEvents(rawEvents: EventItem[]): EventItem[] {
   })
 }
 
-export function buildTerminalWebSocketUrl(terminalSessionId: string): string {
-  const apiBaseUrl = import.meta.env.VITE_API_BASE_URL
+export function buildTerminalWebSocketUrl(terminalSessionId: string, runtimeApiBaseUrl?: string | null): string {
+  const apiBaseUrl = runtimeApiBaseUrl ?? import.meta.env.VITE_API_BASE_URL
 
   if (apiBaseUrl && apiBaseUrl.length > 0) {
     const baseUrl = new URL(apiBaseUrl, window.location.origin)

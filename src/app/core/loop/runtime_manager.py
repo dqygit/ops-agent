@@ -25,8 +25,9 @@ class RuntimeState:
 
 
 class LoopRuntimeManager:
-    def __init__(self, *, tools_factory):
+    def __init__(self, *, tools_factory, usage_callback=None):
         self._tools_factory = tools_factory
+        self._usage_callback = usage_callback
         self._by_runtime: dict[str, RuntimeState] = {}
         self._by_conversation: dict[str, dict[str, RuntimeState]] = {}
         self._terminal_slots: dict[str, str] = {}
@@ -118,9 +119,12 @@ class LoopRuntimeManager:
         if rt is None:
             raise ValueError("runtime not found")
 
-        loop = AgentLoop(tools=self._tools_factory(terminal_service))
+        loop = AgentLoop(tools=self._tools_factory(terminal_service), usage_callback=self._usage_callback)
         for event in loop.run(rt.state):
             yield self._to_ws_event(event, rt)
+            usage_event = self._build_usage_event(rt)
+            if usage_event is not None:
+                yield usage_event
 
     def update_plan(self, *, runtime_id: str, steps: list[dict]) -> dict:
         rt = self._by_runtime.get(runtime_id)
@@ -167,9 +171,12 @@ class LoopRuntimeManager:
         state.cursor = 0
         state.phase = "executing"
         yield self._append_plan_event(rt)
-        loop = AgentLoop(tools=self._tools_factory(terminal_service))
+        loop = AgentLoop(tools=self._tools_factory(terminal_service), usage_callback=self._usage_callback)
         for event in loop.run(rt.state):
             yield self._to_ws_event(event, rt)
+            usage_event = self._build_usage_event(rt)
+            if usage_event is not None:
+                yield usage_event
 
     def _append_plan_event(self, rt: RuntimeState) -> dict:
         state = rt.state
@@ -207,9 +214,33 @@ class LoopRuntimeManager:
             raise ValueError("runtime not found")
 
         # In a real implementation we would verify approval_token here
-        loop = AgentLoop(tools=self._tools_factory(terminal_service))
+        loop = AgentLoop(tools=self._tools_factory(terminal_service), usage_callback=self._usage_callback)
         for event in loop.resume_with_approval(rt.state, approved=approved):
             yield self._to_ws_event(event, rt)
+            usage_event = self._build_usage_event(rt)
+            if usage_event is not None:
+                yield usage_event
+
+    def _build_usage_event(self, rt: RuntimeState) -> dict | None:
+        state = rt.state
+        if self._usage_callback is None:
+            return None
+        usage = getattr(state, "latest_usage", None)
+        if usage is None:
+            return None
+        state.latest_usage = None
+        rt.sequence += 1
+        rt.updated_at = datetime.now(UTC)
+        event = {
+            "id": f"evt-context-{uuid.uuid4().hex[:12]}",
+            "kind": "context_status",
+            "runtimeId": rt.runtime_id,
+            "sequence": rt.sequence,
+            "ts": datetime.now(UTC).isoformat(),
+            "tokenUsage": usage,
+        }
+        rt.events.append(event)
+        return event
 
     def _to_ws_event(self, event: LoopEvent, rt: RuntimeState) -> dict:
         rt.sequence += 1

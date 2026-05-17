@@ -29,6 +29,15 @@ export function mapConversationContextStatus(dto: ConversationContextStatusDto):
   return {
     contextPercent: dto.context_percent,
     contextStatus: dto.context_status,
+    tokenUsage: dto.token_usage
+      ? {
+          inputTokens: dto.token_usage.input_tokens,
+          outputTokens: dto.token_usage.output_tokens,
+          cacheCreationInputTokens: dto.token_usage.cache_creation_input_tokens,
+          cacheReadInputTokens: dto.token_usage.cache_read_input_tokens,
+          totalTokens: dto.token_usage.total_tokens,
+        }
+      : undefined,
   }
 }
 

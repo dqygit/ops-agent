@@ -4,6 +4,7 @@ from collections.abc import Iterator
 from typing import Any
 
 from app.core.llm.base import LLMCompletionChunk, LLMCompletionRequest, LLMCompletionResponse
+from app.core.llm.types import LLMTokenUsage
 from app.core.tool import LLMToolCall
 from app.shared.schemas import ModelConfig
 
@@ -26,6 +27,7 @@ class GoogleGeminiLLMProvider:
         )
         function_calls: dict[str, dict[str, Any]] = {}
         finish_reason: str | None = None
+        usage: LLMTokenUsage | None = None
         thinking_parts: list[str] = []
         for chunk in stream:
             text = getattr(chunk, "text", None)
@@ -36,8 +38,9 @@ class GoogleGeminiLLMProvider:
             if thinking:
                 thinking_parts.append(thinking)
                 yield LLMCompletionChunk(thinking_delta=thinking)
+            usage = self._extract_usage(chunk) or usage
             finish_reason = self._extract_finish_reason(chunk) or finish_reason
-        yield LLMCompletionChunk(tool_calls=self._build_tool_calls(function_calls), finish_reason=finish_reason)
+        yield LLMCompletionChunk(tool_calls=self._build_tool_calls(function_calls), finish_reason=finish_reason, usage=usage)
 
     def complete(
         self,
@@ -57,6 +60,16 @@ class GoogleGeminiLLMProvider:
             tool_calls=self._build_tool_calls(function_calls),
             finish_reason=self._extract_finish_reason(response),
             thinking=self._extract_thinking(response),
+            usage=self._extract_usage(response),
+        )
+
+    def _extract_usage(self, response: Any) -> LLMTokenUsage | None:
+        metadata = getattr(response, "usage_metadata", None)
+        if metadata is None:
+            return None
+        return LLMTokenUsage(
+            input_tokens=int(getattr(metadata, "prompt_token_count", 0) or 0),
+            output_tokens=int(getattr(metadata, "candidates_token_count", 0) or 0),
         )
 
     def _get_types(self):

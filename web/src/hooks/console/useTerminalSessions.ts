@@ -4,6 +4,7 @@ import {
   createTerminalSession,
   reconnectTerminalSession,
 } from '../../api'
+import { getDesktopApiBaseUrl } from '../../desktop'
 import type { Asset } from '../../types/ops'
 import {
   buildTerminalWebSocketUrl,
@@ -55,6 +56,7 @@ export function useTerminalSessions({
     },
   ])
   const terminalSocketRef = useRef<WebSocket | null>(null)
+  const [runtimeApiBaseUrl, setRuntimeApiBaseUrl] = useState<string | null>(null)
   const hasRestoredTerminalStateRef = useRef(false)
   const firstOutputHandledRef = useRef<Record<number, boolean>>({
     [LOCAL_TERMINAL_ASSET_ID]: false,
@@ -276,6 +278,18 @@ export function useTerminalSessions({
     socket.send(JSON.stringify({ type: 'resize', cols, rows }))
   }, [])
 
+  useEffect(() => {
+    let active = true
+    void getDesktopApiBaseUrl().then((baseUrl) => {
+      if (active) {
+        setRuntimeApiBaseUrl(baseUrl)
+      }
+    })
+    return () => {
+      active = false
+    }
+  }, [])
+
   const selectedAsset = useMemo(
     () =>
       terminalTabs.find((item) => item.assetId === activeTerminalAssetId)
@@ -324,7 +338,7 @@ export function useTerminalSessions({
         continue
       }
 
-      const socket = new WebSocket(buildTerminalWebSocketUrl(tabItem.sessionId))
+      const socket = new WebSocket(buildTerminalWebSocketUrl(tabItem.sessionId, runtimeApiBaseUrl))
       currentSockets[tabItem.assetId] = socket
       if (tabItem.assetId === activeTerminalAssetId) {
         terminalSocketRef.current = socket
@@ -422,7 +436,7 @@ export function useTerminalSessions({
         socket.close()
       }
     }
-  }, [activeTerminalAssetId, syncTerminalTabs, terminalTabs, setLoadError])
+  }, [activeTerminalAssetId, runtimeApiBaseUrl, syncTerminalTabs, terminalTabs, setLoadError])
 
   useEffect(() => {
     if (!hasRestoredTerminalStateRef.current) {

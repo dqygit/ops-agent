@@ -6,6 +6,7 @@ from typing import Any, cast
 logger = logging.getLogger(__name__)
 
 from app.core.llm.base import LLMCompletionChunk, LLMCompletionRequest, LLMCompletionResponse
+from app.core.llm.types import LLMTokenUsage
 from app.core.llm.provider_presets import get_provider_preset
 from app.core.tool import LLMToolCall
 from app.shared.schemas import ModelConfig
@@ -26,10 +27,12 @@ class OpenAICompatibleLLMProvider:
             **self._build_completion_params(config=config, request=request, stream=True)
         )
         finish_reason: str | None = None
+        usage: LLMTokenUsage | None = None
         tool_call_fragments: dict[int, dict[str, Any]] = {}
         for chunk in response:
             if not chunk.choices:
                 continue
+            usage = self._extract_usage(chunk) or usage
             choice = chunk.choices[0]
             finish_reason = getattr(choice, "finish_reason", finish_reason)
             delta = getattr(choice, "delta", None)
@@ -56,6 +59,7 @@ class OpenAICompatibleLLMProvider:
         yield LLMCompletionChunk(
             tool_calls=self._build_stream_tool_calls(tool_call_fragments),
             finish_reason=finish_reason,
+            usage=usage,
         )
 
     def complete(
@@ -81,7 +85,15 @@ class OpenAICompatibleLLMProvider:
                 len(tool_calls),
                 getattr(message, "type", None),
             )
-        return LLMCompletionResponse(text=text, tool_calls=tool_calls, finish_reason=finish_reason, thinking=thinking)
+        return LLMCompletionResponse(text=text, tool_calls=tool_calls, finish_reason=finish_reason, thinking=thinking, usage=self._extract_usage(response))
+
+    def _extract_usage(self, response: Any) -> LLMTokenUsage | None:
+        usage = getattr(response, "usage", None)
+        if usage is None:
+            return None
+        input_tokens = int(getattr(usage, "prompt_tokens", 0) or getattr(usage, "input_tokens", 0) or 0)
+        output_tokens = int(getattr(usage, "completion_tokens", 0) or getattr(usage, "output_tokens", 0) or 0)
+        return LLMTokenUsage(input_tokens=input_tokens, output_tokens=output_tokens)
 
     def _build_completion_params(self, *, config: ModelConfig, request: LLMCompletionRequest, stream: bool) -> dict[str, Any]:
         preset = get_provider_preset(config.provider)

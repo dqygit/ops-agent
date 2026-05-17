@@ -34,7 +34,7 @@ interface UseAgentRunProps {
   selectedModel: string
   runMode: RunMode
   setLoadError: (error: string | null) => void
-  setContextStatus: (status: ConversationContextStatus | null) => void
+  setContextStatus: (status: ConversationContextStatus | null | ((currentStatus: ConversationContextStatus | null) => ConversationContextStatus)) => void
 }
 
 function shouldSyncRuntimeForEvent(event: EventItem) {
@@ -207,10 +207,11 @@ export function useAgentRun({
         }
 
         if (event.kind === 'context_status') {
-          setContextStatus({
-            contextPercent: event.contextPercent,
-            contextStatus: event.contextStatus,
-          })
+          setContextStatus((currentStatus) => ({
+            contextPercent: event.contextPercent ?? currentStatus?.contextPercent ?? 0,
+            contextStatus: event.contextStatus ?? currentStatus?.contextStatus ?? 'normal',
+            tokenUsage: event.tokenUsage ?? currentStatus?.tokenUsage,
+          }))
           continue
         }
 

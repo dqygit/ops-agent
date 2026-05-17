@@ -47,11 +47,24 @@ class LLMCompletionRequest:
 
 
 @dataclass(frozen=True)
+class LLMTokenUsage:
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cache_creation_input_tokens: int = 0
+    cache_read_input_tokens: int = 0
+
+    @property
+    def total_tokens(self) -> int:
+        return self.input_tokens + self.output_tokens + self.cache_creation_input_tokens + self.cache_read_input_tokens
+
+
+@dataclass(frozen=True)
 class LLMCompletionResponse:
     text: str = ""
     tool_calls: list[LLMToolCall] = field(default_factory=list)
     finish_reason: str | None = None
     thinking: str = ""
+    usage: LLMTokenUsage | None = None
 
 
 @dataclass(frozen=True)
@@ -61,3 +74,4 @@ class LLMCompletionChunk:
     finish_reason: str | None = None
     tool_arguments_delta: str = ""
     thinking_delta: str = ""
+    usage: LLMTokenUsage | None = None

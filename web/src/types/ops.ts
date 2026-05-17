@@ -289,12 +289,21 @@ export type RuntimeEventEnvelope = {
   [key: string]: unknown
 }
 
+export type ConversationTokenUsage = {
+  inputTokens: number
+  outputTokens: number
+  cacheCreationInputTokens: number
+  cacheReadInputTokens: number
+  totalTokens: number
+}
+
 export type ConversationContextStatus = {
   contextPercent: number
   contextStatus: 'normal' | 'warning' | 'critical'
+  tokenUsage?: ConversationTokenUsage
 }
 
-export type ContextStatusEvent = ConversationContextStatus & {
+export type ContextStatusEvent = Partial<ConversationContextStatus> & {
   id: string
   kind: 'context_status'
   compactionApplied?: boolean

@@ -12,12 +12,15 @@ from app.core.connectors.device_profiles import (
     select_device_profile,
     select_execution_profile,
 )
-from app.core.loop.loop_state import LoopContext, LoopMode
+from app.core.llm.types import LLMTokenUsage
+from app.core.loop.loop_state import LoopContext, LoopMode, LoopState
 from app.core.loop.runtime_manager import LoopRuntimeManager, new_runtime_id
 from app.core.tool.execute_command import ExecuteCommandHandler
 from app.core.tool.load_skill import LoadSkillHandler
 from app.db.repositories.assets import get_asset
 from app.db.repositories.models import get_default_model_config
+from app.db.repositories.model_usage import create_model_usage, sum_conversation_usage
+from app.db.session import Session as DbSession, engine
 from app.services.approval_service import get_approval_service
 from app.services.context_manager import ContextManager, JsonObject
 from app.services.mcp_service import McpService
@@ -102,6 +105,7 @@ class ConsoleAppService:
         self._mcp_service = mcp_service or McpService()
         self.runtime_manager = LoopRuntimeManager(
             tools_factory=self._build_tool_handlers,
+            usage_callback=self._record_model_usage,
         )
 
     def _build_tool_handlers(self, ts: TerminalService) -> list[Any]:
@@ -110,6 +114,43 @@ class ConsoleAppService:
             ExecuteCommandHandler(_TerminalSessionAdapter(ts, self.runtime_manager)),
             *self._mcp_service.build_tool_handlers(),
         ]
+
+    def _record_model_usage(self, state: LoopState, usage: LLMTokenUsage, call_kind: str) -> None:
+        try:
+            with DbSession(engine) as session:
+                create_model_usage(
+                    session,
+                    runtime_id=state.context.runtime_id,
+                    conversation_id=state.context.conversation_id,
+                    model_config=state.context.model_config,
+                    usage=usage,
+                    call_kind=call_kind,
+                )
+                total_usage = sum_conversation_usage(session, state.context.conversation_id)
+                state.latest_usage = {
+                    "inputTokens": total_usage.input_tokens,
+                    "outputTokens": total_usage.output_tokens,
+                    "cacheCreationInputTokens": total_usage.cache_creation_input_tokens,
+                    "cacheReadInputTokens": total_usage.cache_read_input_tokens,
+                    "totalTokens": total_usage.total_tokens,
+                }
+        except Exception:
+            logger.exception("Failed to record model usage runtime_id=%s", state.context.runtime_id)
+
+    def _conversation_token_usage_payload(self, conversation_id: str) -> dict[str, int]:
+        try:
+            with DbSession(engine) as session:
+                usage = sum_conversation_usage(session, conversation_id)
+        except Exception:
+            logger.exception("Failed to load conversation usage conversation_id=%s", conversation_id)
+            usage = LLMTokenUsage()
+        return {
+            "inputTokens": usage.input_tokens,
+            "outputTokens": usage.output_tokens,
+            "cacheCreationInputTokens": usage.cache_creation_input_tokens,
+            "cacheReadInputTokens": usage.cache_read_input_tokens,
+            "totalTokens": usage.total_tokens,
+        }
 
     def build_orchestrator(self, terminal_service: TerminalService) -> TaskOrchestrator:
         return TaskOrchestrator(self, terminal_service)
@@ -215,6 +256,7 @@ class ConsoleAppService:
             "runtimeId": runtime_id,
             "contextPercent": context_result.context_percent,
             "contextStatus": context_result.context_status,
+            "tokenUsage": self._conversation_token_usage_payload(conversation_id),
             "compactionApplied": context_result.compaction_applied,
             "fitStatus": context_result.fit_status,
             "summaryRevision": context_result.summary_revision,

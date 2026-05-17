@@ -122,6 +122,7 @@ class LoopState:
     last_output_excerpt: str = ""
     summary: str | None = None
     error_message: str | None = None
+    latest_usage: dict[str, int] | None = None
 
     def is_terminal(self) -> bool:
         return self.phase in {"completed", "failed"}

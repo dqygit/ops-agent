@@ -3,6 +3,7 @@ from collections.abc import Iterator
 from typing import Any, cast
 
 from app.core.llm.base import LLMCompletionChunk, LLMCompletionRequest, LLMCompletionResponse
+from app.core.llm.types import LLMTokenUsage
 from app.core.tool import LLMToolCall
 from app.shared.schemas import ModelConfig
 
@@ -19,6 +20,7 @@ class OpenAIResponsesLLMProvider:
     ) -> Iterator[LLMCompletionChunk]:
         stream = self._get_client(config).responses.create(**self._build_response_params(config=config, request=request, stream=True))
         finish_reason: str | None = None
+        usage: LLMTokenUsage | None = None
         tool_fragments: dict[str, dict[str, Any]] = {}
         current_tool_item_id: str | None = None
 
@@ -51,6 +53,7 @@ class OpenAIResponsesLLMProvider:
             if event_type == "response.completed":
                 response = getattr(event, "response", None)
                 finish_reason = getattr(response, "status", None) or finish_reason
+                usage = self._extract_usage(response) or usage
                 self._merge_response_output(tool_fragments, response)
                 continue
             if event_type == "response.failed":
@@ -59,7 +62,7 @@ class OpenAIResponsesLLMProvider:
                 message = getattr(error, "message", None) or str(error or "OpenAI Responses request failed")
                 raise RuntimeError(message)
 
-        yield LLMCompletionChunk(tool_calls=self._build_tool_calls(tool_fragments), finish_reason=finish_reason)
+        yield LLMCompletionChunk(tool_calls=self._build_tool_calls(tool_fragments), finish_reason=finish_reason, usage=usage)
 
     def complete(
         self,
@@ -73,7 +76,16 @@ class OpenAIResponsesLLMProvider:
             tool_calls=self._extract_tool_calls(response),
             finish_reason=getattr(response, "status", None),
             thinking=self._extract_reasoning_text(response),
+            usage=self._extract_usage(response),
         )
+
+    def _extract_usage(self, response: Any) -> LLMTokenUsage | None:
+        usage = getattr(response, "usage", None)
+        if usage is None:
+            return None
+        input_tokens = int(getattr(usage, "input_tokens", 0) or 0)
+        output_tokens = int(getattr(usage, "output_tokens", 0) or 0)
+        return LLMTokenUsage(input_tokens=input_tokens, output_tokens=output_tokens)
 
     def _get_client(self, config: ModelConfig):
         if self._client is not None:

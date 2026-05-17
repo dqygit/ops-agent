@@ -536,9 +536,18 @@ class ConversationCreateResponse(BaseModel):
     events: list[dict] = Field(default_factory=list)
 
 
+class ConversationTokenUsageView(BaseModel):
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cache_creation_input_tokens: int = 0
+    cache_read_input_tokens: int = 0
+    total_tokens: int = 0
+
+
 class ConversationContextStatusView(BaseModel):
     context_percent: int
     context_status: Literal["normal", "warning", "critical"]
+    token_usage: ConversationTokenUsageView = Field(default_factory=ConversationTokenUsageView)
 
 
 class ConversationAppendEventsRequest(BaseModel):

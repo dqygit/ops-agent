@@ -23,7 +23,7 @@
     "active": true,
     "targets": "all",
     "resources": [
-      "../bin"
+      "../../bin"
     ]
   },
   "plugins": {

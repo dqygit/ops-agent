@@ -104,28 +104,34 @@ export function TerminalOutput({ sessionKey, output, onInput, onResize }: Termin
 
     const terminal = new Terminal({
       cursorBlink: true,
-      fontFamily: 'Cascadia Code, JetBrains Mono, Consolas, monospace',
+      fontFamily: 'JetBrains Mono, Cascadia Code, Consolas, monospace',
       fontSize: 13,
       theme: resolvedTheme === 'light' ? lightTerminalTheme : darkTerminalTheme,
     })
     const fitAddon = new FitAddon()
     terminal.loadAddon(fitAddon)
     terminal.open(terminalHostRef.current)
-    
-    const helperTextarea = terminalHostRef.current.querySelector('textarea') as HTMLTextAreaElement | null
-    
-    requestAnimationFrame(() => {
-      fitAddon.fit()
-      onResizeRef.current(terminal.cols, terminal.rows)
 
-      if (outputRef.current.length > 0) {
-        replayingRef.current = true
-        terminal.write(stripReplayControlSequences(outputRef.current))
-        writtenLengthRef.current = outputRef.current.length
-        queueMicrotask(() => {
-          replayingRef.current = false
-        })
+    let disposed = false
+
+    void document.fonts.load('13px "JetBrains Mono"').then(() => {
+      if (disposed) {
+        return
       }
+      terminal.options.fontFamily = 'JetBrains Mono, Cascadia Code, Consolas, monospace'
+      requestAnimationFrame(() => {
+        fitAddon.fit()
+        onResizeRef.current(terminal.cols, terminal.rows)
+
+        if (outputRef.current.length > 0) {
+          replayingRef.current = true
+          terminal.write(stripReplayControlSequences(outputRef.current))
+          writtenLengthRef.current = outputRef.current.length
+          queueMicrotask(() => {
+            replayingRef.current = false
+          })
+        }
+      })
     })
 
     terminal.onData((data) => emitInput(data))
@@ -182,6 +188,7 @@ export function TerminalOutput({ sessionKey, output, onInput, onResize }: Termin
     fitAddonRef.current = fitAddon
 
     return () => {
+      disposed = true
       resizeObserver.disconnect()
       if (resizeFrameId !== null) {
         window.cancelAnimationFrame(resizeFrameId)

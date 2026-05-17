@@ -39,8 +39,25 @@ function contextPercent(status: ConversationContextStatus | null) {
   return Math.max(0, Math.min(100, status?.contextPercent ?? 0))
 }
 
+function formatTokenCount(value: number) {
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`
+  if (value >= 1_000) return `${(value / 1_000).toFixed(1)}K`
+  return `${value}`
+}
+
 function contextLabel(status: ConversationContextStatus | null) {
   return status ? `${contextPercent(status)}%` : '--%'
+}
+
+function contextUsageLabel(status: ConversationContextStatus | null) {
+  if (!status?.tokenUsage) return contextLabel(status)
+  return `${contextLabel(status)} · ${formatTokenCount(status.tokenUsage.totalTokens)} tokens`
+}
+
+function contextUsageTitle(status: ConversationContextStatus | null) {
+  if (!status?.tokenUsage) return contextLabel(status)
+  const usage = status.tokenUsage
+  return `上下文窗口 ${contextLabel(status)}；本会话真实累计 ${usage.totalTokens} tokens（input ${usage.inputTokens}，output ${usage.outputTokens}，cache read ${usage.cacheReadInputTokens}，cache write ${usage.cacheCreationInputTokens}）`
 }
 
 function getSlashSuggestionQuery(prompt: string) {
@@ -191,17 +208,11 @@ export function PromptInput({
               {selectedAsset.host || 'local'}
             </span>
           </div>
-          <div className="hidden items-center gap-1.5 rounded-full border border-ops-border/20 bg-ops-deep/60 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.14em] text-ops-muted/55 xl:flex">
-            <span className="text-ops-cyan/70">Enter</span>
-            <span>{t('assistant.enterSend')}</span>
-            <span className="mx-1 h-1 w-1 rounded-full bg-ops-border/60" />
-            <span className="text-ops-cyan/70">Shift Enter</span>
-            <span>{t('assistant.shiftEnterLine')}</span>
-          </div>
+        
           <span
             className="ml-auto inline-flex shrink-0 items-center gap-1.5 rounded-full border border-ops-border/25 bg-ops-deep/65 px-2 py-1 font-mono text-[10px] text-ops-muted/75"
-            title={contextLabel(contextStatus)}
-            aria-label={contextLabel(contextStatus)}
+            title={contextUsageTitle(contextStatus)}
+            aria-label={contextUsageTitle(contextStatus)}
           >
             <span
               aria-hidden="true"
@@ -210,7 +221,7 @@ export function PromptInput({
                 background: `conic-gradient(${contextStatusColor(contextStatus)} ${contextPercent(contextStatus)}%, rgba(148,163,184,0.22) 0)`,
               }}
             />
-            <span>{contextLabel(contextStatus)}</span>
+            <span>{contextUsageLabel(contextStatus)}</span>
           </span>
         </div>
 

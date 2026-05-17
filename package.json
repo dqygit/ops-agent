@@ -1,0 +1,10 @@
+{
+  "name": "ops-agent",
+  "private": true,
+  "scripts": {
+    "dev": "pnpm --dir web dev",
+    "build": "pnpm --dir web build",
+    "tauri:dev": "pnpm --dir web tauri:dev",
+    "tauri:build": "pnpm --dir web tauri:build"
+  }
+}
