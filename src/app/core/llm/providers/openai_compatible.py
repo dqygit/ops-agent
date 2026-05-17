@@ -6,6 +6,7 @@ from typing import Any, cast
 logger = logging.getLogger(__name__)
 
 from app.core.llm.base import LLMCompletionChunk, LLMCompletionRequest, LLMCompletionResponse
+from app.core.llm.provider_presets import get_provider_preset
 from app.core.tool import LLMToolCall
 from app.shared.schemas import ModelConfig
 
@@ -83,10 +84,12 @@ class OpenAICompatibleLLMProvider:
         return LLMCompletionResponse(text=text, tool_calls=tool_calls, finish_reason=finish_reason, thinking=thinking)
 
     def _build_completion_params(self, *, config: ModelConfig, request: LLMCompletionRequest, stream: bool) -> dict[str, Any]:
+        preset = get_provider_preset(config.provider)
+        max_tokens_param = preset.max_tokens_param if preset is not None else "max_tokens"
         params: dict[str, Any] = {
             "model": config.model_name,
             "temperature": request.temperature if request.temperature is not None else config.temperature,
-            "max_tokens": request.max_tokens if request.max_tokens is not None else config.max_tokens,
+            max_tokens_param: request.max_tokens if request.max_tokens is not None else config.max_tokens,
             "messages": cast(Any, [self._serialize_message(message) for message in request.messages]),
             "stream": stream,
         }
@@ -102,7 +105,7 @@ class OpenAICompatibleLLMProvider:
             params["response_format"] = {"type": "json_schema", "json_schema": request.json_schema}
         elif request.json_mode:
             params["response_format"] = {"type": "json_object"}
-        extra_body = self._build_cache_extension(config=config, request=request)
+        extra_body = self._build_extra_body(config=config, request=request, preset=preset)
         if extra_body:
             params["extra_body"] = extra_body
         return params
@@ -199,14 +202,21 @@ class OpenAICompatibleLLMProvider:
             )
         return parsed
 
-    def _build_cache_extension(self, *, config: ModelConfig, request: LLMCompletionRequest) -> dict[str, Any] | None:
-        if request.cache_policy is None or not request.cache_policy.enabled:
-            return None
+    def _build_extra_body(self, *, config: ModelConfig, request: LLMCompletionRequest, preset: Any) -> dict[str, Any] | None:
+        extra_body: dict[str, Any] = {}
+        if preset is not None and preset.default_extra_body:
+            extra_body.update(preset.default_extra_body)
+
         options = config.provider_options or {}
-        cache_options = options.get("openai_compatible_prompt_cache")
-        if not isinstance(cache_options, dict):
-            return None
-        extra_body = dict(cache_options)
-        extra_body.setdefault("enabled", True)
-        extra_body.setdefault("ttl", request.cache_policy.ttl)
-        return extra_body
+        configured_extra_body = options.get("extra_body")
+        if isinstance(configured_extra_body, dict):
+            extra_body.update(configured_extra_body)
+
+        if request.cache_policy is not None and request.cache_policy.enabled:
+            cache_options = options.get("openai_compatible_prompt_cache")
+            if isinstance(cache_options, dict):
+                extra_body.update(cache_options)
+                extra_body.setdefault("enabled", True)
+                extra_body.setdefault("ttl", request.cache_policy.ttl)
+
+        return extra_body or None

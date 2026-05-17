@@ -1,5 +1,6 @@
 import type { ModelsSectionProps } from './settingsTypes'
 import { useAppearance } from '../../hooks/useAppearance'
+import { modelProviderPresets } from '../../types/modelProviderPresets'
 
 export function ModelsSection({
   selectedModel,
@@ -9,13 +10,19 @@ export function ModelsSection({
   editingModel,
   saving,
   testResult,
+  discoveredModels,
+  discoveringModels,
+  modelDiscoveryMessage,
   onStartCreate,
   onStartEdit,
   onStartDelete,
   onFormChange,
+  onProviderChange,
+  onConnectionFieldChange,
   onCancelForm,
   onSave,
   onSetDefault,
+  onDiscoverModels,
   onTest,
 }: ModelsSectionProps) {
   const { t } = useAppearance()
@@ -37,23 +44,37 @@ export function ModelsSection({
           </label>
           <label className="flex flex-col gap-2 text-[11px] font-bold  tracking-widest text-ops-muted/70">
             {t('settings.providerIdentity')}
-            <select className="field-control" value={modelForm.provider} onChange={(event) => onFormChange({ ...modelForm, provider: event.target.value })}>
-              <option value="anthropic">Anthropic Claude</option>
-              <option value="openai_compatible">OpenAI Compatible</option>
+            <select className="field-control" value={modelForm.provider} onChange={(event) => onProviderChange(event.target.value)}>
+              {modelProviderPresets.map((preset) => (
+                <option key={preset.provider} value={preset.provider}>{preset.label}</option>
+              ))}
             </select>
           </label>
           <label className="flex flex-col gap-2 text-[11px] font-bold  tracking-widest text-ops-muted/70 col-span-2">
             {t('settings.endpointBaseUrl')}
-            <input className="field-control font-mono" value={modelForm.baseUrl} onChange={(event) => onFormChange({ ...modelForm, baseUrl: event.target.value })} placeholder="https://api.anthropic.com" required />
+            <input className="field-control font-mono" value={modelForm.baseUrl} onChange={(event) => onConnectionFieldChange({ baseUrl: event.target.value })} placeholder="https://api.anthropic.com" required />
           </label>
           <label className="flex flex-col gap-2 text-[11px] font-bold  tracking-widest text-ops-muted/70 col-span-2">
             {t('settings.authorizationToken')}
-            <input className="field-control font-mono" type="password" value={modelForm.apiKey} onChange={(event) => onFormChange({ ...modelForm, apiKey: event.target.value })} placeholder={editingModel ? t('settings.unmodified') : 'sk-••••••••••••••••'} required={!editingModel} />
+            <input className="field-control font-mono" type="password" value={modelForm.apiKey} onChange={(event) => onConnectionFieldChange({ apiKey: event.target.value })} placeholder={editingModel ? t('settings.unmodified') : 'sk-••••••••••••••••'} required={!editingModel} />
           </label>
-          <label className="flex flex-col gap-2 text-[11px] font-bold  tracking-widest text-ops-muted/70 col-span-2">
-            {t('settings.targetModelIdentifier')}
-            <input className="field-control font-mono" value={modelForm.modelName} onChange={(event) => onFormChange({ ...modelForm, modelName: event.target.value })} placeholder="claude-3-5-sonnet-20240620" required />
-          </label>
+          <div className="flex flex-col gap-3 col-span-2">
+            <div className="flex items-end gap-3">
+              <label className="flex flex-1 flex-col gap-2 text-[11px] font-bold  tracking-widest text-ops-muted/70">
+                {t('settings.targetModelIdentifier')}
+                <select className="field-control font-mono" value={modelForm.modelName} onChange={(event) => onFormChange({ ...modelForm, modelName: event.target.value })} required disabled={discoveredModels.length === 0}>
+                  {discoveredModels.length === 0 ? <option value="">Discover models first</option> : null}
+                  {discoveredModels.map((modelName) => (
+                    <option key={modelName} value={modelName}>{modelName}</option>
+                  ))}
+                </select>
+              </label>
+              <button type="button" className="button px-6 h-[42px]" onClick={onDiscoverModels} disabled={saving || discoveringModels || !modelForm.baseUrl.trim() || !modelForm.apiKey.trim()}>
+                {discoveringModels ? t('settings.processing') : 'Discover models'}
+              </button>
+            </div>
+            {modelDiscoveryMessage ? <div className="text-[11px] font-mono text-ops-muted/80 break-all">{modelDiscoveryMessage}</div> : null}
+          </div>
           <label className="flex flex-col gap-2 text-[11px] font-bold  tracking-widest text-ops-muted/70">
             {t('settings.requestTimeout')}
             <input className="field-control font-mono" type="number" min="1" value={modelForm.timeoutSeconds} onChange={(event) => onFormChange({ ...modelForm, timeoutSeconds: event.target.value })} required />
@@ -76,10 +97,10 @@ export function ModelsSection({
           </label>
           {testResult ? <div className="col-span-2 p-4 text-[11px] font-mono text-ops-cyan bg-ops-cyan/10 border border-ops-cyan/20 rounded-xl break-all animate-in fade-in duration-300">{testResult}</div> : null}
           <div className="flex items-center justify-between gap-3 mt-4 pt-6 border-t border-ops-border/20 col-span-2">
-            <button type="button" className="button px-6" onClick={onTest} disabled={saving || !modelForm.apiKey.trim()} title={editingModel && !modelForm.apiKey.trim() ? t('settings.enterApiKeyToTest') : undefined}>{t('settings.pingEndpoint')}</button>
+            <button type="button" className="button px-6" onClick={onTest} disabled={saving || !modelForm.apiKey.trim() || !modelForm.modelName.trim()} title={editingModel && !modelForm.apiKey.trim() ? t('settings.enterApiKeyToTest') : undefined}>{t('settings.pingEndpoint')}</button>
             <div className="flex items-center gap-3">
               <button type="button" className="button px-6" onClick={onCancelForm}>{t('common.cancel')}</button>
-              <button type="submit" className="button button-primary px-8" disabled={saving}>{saving ? t('settings.processing') : t('settings.authorize')}</button>
+              <button type="submit" className="button button-primary px-8" disabled={saving || !modelForm.modelName.trim()}>{saving ? t('settings.processing') : t('settings.authorize')}</button>
             </div>
           </div>
         </form>

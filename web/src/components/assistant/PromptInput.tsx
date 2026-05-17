@@ -175,10 +175,10 @@ export function PromptInput({
   }
 
   return (
-    <div className="relative mx-6 mb-4 mt-2 shrink-0 rounded-[28px] border border-ops-cyan/10 bg-ops-deep/80 p-[1px] shadow-[0_24px_70px_rgba(0,0,0,0.45)] backdrop-blur-xl transition-all duration-300 before:pointer-events-none before:absolute before:inset-x-8 before:bottom-[-1px] before:h-px before:bg-gradient-to-r before:from-transparent before:via-ops-cyan/60 before:to-transparent focus-within:border-ops-cyan/40 focus-within:shadow-[0_28px_80px_rgba(0,0,0,0.55),0_0_36px_rgba(6,182,212,0.14)]">
-      <div className="relative overflow-hidden rounded-[27px] border border-white/[0.04] bg-[radial-gradient(circle_at_18%_0%,rgba(6,182,212,0.14),transparent_34%),linear-gradient(180deg,rgba(21,27,40,0.92),rgba(5,8,15,0.96))]">
-        <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(90deg,rgba(255,255,255,0.025)_1px,transparent_1px),linear-gradient(180deg,rgba(255,255,255,0.018)_1px,transparent_1px)] bg-[size:28px_28px] opacity-40" />
-        <div className="relative flex items-center gap-3 border-b border-white/[0.04] px-4 py-3">
+    <div className="relative mx-6 mb-4 mt-2 shrink-0 rounded-[28px] border border-ops-cyan/10 bg-ops-deep/80 p-[1px] shadow-[0_24px_70px_rgb(var(--ops-bg)/0.45)] backdrop-blur-xl transition-all duration-300 before:pointer-events-none before:absolute before:inset-x-8 before:bottom-[-1px] before:h-px before:bg-gradient-to-r before:from-transparent before:via-ops-cyan/60 before:to-transparent focus-within:border-ops-cyan/40 focus-within:shadow-[0_28px_80px_rgb(var(--ops-bg)/0.55),0_0_36px_rgb(var(--ops-cyan)/0.14)]">
+      <div className="relative overflow-hidden rounded-[27px] border border-ops-border/10 bg-[radial-gradient(circle_at_18%_0%,rgb(var(--ops-cyan)/0.14),transparent_34%),linear-gradient(180deg,rgb(var(--ops-panel)/0.92),rgb(var(--ops-deep)/0.96))]">
+        <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(90deg,rgb(var(--ops-text)/0.025)_1px,transparent_1px),linear-gradient(180deg,rgb(var(--ops-text)/0.018)_1px,transparent_1px)] bg-[size:28px_28px] opacity-40" />
+        <div className="relative flex items-center gap-3 border-b border-ops-border/10 px-4 py-3">
           <div className="flex min-w-0 flex-1 items-center gap-2" aria-label={t('assistant.context')}>
             <span className="relative flex h-2.5 w-2.5 shrink-0">
               <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-ops-cyan opacity-30" />
@@ -239,7 +239,7 @@ export function PromptInput({
               role="listbox"
               aria-label={t('assistant.availableSkills')}
             >
-              <div className="border-b border-white/[0.04] px-4 py-2 text-[10px] font-bold uppercase tracking-[0.14em] text-ops-muted/65">
+              <div className="border-b border-ops-border/10 px-4 py-2 text-[10px] font-bold uppercase tracking-[0.14em] text-ops-muted/65">
                 {t('assistant.slashSkills')}
               </div>
               <div className="max-h-64 overflow-y-auto py-2">
@@ -271,7 +271,7 @@ export function PromptInput({
 
           <button
             className={`absolute bottom-4 right-4 flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border transition-all duration-200 active:scale-95 ${prompt.trim()
-              ? 'border-ops-cyan/45 bg-ops-cyan text-ops-deep shadow-[0_0_28px_rgba(6,182,212,0.38)] hover:-translate-y-0.5 hover:bg-cyan-300 hover:shadow-[0_0_36px_rgba(6,182,212,0.55)]'
+              ? 'border-ops-cyan/45 bg-ops-cyan text-ops-deep shadow-[0_0_28px_rgb(var(--ops-cyan)/0.38)] hover:-translate-y-0.5 hover:bg-cyan-300 hover:shadow-[0_0_36px_rgb(var(--ops-cyan)/0.55)]'
               : 'cursor-not-allowed border-ops-border/20 bg-ops-panel/70 text-ops-muted/25'
               }`}
             type="button"
@@ -285,7 +285,7 @@ export function PromptInput({
           </button>
         </div>
 
-        <div className="relative flex items-center gap-3 border-t border-white/[0.04] bg-ops-deep/45 px-4 py-3">
+        <div className="relative flex items-center gap-3 border-t border-ops-border/10 bg-ops-deep/45 px-4 py-3">
           <div className="flex flex-1 items-center gap-3 overflow-x-auto scrollbar-none">
             <ModelSelector models={models} selectedModel={selectedModel} onModelChange={onModelChange} />
 

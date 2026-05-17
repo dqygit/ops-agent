@@ -19,13 +19,14 @@ export type { AssetGroupDto, AssetGroupPayload } from './groups'
 export {
   createModelConfig,
   deleteModelConfig,
+  discoverModelConfigModels,
   getModelConfigs,
   mapModelConfig,
   setDefaultModelConfig,
   testModelConfig,
   updateModelConfig,
 } from './modelConfigs'
-export type { ModelConfigPayload, ModelConnectionTestPayload, ModelConnectionTestResult } from './modelConfigs'
+export type { ModelConfigPayload, ModelConnectionTestPayload, ModelConnectionTestResult, ModelDiscoveryPayload, ModelDiscoveryResult } from './modelConfigs'
 export {
   createMCPServer,
   deleteMCPServer,

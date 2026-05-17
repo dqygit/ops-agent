@@ -86,7 +86,7 @@ export function AssistantMessageContent({
   }
 
   return (
-    <article className="relative w-full overflow-hidden rounded-[24px] rounded-tl-md border border-ops-border/25 bg-[linear-gradient(145deg,rgba(21,27,40,0.72),rgba(5,8,15,0.52))] p-4 shadow-[0_18px_50px_rgba(0,0,0,0.22),inset_0_1px_0_rgba(255,255,255,0.035)] backdrop-blur-md">
+    <article className="relative w-full overflow-hidden rounded-[24px] rounded-tl-md border border-ops-border/25 bg-[linear-gradient(145deg,rgb(var(--ops-panel)/0.82),rgb(var(--ops-deep)/0.74))] p-4 shadow-[0_18px_50px_rgb(var(--ops-bg)/0.22),inset_0_1px_0_rgb(var(--ops-text)/0.035)] backdrop-blur-md">
       <div className="pointer-events-none absolute inset-y-4 left-0 w-px bg-gradient-to-b from-transparent via-ops-cyan/45 to-transparent" />
       <div className="mb-3 flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.16em] text-ops-muted/55">
         <span className="flex h-5 w-5 items-center justify-center rounded-full border border-ops-cyan/18 bg-ops-cyan/8 text-[11px] text-ops-cyan">✦</span>

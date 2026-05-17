@@ -21,6 +21,7 @@ export type ModelForm = {
   temperature: string
   maxTokens: string
   description: string
+  providerOptions: Record<string, unknown>
 }
 
 export type SSHKeyForm = {
@@ -88,13 +89,19 @@ export type ModelsSectionProps = {
   editingModel: ModelConfig | null
   saving: boolean
   testResult: string | null
+  discoveredModels: string[]
+  discoveringModels: boolean
+  modelDiscoveryMessage: string | null
   onStartCreate: () => void
   onStartEdit: (config: ModelConfig) => void
   onStartDelete: (config: ModelConfig) => void
   onFormChange: (form: ModelForm) => void
+  onProviderChange: (provider: string) => void
+  onConnectionFieldChange: (updates: Partial<Pick<ModelForm, 'baseUrl' | 'apiKey'>>) => void
   onCancelForm: () => void
   onSave: (event: FormEvent<HTMLFormElement>) => void
   onSetDefault: (config: ModelConfig) => void
+  onDiscoverModels: () => void
   onTest: () => void
 }
 

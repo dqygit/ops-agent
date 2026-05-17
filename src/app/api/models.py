@@ -3,7 +3,7 @@ from pydantic import SecretStr
 from sqlalchemy.exc import OperationalError
 from sqlmodel import Session
 
-from app.api.schemas import ModelConfigCreate, ModelConfigUpdate, ModelConfigView, ModelConnectionTestRequest, ModelConnectionTestResponse, ModelsView
+from app.api.schemas import ModelConfigCreate, ModelConfigUpdate, ModelConfigView, ModelConnectionTestRequest, ModelConnectionTestResponse, ModelDiscoveryRequest, ModelDiscoveryResponse, ModelsView
 from app.db.repositories.models import create_model_config, delete_model_config, get_default_model_config, get_model_config, list_model_configs, set_default_model_config, update_model_config
 from app.db.session import get_session
 from app.services.model_service import ModelService
@@ -28,7 +28,6 @@ def to_model_config_view(model_service: ModelService, record) -> ModelConfigView
         max_tokens=record.max_tokens,
         prompt_cache_enabled=True,
         prompt_cache_ttl="ephemeral",
-        provider_options={},
         description=record.description,
         created_at=record.created_at,
         updated_at=record.updated_at,
@@ -71,7 +70,6 @@ def create_model_config_record(payload: ModelConfigCreate, session: Session = De
         max_tokens=payload.max_tokens,
         prompt_cache_enabled=payload.prompt_cache_enabled,
         prompt_cache_ttl=payload.prompt_cache_ttl,
-        provider_options=payload.provider_options,
         description=payload.description,
     )
     record = create_model_config(session, **model_service.to_record_payload(config))
@@ -117,6 +115,25 @@ def set_default_model_config_record(config_id: int, session: Session = Depends(g
     if record is None:
         raise HTTPException(status_code=404, detail="Model config not found")
     return to_model_config_view(ModelService(), record)
+
+
+@router.post("/api/model-configs/discover")
+def discover_model_configs(payload: ModelDiscoveryRequest) -> ModelDiscoveryResponse:
+    model_service = ModelService()
+    config = ModelConfig(
+        provider=ModelProvider(payload.provider),
+        model_name="",
+        base_url=payload.base_url,
+        api_key=SecretStr(payload.api_key.get_secret_value()),
+        timeout_seconds=payload.timeout_seconds,
+        provider_options=payload.provider_options,
+    )
+    try:
+        return ModelDiscoveryResponse(models=model_service.discover_models(config))
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except Exception as error:
+        raise HTTPException(status_code=502, detail=f"Model discovery failed: {error}") from error
 
 
 @router.post("/api/model-configs/test")

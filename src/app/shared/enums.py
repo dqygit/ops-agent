@@ -27,6 +27,19 @@ class TaskStatus(str, Enum):
 class ModelProvider(str, Enum):
     ANTHROPIC = "anthropic"
     OPENAI_COMPATIBLE = "openai_compatible"
+    QWEN = "qwen"
+    BIGMODEL = "bigmodel"
+    KIMI = "kimi"
+    MINIMAX = "minimax"
+    DEEPSEEK = "deepseek"
+    AZURE_OPENAI = "azure_openai"
+    AMAZON_BEDROCK = "amazon_bedrock"
+    OPENROUTER = "openrouter"
+    CLOUDFLARE = "cloudflare"
+    GITHUB_MODELS = "github_models"
+    SILICONFLOW = "siliconflow"
+    OPENAI_RESPONSES = "openai_responses"
+    GOOGLE_GEMINI = "google_gemini"
 
 
 class TerminalEventType(str, Enum):

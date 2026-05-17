@@ -69,7 +69,6 @@ class ModelConfigView(BaseModel):
     max_tokens: int = 1024
     prompt_cache_enabled: bool = True
     prompt_cache_ttl: Literal["ephemeral", "one_hour"] = "ephemeral"
-    provider_options: dict[str, Any] = Field(default_factory=dict)
     description: str
     created_at: datetime | None = None
     updated_at: datetime | None = None
@@ -80,14 +79,13 @@ class ModelConfigCreate(BaseModel):
     provider: str
     base_url: str
     api_key: SecretStr
-    model_name: str
+    model_name: str = Field(min_length=1)
     is_default: bool = False
     timeout_seconds: int = 30
     temperature: float = 0.2
     max_tokens: int = 1024
     prompt_cache_enabled: bool = True
     prompt_cache_ttl: Literal["ephemeral", "one_hour"] = "ephemeral"
-    provider_options: dict[str, Any] = Field(default_factory=dict)
     description: str = ""
 
 
@@ -96,14 +94,13 @@ class ModelConfigUpdate(BaseModel):
     provider: str | None = None
     base_url: str | None = None
     api_key: SecretStr | None = None
-    model_name: str | None = None
+    model_name: str | None = Field(default=None, min_length=1)
     is_default: bool | None = None
     timeout_seconds: int | None = None
     temperature: float | None = None
     max_tokens: int | None = None
     prompt_cache_enabled: bool | None = None
     prompt_cache_ttl: Literal["ephemeral", "one_hour"] | None = None
-    provider_options: dict[str, Any] | None = None
     description: str | None = None
 
 
@@ -111,7 +108,7 @@ class ModelConnectionTestRequest(BaseModel):
     provider: str
     base_url: str
     api_key: SecretStr
-    model_name: str
+    model_name: str = Field(min_length=1)
     timeout_seconds: int = 30
     temperature: float = 0.2
     max_tokens: int = 1024
@@ -123,6 +120,18 @@ class ModelConnectionTestRequest(BaseModel):
 class ModelConnectionTestResponse(BaseModel):
     success: bool
     message: str
+
+
+class ModelDiscoveryRequest(BaseModel):
+    provider: str
+    base_url: str
+    api_key: SecretStr
+    timeout_seconds: int = 30
+    provider_options: dict[str, Any] = Field(default_factory=dict)
+
+
+class ModelDiscoveryResponse(BaseModel):
+    models: list[str]
 
 
 class MCPToolView(BaseModel):

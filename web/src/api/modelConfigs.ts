@@ -22,11 +22,24 @@ export type ModelConnectionTestPayload = {
   timeoutSeconds: number
   temperature: number
   maxTokens: number
+  providerOptions?: Record<string, unknown>
+}
+
+export type ModelDiscoveryPayload = {
+  provider: string
+  baseUrl: string
+  apiKey: string
+  timeoutSeconds: number
+  providerOptions?: Record<string, unknown>
 }
 
 export type ModelConnectionTestResult = {
   success: boolean
   message: string
+}
+
+export type ModelDiscoveryResult = {
+  models: string[]
 }
 
 type ModelConfigDto = {
@@ -66,6 +79,15 @@ type ModelConnectionTestRequest = {
   timeout_seconds: number
   temperature: number
   max_tokens: number
+  provider_options?: Record<string, unknown>
+}
+
+type ModelDiscoveryRequest = {
+  provider: string
+  base_url: string
+  api_key: string
+  timeout_seconds: number
+  provider_options?: Record<string, unknown>
 }
 
 function toModelConfigRequest(payload: ModelConfigPayload): ModelConfigRequest {
@@ -92,6 +114,17 @@ function toConnectionTestRequest(payload: ModelConnectionTestPayload): ModelConn
     timeout_seconds: payload.timeoutSeconds,
     temperature: payload.temperature,
     max_tokens: payload.maxTokens,
+    provider_options: payload.providerOptions,
+  }
+}
+
+function toModelDiscoveryRequest(payload: ModelDiscoveryPayload): ModelDiscoveryRequest {
+  return {
+    provider: payload.provider,
+    base_url: payload.baseUrl,
+    api_key: payload.apiKey,
+    timeout_seconds: payload.timeoutSeconds,
+    provider_options: payload.providerOptions,
   }
 }
 
@@ -141,6 +174,13 @@ export async function deleteModelConfig(configId: number): Promise<void> {
 export async function setDefaultModelConfig(configId: number): Promise<ModelConfig> {
   const config = await requestJson<ModelConfigDto>(`/api/model-configs/${configId}/default`, { method: 'POST' })
   return mapModelConfig(config)
+}
+
+export async function discoverModelConfigModels(payload: ModelDiscoveryPayload): Promise<ModelDiscoveryResult> {
+  return requestJson<ModelDiscoveryResult>('/api/model-configs/discover', {
+    method: 'POST',
+    body: JSON.stringify(toModelDiscoveryRequest(payload)),
+  })
 }
 
 export async function testModelConfig(payload: ModelConnectionTestPayload): Promise<ModelConnectionTestResult> {

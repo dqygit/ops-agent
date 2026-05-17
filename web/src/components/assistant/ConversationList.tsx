@@ -170,7 +170,7 @@ export function ConversationList({ items, activeConversationId, onSelect, onDele
             })}
           </ul>
         ) : (
-          <div className="rounded-2xl border border-dashed border-ops-border/20 bg-[linear-gradient(180deg,rgba(34,211,238,0.06),rgba(15,23,42,0.16))] px-4 py-6 text-xs text-ops-muted">
+          <div className="rounded-2xl border border-dashed border-ops-border/20 bg-[linear-gradient(180deg,rgb(var(--ops-cyan)/0.06),rgb(var(--ops-panel)/0.46))] px-4 py-6 text-xs text-ops-muted">
             <div className="flex flex-col gap-3">
               <div className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-ops-cyan/15 bg-ops-cyan/10 text-ops-cyan text-lg font-black shadow-glow">+</div>
               <div className="text-sm font-bold text-ops-text  tracking-widest">{t('conversation.noSessions')}</div>

@@ -14,7 +14,7 @@ export function EventCard({ event }: EventCardProps) {
 
   if (event.kind === 'error') {
     return (
-      <div className="my-1 rounded-2xl border border-ops-danger/35 bg-[linear-gradient(135deg,rgba(239,68,68,0.14),rgba(15,23,42,0.58))] p-4 shadow-[0_16px_40px_rgba(0,0,0,0.22)]" role="alert">
+      <div className="my-1 rounded-2xl border border-ops-danger/35 bg-[linear-gradient(135deg,rgb(var(--ops-danger)/0.14),rgb(var(--ops-panel)/0.58))] p-4 shadow-[0_16px_40px_rgb(var(--ops-bg)/0.22)]" role="alert">
         <div className="mb-2 flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.16em] text-ops-danger">
           <span className="h-1.5 w-1.5 rounded-full bg-ops-danger" />
           {t('conversation.systemError')}
@@ -27,7 +27,7 @@ export function EventCard({ event }: EventCardProps) {
   if (event.kind === 'user') {
     return (
       <div className="flex justify-end">
-        <article className="group relative max-w-[78%] overflow-hidden rounded-[24px] rounded-br-md border border-ops-cyan/25 bg-[linear-gradient(135deg,rgba(6,182,212,0.18),rgba(6,182,212,0.06)_42%,rgba(15,23,42,0.78))] px-5 py-4 shadow-[0_18px_46px_rgba(0,0,0,0.26),inset_0_1px_0_rgba(255,255,255,0.05)] backdrop-blur-md">
+        <article className="group relative max-w-[78%] overflow-hidden rounded-[24px] rounded-br-md border border-ops-cyan/25 bg-[linear-gradient(135deg,rgb(var(--ops-cyan)/0.18),rgb(var(--ops-cyan)/0.06)_42%,rgb(var(--ops-panel)/0.78))] px-5 py-4 shadow-[0_18px_46px_rgb(var(--ops-bg)/0.26),inset_0_1px_0_rgb(var(--ops-text)/0.05)] backdrop-blur-md">
           <div className="pointer-events-none absolute inset-x-5 top-0 h-px bg-gradient-to-r from-transparent via-cyan-200/45 to-transparent" aria-hidden="true" />
           <div className="mb-3 flex items-center justify-between gap-4">
             <span className="inline-flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.16em] text-ops-cyan/90">
@@ -56,7 +56,7 @@ export function EventCard({ event }: EventCardProps) {
   if (event.kind === 'final') {
     if (!event.text) return null
     return (
-      <section className="relative my-2 overflow-hidden rounded-[24px] border border-ops-green/25 bg-[radial-gradient(circle_at_top_left,rgba(16,185,129,0.16),transparent_36%),linear-gradient(145deg,rgba(21,27,40,0.72),rgba(5,8,15,0.66))] p-4 shadow-[0_18px_48px_rgba(0,0,0,0.24),inset_0_1px_0_rgba(255,255,255,0.04)]" role="status" aria-live="polite">
+      <section className="relative my-2 overflow-hidden rounded-[24px] border border-ops-green/25 bg-[radial-gradient(circle_at_top_left,rgb(var(--ops-green)/0.16),transparent_36%),linear-gradient(145deg,rgb(var(--ops-panel)/0.82),rgb(var(--ops-deep)/0.76))] p-4 shadow-[0_18px_48px_rgb(var(--ops-bg)/0.24),inset_0_1px_0_rgb(var(--ops-text)/0.04)]" role="status" aria-live="polite">
         <div className="pointer-events-none absolute inset-x-7 top-0 h-px bg-gradient-to-r from-transparent via-ops-green/55 to-transparent" aria-hidden="true" />
         <div className="mb-3 flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">

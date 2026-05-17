@@ -9,6 +9,7 @@ import {
   deleteMCPServer,
   deleteModelConfig,
   deleteSSHKey,
+  discoverModelConfigModels,
   getApprovalPolicy,
   getGroups,
   getModelConfigs,
@@ -37,6 +38,7 @@ import { ModelsSection } from './ModelsSection'
 import { PermissionsSection } from './PermissionsSection'
 import { SkillsSection } from './SkillsSection'
 import { SSHKeysSection } from './SSHKeysSection'
+import { modelProviderPresets } from '../../types/modelProviderPresets'
 import type { GroupForm, MCPServerForm, ModelForm, PermissionsForm, SettingsDialogProps, SettingsSection, SSHKeyForm } from './settingsTypes'
 
 const emptyGroupForm: GroupForm = {
@@ -44,17 +46,20 @@ const emptyGroupForm: GroupForm = {
   description: '',
 }
 
+const defaultModelProviderPreset = modelProviderPresets[0]
+
 const emptyModelForm: ModelForm = {
   name: '',
-  provider: 'anthropic',
-  baseUrl: '',
+  provider: defaultModelProviderPreset.provider,
+  baseUrl: defaultModelProviderPreset.baseUrl,
   apiKey: '',
-  modelName: '',
+  modelName: defaultModelProviderPreset.modelName,
   isDefault: false,
   timeoutSeconds: '30',
   temperature: '0.2',
   maxTokens: '1024',
   description: '',
+  providerOptions: {},
 }
 
 const emptySSHKeyForm: SSHKeyForm = {
@@ -136,6 +141,7 @@ function modelToForm(config: ModelConfig): ModelForm {
     temperature: String(config.temperature),
     maxTokens: String(config.maxTokens),
     description: config.description,
+    providerOptions: {},
   }
 }
 
@@ -173,6 +179,9 @@ export function SettingsDialog({ initialGroups, selectedModel, sshKeys: initialS
   const [selectedMCPServerId, setSelectedMCPServerId] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [testResult, setTestResult] = useState<string | null>(null)
+  const [discoveredModels, setDiscoveredModels] = useState<string[]>([])
+  const [discoveringModels, setDiscoveringModels] = useState(false)
+  const [modelDiscoveryMessage, setModelDiscoveryMessage] = useState<string | null>(null)
 
   const loadSettings = async () => {
     setLoading(true)
@@ -291,7 +300,9 @@ export function SettingsDialog({ initialGroups, selectedModel, sshKeys: initialS
     setEditingModel(null)
     setDeletingModel(null)
     setTestResult(null)
-    setModelForm(emptyModelForm)
+    setDiscoveredModels([])
+    setModelDiscoveryMessage(null)
+    setModelForm({ ...emptyModelForm, modelName: '' })
     setShowModelForm(true)
   }
 
@@ -319,6 +330,8 @@ export function SettingsDialog({ initialGroups, selectedModel, sshKeys: initialS
     setEditingModel(config)
     setDeletingModel(null)
     setTestResult(null)
+    setDiscoveredModels([config.modelName])
+    setModelDiscoveryMessage(null)
     setModelForm(modelToForm(config))
     setShowModelForm(true)
   }
@@ -327,7 +340,28 @@ export function SettingsDialog({ initialGroups, selectedModel, sshKeys: initialS
     setEditingModel(null)
     setShowModelForm(false)
     setTestResult(null)
+    setDiscoveredModels([])
+    setModelDiscoveryMessage(null)
     setModelForm(emptyModelForm)
+  }
+
+  const handleModelProviderChange = (provider: string) => {
+    const preset = modelProviderPresets.find((item) => item.provider === provider)
+    setDiscoveredModels([])
+    setModelDiscoveryMessage(null)
+    setModelForm((current) => ({
+      ...current,
+      provider,
+      baseUrl: preset?.baseUrl ?? current.baseUrl,
+      modelName: '',
+      providerOptions: current.providerOptions,
+    }))
+  }
+
+  const updateModelConnectionField = (updates: Partial<Pick<ModelForm, 'baseUrl' | 'apiKey'>>) => {
+    setDiscoveredModels([])
+    setModelDiscoveryMessage(null)
+    setModelForm((current) => ({ ...current, ...updates, modelName: '' }))
   }
 
   const toModelPayload = () => ({
@@ -342,6 +376,32 @@ export function SettingsDialog({ initialGroups, selectedModel, sshKeys: initialS
     maxTokens: Number(modelForm.maxTokens) || 1024,
     description: modelForm.description.trim(),
   })
+
+  const discoverModels = async () => {
+    setDiscoveringModels(true)
+    setModelDiscoveryMessage(null)
+    setTestResult(null)
+    setError(null)
+    try {
+      const result = await discoverModelConfigModels({
+        provider: modelForm.provider,
+        baseUrl: modelForm.baseUrl.trim(),
+        apiKey: modelForm.apiKey.trim(),
+        timeoutSeconds: Number(modelForm.timeoutSeconds) || 30,
+        providerOptions: modelForm.providerOptions,
+      })
+      setDiscoveredModels(result.models)
+      setModelForm((current) => ({ ...current, modelName: result.models.includes(current.modelName) ? current.modelName : result.models[0] ?? '' }))
+      setModelDiscoveryMessage(result.models.length > 0 ? `Discovered ${result.models.length} models.` : 'No models were returned by this provider.')
+    } catch (discoverError) {
+      setDiscoveredModels([])
+      setModelForm((current) => ({ ...current, modelName: '' }))
+      setModelDiscoveryMessage(null)
+      setError(discoverError instanceof Error ? discoverError.message : 'Model discovery failed')
+    } finally {
+      setDiscoveringModels(false)
+    }
+  }
 
   const saveModel = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -415,6 +475,7 @@ export function SettingsDialog({ initialGroups, selectedModel, sshKeys: initialS
         timeoutSeconds: Number(modelForm.timeoutSeconds) || 30,
         temperature: Number(modelForm.temperature) || 0.2,
         maxTokens: Number(modelForm.maxTokens) || 1024,
+        providerOptions: modelForm.providerOptions,
       })
       setTestResult(result.message)
     } catch (testError) {
@@ -689,13 +750,19 @@ export function SettingsDialog({ initialGroups, selectedModel, sshKeys: initialS
                 editingModel={editingModel}
                 saving={saving}
                 testResult={testResult}
+                discoveredModels={discoveredModels}
+                discoveringModels={discoveringModels}
+                modelDiscoveryMessage={modelDiscoveryMessage}
                 onStartCreate={startCreateModel}
                 onStartEdit={startEditModel}
                 onStartDelete={setDeletingModel}
                 onFormChange={setModelForm}
+                onProviderChange={handleModelProviderChange}
+                onConnectionFieldChange={updateModelConnectionField}
                 onCancelForm={cancelModelForm}
                 onSave={saveModel}
                 onSetDefault={(config) => void setDefaultModel(config)}
+                onDiscoverModels={() => void discoverModels()}
                 onTest={() => void testModel()}
               />
             ) : activeSection === 'sshKeys' ? (

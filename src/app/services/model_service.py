@@ -2,11 +2,12 @@ import json
 import os
 import re
 from pathlib import Path
-from typing import Literal, cast
+from typing import Any, Literal, cast
 
 from pydantic import SecretStr
 from sqlmodel import Session
 
+from app.core.llm.provider_presets import get_default_base_url, get_default_model, is_openai_compatible_provider
 from app.core.llm.types import LLMCompletionRequest, LLMMessage
 from app.core.llm.factory import build_llm_provider
 
@@ -92,11 +93,11 @@ class ModelService:
         return (text or "新会话")[:12]
 
     def build_default_config(self) -> ModelConfig:
-        provider = os.environ.get("OPS_AGENT_PROVIDER", ModelProvider.OPENAI_COMPATIBLE.value)
+        provider = ModelProvider(os.environ.get("OPS_AGENT_PROVIDER", ModelProvider.OPENAI_COMPATIBLE.value))
         return ModelConfig(
-            provider=ModelProvider(provider),
-            model_name=os.environ.get("OPS_AGENT_MODEL", "claude-sonnet-4-5-20250929"),
-            base_url=os.environ.get("OPS_AGENT_BASE_URL", "http://localhost/v1"),
+            provider=provider,
+            model_name=os.environ.get("OPS_AGENT_MODEL", get_default_model(provider)),
+            base_url=os.environ.get("OPS_AGENT_BASE_URL", get_default_base_url(provider)),
             api_key=SecretStr(os.environ.get("OPS_AGENT_API_KEY", "demo-key")),
             timeout_seconds=int(os.environ.get("OPS_AGENT_TIMEOUT_SECONDS", "30")),
             temperature=float(os.environ.get("OPS_AGENT_TEMPERATURE", "0.2")),
@@ -121,7 +122,7 @@ class ModelService:
             max_tokens=payload.get("max_tokens", default_config.max_tokens),
             prompt_cache_enabled=payload.get("prompt_cache_enabled", default_config.prompt_cache_enabled),
             prompt_cache_ttl=self._normalize_prompt_cache_ttl(payload.get("prompt_cache_ttl", default_config.prompt_cache_ttl)),
-            provider_options=payload.get("provider_options", default_config.provider_options),
+            provider_options=payload.get("provider_options") if isinstance(payload.get("provider_options"), dict) else default_config.provider_options,
         )
 
         # Only override with environment variables if they are explicitly set
@@ -171,6 +172,72 @@ class ModelService:
         if session is None:
             return []
         return list_model_names_by_provider(session, provider.value)
+
+    def discover_models(self, config: ModelConfig) -> list[str]:
+        if config.provider is ModelProvider.ANTHROPIC:
+            return self._discover_anthropic_models(config)
+        if config.provider is ModelProvider.GOOGLE_GEMINI:
+            return self._discover_google_gemini_models(config)
+        if config.provider is ModelProvider.OPENAI_RESPONSES or is_openai_compatible_provider(config.provider):
+            return self._discover_openai_style_models(config)
+        raise ValueError(f"Unsupported model provider: {config.provider.value}")
+
+    def _discover_openai_style_models(self, config: ModelConfig) -> list[str]:
+        from openai import OpenAI
+
+        client = OpenAI(api_key=config.api_key.get_secret_value(), base_url=config.base_url, timeout=config.timeout_seconds)
+        try:
+            response = client.models.list()
+        except Exception as error:
+            return self._fallback_discovered_models(config, error)
+        models = [model_id for item in getattr(response, "data", []) or [] if isinstance(model_id := getattr(item, "id", None), str) and model_id]
+        return sorted(set(models)) or [get_default_model(config.provider)]
+
+    def _discover_anthropic_models(self, config: ModelConfig) -> list[str]:
+        from anthropic import Anthropic
+
+        client = Anthropic(api_key=config.api_key.get_secret_value(), base_url=config.base_url, timeout=config.timeout_seconds)
+        try:
+            response = client.models.list()
+        except Exception as error:
+            return self._fallback_discovered_models(config, error)
+        return self._extract_model_ids(response) or [get_default_model(config.provider)]
+
+    def _discover_google_gemini_models(self, config: ModelConfig) -> list[str]:
+        import importlib
+
+        genai = importlib.import_module("google.genai")
+        options = config.provider_options or {}
+        client_kwargs: dict[str, Any] = {"api_key": config.api_key.get_secret_value()}
+        if options.get("vertexai") is True:
+            client_kwargs = {
+                "vertexai": True,
+                "project": options.get("project"),
+                "location": options.get("location"),
+            }
+        elif config.base_url:
+            client_kwargs["http_options"] = {"base_url": config.base_url}
+        client = genai.Client(**client_kwargs)
+        try:
+            response = client.models.list()
+        except Exception as error:
+            return self._fallback_discovered_models(config, error)
+        return self._extract_model_ids(response) or [get_default_model(config.provider)]
+
+    def _fallback_discovered_models(self, config: ModelConfig, error: Exception) -> list[str]:
+        status_code = getattr(error, "status_code", None)
+        if status_code == 404 or "404" in str(error):
+            return [get_default_model(config.provider)]
+        raise error
+
+    def _extract_model_ids(self, response: Any) -> list[str]:
+        data = getattr(response, "data", response)
+        models: list[str] = []
+        for item in data or []:
+            model_id = getattr(item, "id", None) or getattr(item, "name", None)
+            if isinstance(model_id, str) and model_id:
+                models.append(model_id)
+        return sorted(set(models))
 
     def encrypt_api_key(self, api_key: SecretStr) -> tuple[str, str]:
         credential_service = self._credential_service()

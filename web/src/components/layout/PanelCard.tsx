@@ -10,8 +10,8 @@ export function PanelCard({ children, fill = false, className = '' }: PanelCardP
   const defaultClasses = [
     'flex flex-col',
     'border border-ops-border/50',
-    'bg-[linear-gradient(180deg,rgba(8,12,10,0.96),rgba(11,16,14,0.98))]',
-    'shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]',
+    'bg-[linear-gradient(180deg,rgb(var(--ops-panel)/0.96),rgb(var(--ops-bg)/0.98))]',
+    'shadow-[inset_0_1px_0_rgb(var(--ops-text)/0.03)]',
   ].join(' ')
   const fillClasses = fill ? 'flex-1 overflow-hidden' : ''
 

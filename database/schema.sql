@@ -51,7 +51,7 @@ CREATE TABLE IF NOT EXISTS credentials (
 CREATE TABLE IF NOT EXISTS model_configs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
-    provider TEXT NOT NULL CHECK (provider IN ('anthropic', 'openai_compatible')),
+    provider TEXT NOT NULL CHECK (provider IN ('anthropic', 'openai_compatible', 'qwen', 'bigmodel', 'kimi', 'minimax', 'deepseek', 'azure_openai', 'amazon_bedrock', 'openrouter', 'cloudflare', 'github_models', 'siliconflow', 'openai_responses', 'google_gemini')),
     base_url TEXT NOT NULL,
     api_key_encryption_version TEXT NOT NULL,
     encrypted_api_key TEXT NOT NULL,

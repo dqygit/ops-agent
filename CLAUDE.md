@@ -22,9 +22,6 @@ cd web && pnpm install
 
 ```bash
 ./scripts/run.sh
-PYTHONPATH=src python -m app.main
-cd web && pnpm dev
-cd web && pnpm tauri:dev
 ```
 
 - `./scripts/run.sh` 会同时启动后端和前端，并清理 8000 / 5173 端口上的旧进程。
