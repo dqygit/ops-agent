@@ -1,5 +1,3 @@
-"""命令审批模块。"""
-
 from app.core.approval.policy import (
     ApprovalChecker,
     ApprovalContext,

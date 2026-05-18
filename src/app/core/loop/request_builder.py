@@ -61,12 +61,12 @@ class AgentLLMRequestBuilder:
             LLMMessage(
                 role="user",
                 content=(
-                    f"操作系统类型: {ctx.os_type}\n"
-                    f"当前主机信息: {ctx.asset_summary}\n"
+                    f"Operating System Type: {ctx.os_type}\n"
+                    f"Current Host Information: {ctx.asset_summary}\n"
                     f"Shell: {ctx.shell_type}\n"
-                    f"执行 Profile: {ctx.execution_profile}\n"
+                    f"Execution Profile: {ctx.execution_profile}\n"
                     f"{device_rules}"
-                    f"用户任务: {ctx.user_prompt}"
+                    f"User Task: {ctx.user_prompt}"
                 ),
                 cache_segment="current_user",
                 cache_status="volatile",

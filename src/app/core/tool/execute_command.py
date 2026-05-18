@@ -35,13 +35,13 @@ class ExecuteCommandHandler:
     def definition(self) -> LLMToolDefinition:
         return LLMToolDefinition(
             name="execute_command",
-            description="执行终端命令。系统会自动根据 settings.json 中的审批策略判断是允许、拒绝还是要求用户审批。",
+            description="Execute terminal command. The system will automatically determine whether to allow, reject, or require user approval based on the approval policy in settings.json.",
             input_schema={
                 "type": "object",
                 "properties": {
-                    "command": {"type": "string", "description": "要执行的终端命令"},
-                    "asset_id": {"type": "integer", "description": "目标资产 ID，不指定则使用当前终端"},
-                    "working_directory": {"type": "string", "description": "工作目录（可选）"},
+                    "command": {"type": "string", "description": "The command to execute, must be specified."},
+                    "asset_id": {"type": "integer", "description": "Target asset ID, if not specified, the current terminal will be used"},
+                    "working_directory": {"type": "string", "description": "Working directory (optional)"},
                 },
                 "required": ["command"],
             },
@@ -75,20 +75,20 @@ class ExecuteCommandHandler:
             return False, "Step not found"
 
         if terminal_id is None:
-            error = "终端未连接，无法执行。"
+            error = "Terminal not connected, cannot execute."
             if manager:
                 yield from manager.update(text=f"\nError: {error}")
             return False, ""
 
         session_manager = self._terminal.get_session(terminal_id)
         if session_manager is None:
-            error = "终端会话不存在，无法执行命令。"
+            error = "Terminal session does not exist, cannot execute command."
             if manager:
                 yield from manager.update(text=f"\nError: {error}")
             return False, ""
 
         if not self._terminal.acquire_terminal_slot(ctx.runtime_id, terminal_id):
-            error = "当前终端已有其他任务在执行，请稍后再试。"
+            error = "currently executing command, please wait for it to finish"
             if manager:
                 yield from manager.update(text=f"\nError: {error}")
             return False, ""
@@ -111,8 +111,8 @@ class ExecuteCommandHandler:
             success = execution.success and not execution.needs_attention
             return success, execution.output
         except Exception as exc:
-            logger.exception("命令执行异常 runtime_id=%s, command_id=%s", ctx.runtime_id, step.step_id)
-            error = f"命令执行异常: {exc}"
+            logger.exception("Command execution exception runtime_id=%s, command_id=%s", ctx.runtime_id, step.step_id)
+            error = f"Command execution exception: {exc}"
             if manager:
                 yield from manager.update(text=f"\nError: {error}")
             return False, ""

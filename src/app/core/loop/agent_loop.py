@@ -1,11 +1,3 @@
-"""简化后的 Agent Loop。
-
-仅保留：
-- LLM tool calling (基于 ToolHandler)
-- 命令审批策略检查
-- 用户审批恢复执行
-"""
-
 from __future__ import annotations
 
 import json

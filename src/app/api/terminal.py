@@ -129,7 +129,7 @@ def reconnect_terminal_session(
 
         asset = SimpleNamespace(
             id=0,
-            name="本地终端",
+            name="local-terminal",
             asset_type="local_terminal",
             host="localhost",
             port=0,

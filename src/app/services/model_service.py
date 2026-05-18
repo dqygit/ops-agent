@@ -52,7 +52,6 @@ class ModelService:
         return session_override or default_config
 
     def generate_conversation_title(self, prompt: str, *, model_name: str | None = None) -> str:
-        """根据用户首条任务消息生成一个简短中文会话标题（≤12 字，无标点）。"""
         try:
             config = self.load_settings()
             if model_name and model_name != config.model_name:
@@ -63,9 +62,7 @@ class ModelService:
                     LLMMessage(
                         role="system",
                         content=(
-                            "你是会话标题生成助手。基于用户的首条任务消息，给出一个 ≤12 个汉字、"
-                            "概括用户意图的中文短标题。不要带标点，不要带引号，不要带 emoji，"
-                            "不要解释，只输出标题本身。"
+                            "You are a conversation title generator. Based on the user's first task message, generate a short Chinese title (≤12 characters, no punctuation)."
                         ),
                     ),
                     LLMMessage(role="user", content=prompt.strip()),

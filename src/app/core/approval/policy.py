@@ -1,8 +1,3 @@
-"""命令审批策略模块。
-
-基于 permissions.allow / permissions.deny 判断命令是否需要用户审批。
-"""
-
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -12,16 +7,12 @@ from app.core.connectors.device_profiles import NETWORK_CLI_PROFILE, matches_com
 
 @dataclass
 class ApprovalPermissions:
-    """自动允许或拒绝执行的命令前缀。"""
-
     allow: list[str] = field(default_factory=list)
     deny: list[str] = field(default_factory=list)
 
 
 @dataclass
 class ApprovalPolicy:
-    """审批策略配置。"""
-
     permissions: ApprovalPermissions = field(default_factory=ApprovalPermissions)
 
 
@@ -34,38 +25,36 @@ class ApprovalContext:
 
 
 class ApprovalChecker:
-    """命令审批检查器。"""
 
     def __init__(self, policy: ApprovalPolicy):
         self._policy = policy
 
     def check_command(self, command: str, context: ApprovalContext | None = None) -> tuple[str, str]:
-        """检查命令是否需要审批。"""
         command = command.strip()
         for prefix in self._policy.permissions.deny:
             if _matches_command_prefix(prefix, command):
-                return "deny", f"匹配拒绝前缀: {prefix}"
+                return "deny", f"deny prefix: {prefix}"
 
         effective_context = context or ApprovalContext()
         if effective_context.profile == NETWORK_CLI_PROFILE:
             level = _classify_network_command(command, effective_context)
             for prefix in self._policy.permissions.allow:
                 if _matches_command_prefix(prefix, command) and level == 0:
-                    return "allow", f"匹配允许前缀: {prefix}"
+                    return "allow", f"allow prefix: {prefix}"
             if level == 0:
-                return "ask", "网络设备只读命令，按默认审批策略处理"
+                return "ask", "network device read-only command, handled by default approval policy"
             if level == 1:
-                return "ask", "网络设备模式切换命令需要审批"
+                return "ask", "network device mode switch command requires approval"
             if level == 2:
-                return "ask", "网络设备配置变更命令必须审批"
+                return "ask", "network device configuration change command requires approval"
             if level == 3:
-                return "ask", "网络设备保存配置命令必须单独审批"
-            return "ask", "网络设备高危命令必须审批"
+                return "ask", "network device save configuration command requires separate approval"
+            return "ask", "network device high-risk command requires approval"
 
         for prefix in self._policy.permissions.allow:
             if _matches_command_prefix(prefix, command):
-                return "allow", f"匹配允许前缀: {prefix}"
-        return "ask", "默认策略：需要审批"
+                return "allow", f"allow prefix: {prefix}"
+        return "ask", "default policy: approval required"
 
 
 def _matches_command_prefix(prefix: str, command: str) -> bool:
@@ -73,7 +62,6 @@ def _matches_command_prefix(prefix: str, command: str) -> bool:
 
 
 def create_default_policy() -> ApprovalPolicy:
-    """创建默认审批策略。"""
     return ApprovalPolicy(permissions=ApprovalPermissions())
 
 

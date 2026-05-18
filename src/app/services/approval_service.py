@@ -1,8 +1,3 @@
-"""命令审批服务模块。
-
-提供命令审批权限的管理和检查功能。
-"""
-
 from __future__ import annotations
 
 import json
@@ -14,7 +9,6 @@ from app.shared.config import SETTINGS_PATH
 
 
 class ApprovalService:
-    """审批服务。"""
 
     def __init__(self, config_path: str | None = None):
         if config_path is None:
@@ -25,7 +19,6 @@ class ApprovalService:
         self._checker = ApprovalChecker(self._policy)
 
     def _load_policy(self) -> ApprovalPolicy:
-        """从配置文件加载策略。"""
         if not self._config_path.exists():
             policy = create_default_policy()
             self._save_policy(policy)
@@ -54,7 +47,6 @@ class ApprovalService:
         return policy
 
     def _save_policy(self, policy: ApprovalPolicy | None = None) -> None:
-        """保存策略到配置文件。"""
         if policy is None:
             policy = self._policy
 
@@ -77,11 +69,9 @@ class ApprovalService:
             json.dump(existing_data, f, ensure_ascii=False, indent=2)
 
     def check_command(self, command: str, context: ApprovalContext | None = None) -> tuple[str, str]:
-        """检查命令是否需要审批。"""
         return self._checker.check_command(command, context)
 
     def add_allow_prefix(self, prefix: str) -> bool:
-        """添加允许执行的命令前缀。"""
         prefix = prefix.strip()
         if not prefix or prefix in self._policy.permissions.allow:
             return False
@@ -91,11 +81,9 @@ class ApprovalService:
         return True
 
     def get_policy_dict(self) -> dict[str, Any]:
-        """获取策略配置字典。"""
         return {"permissions": {"allow": self._policy.permissions.allow, "deny": self._policy.permissions.deny}}
 
     def update_policy_from_dict(self, data: dict[str, Any]) -> None:
-        """从字典更新策略配置。"""
         permissions_data = data.get("permissions") if isinstance(data, dict) else None
         allow = permissions_data.get("allow", []) if isinstance(permissions_data, dict) else []
         deny = permissions_data.get("deny", []) if isinstance(permissions_data, dict) else []
@@ -113,7 +101,6 @@ _approval_service: ApprovalService | None = None
 
 
 def get_approval_service() -> ApprovalService:
-    """获取全局审批服务实例。"""
     global _approval_service
     if _approval_service is None:
         _approval_service = ApprovalService()

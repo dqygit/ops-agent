@@ -59,14 +59,14 @@ def get_console_bootstrap(
         local_terminal_asset = SimpleNamespace(
             id=0,
             asset_type=AssetType.LOCAL_TERMINAL.value,
-            name="本地终端",
+            name="local-terminal",
             host="localhost",
             port=0,
             username="",
             auth_type="",
             tags=[],
             vendor="",
-            description="默认本地终端",
+            description="default local terminal asset",
             group_id=None,
             ssh_key_id=None,
         )
