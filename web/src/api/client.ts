@@ -31,6 +31,15 @@ async function getErrorMessage(response: Response) {
     if (typeof payload.detail === 'string') {
       return payload.detail
     }
+    if (payload.detail && typeof payload.detail === 'object') {
+      const detail = payload.detail as { failureReason?: unknown; status?: unknown }
+      if (typeof detail.failureReason === 'string') {
+        return detail.failureReason
+      }
+      if (typeof detail.status === 'string') {
+        return detail.status
+      }
+    }
     if (typeof payload.message === 'string') {
       return payload.message
     }

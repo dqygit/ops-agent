@@ -59,14 +59,17 @@ def build_plan_step_system_prompt(ctx: LoopContext) -> str:
     device_context = f"\n\n设备执行规则:\n{ctx.device_context}" if ctx.device_context else ""
     skill_prompt = build_skill_index_prompt(ctx)
     skill_section = f"\n\n{skill_prompt}" if skill_prompt else ""
+    authorization_context = f"Initial authorized terminal authorization_id: {ctx.default_authorization_id}\n" if ctx.default_authorization_id else ""
     return (
         f"Operating System Type: {ctx.os_type}\n"
         f"Current Host Information: {ctx.asset_summary}\n"
+        f"{authorization_context}"
         f"Shell: {ctx.shell_type}\n"
         f"Execution Profile: {ctx.execution_profile}{device_context}\n\n"
-        "You are an operations assistant executing a single plan step."
-        "You can use the provided tools to perform actions."
-        "Prioritize completing the current step, and directly provide a brief summary of the result once finished."
+        "You are an operations assistant executing a single plan step. "
+        "You can use list_assets to inspect visible diagnostic targets and request_terminal_session to ask the user before opening a new terminal. "
+        "Run commands only with execute_command using an authorization_id; never treat asset_id or terminal_id as execution credentials. "
+        "Prioritize completing the current step, and directly provide a brief summary of the result once finished. "
         "Respond in Chinese unless the user explicitly requests another language."
         f"{skill_section}"
     )
@@ -92,13 +95,17 @@ def build_tool_calling_system_prompt(ctx: LoopContext) -> str:
     device_context = f"\nDevice Execution Rules:\n{ctx.device_context}\n" if ctx.device_context else "\n"
     skill_prompt = build_skill_index_prompt(ctx)
     skill_section = f"\n\n{skill_prompt}" if skill_prompt else ""
+    authorization_context = f"Initial authorized terminal authorization_id: {ctx.default_authorization_id}\n" if ctx.default_authorization_id else ""
     return (
         f"Operating System Type: {ctx.os_type}\n"
         f"Current Host Information: {ctx.asset_summary}\n"
+        f"{authorization_context}"
         f"Shell: {ctx.shell_type}\n"
         f"Execution Profile: {ctx.execution_profile}{device_context}\n"
         "Rules: " + mode_instruction + "\n"
-        "When you need to check the environment or complete a task, call the corresponding tool directly."
+        "Use list_assets to inspect visible diagnostic targets. Use request_terminal_session before connecting to any asset that does not already have an active authorization. "
+        "Run commands only through execute_command with an authorization_id. Never treat asset_id or terminal_id as an execution credential. "
+        "When you need to check the environment or complete a task, call the corresponding tool directly. "
         "Respond in Chinese unless the user explicitly requests another language."
         f"{skill_section}"
     )

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react'
-import { appendConversationEvents, streamApproveAgent, streamApproveRuntimePlan, streamRunAgent, updateRuntimePlan } from '../../api'
+import { appendConversationEvents, decideTerminalRequest, getRuntimeEvents, streamApproveAgent, streamApproveRuntimePlan, streamRunAgent, updateRuntimePlan } from '../../api'
 import type { RunMode } from '../../types/api'
 import type { AgentMessage, Asset, ConversationContextStatus, EventItem, PlanStep, RuntimeSummary } from '../../types/ops'
 import { flushDeltaBuffer, LOCAL_TERMINAL_ASSET_ID, mergeDeltaEvent, mergePersistedEventsWithTransient, PENDING_ASSISTANT_MESSAGE_ID, upsertMessageEvent, upsertStreamEvent } from './consoleShared'
@@ -440,6 +440,72 @@ export function useAgentRun({
     ]
   )
 
+  const decideTerminalAccess = useCallback(async (input: {
+    runtimeId: string
+    requestId: string
+    approvalToken: string
+    approved: boolean
+  }) => {
+    if (!activeConversationId) {
+      return
+    }
+
+    const persistEvent = async (event: EventItem) => {
+      if (activeConversationIdRef.current === activeConversationId) {
+        setEvents((currentEvents: EventItem[]) => upsertStreamEvent(currentEvents, event))
+      }
+      const detail = await appendConversationEvents(activeConversationId, [event])
+      upsertConversationSummary(detail)
+      if (activeConversationIdRef.current === activeConversationId) {
+        setEvents((currentEvents: EventItem[]) => mergePersistedEventsWithTransient(detail.events, currentEvents))
+      } else {
+        applyConversationDetailIfActive(activeConversationId, detail)
+      }
+    }
+
+    try {
+      const response = await decideTerminalRequest(input.requestId, {
+        runtimeId: input.runtimeId,
+        approvalToken: input.approvalToken,
+        approved: input.approved,
+      })
+      const runtimeEvents = await getRuntimeEvents(input.runtimeId)
+      const event = [...runtimeEvents.events]
+        .reverse()
+        .find((candidate) => (
+          (candidate.kind === 'terminal_session_opened' || candidate.kind === 'terminal_session_rejected')
+          && candidate.requestId === input.requestId
+        )) as EventItem | undefined
+
+      await persistEvent(event ?? {
+        id: `${input.requestId}:${response.status}:${response.terminalCreationStatus ?? 'decision'}`,
+        kind: input.approved ? 'terminal_session_opened' : 'terminal_session_rejected',
+        eventId: `${input.requestId}:${response.status}:${response.terminalCreationStatus ?? 'decision'}`,
+        sequence: Date.now(),
+        occurredAt: new Date().toISOString(),
+        runtimeId: input.runtimeId,
+        requestId: input.requestId,
+        authorizationId: response.authorizationId ?? undefined,
+        assetId: response.assetId ?? undefined,
+        assetName: response.assetName ?? undefined,
+        terminalId: response.terminalId ?? undefined,
+        terminalCreationStatus: response.terminalCreationStatus ?? undefined,
+        channel: response.channel ?? undefined,
+        reason: response.failureReason ?? response.status,
+      })
+      await syncConversationRuntimes(activeConversationId)
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to decide terminal request.'
+      setLoadError(errorMessage)
+      await persistEvent({
+        id: `terminal-decision-error-${input.requestId}-${Date.now()}`,
+        kind: 'error',
+        text: errorMessage,
+      })
+      await syncConversationRuntimes(activeConversationId)
+    }
+  }, [activeConversationId, activeConversationIdRef, applyConversationDetailIfActive, setEvents, setLoadError, syncConversationRuntimes, upsertConversationSummary])
+
   const savePlan = useCallback(async (runtimeId: string, steps: PlanStep[]) => {
     if (!activeConversationId) {
       return
@@ -498,6 +564,7 @@ export function useAgentRun({
     runAgent,
     approveRun: (allowPrefix?: string) => void submitApproval(true, allowPrefix),
     rejectRun: () => void submitApproval(false),
+    decideTerminalAccess,
     savePlan,
     approvePlan,
   }

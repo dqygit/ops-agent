@@ -136,6 +136,31 @@ export type RuntimeSnapshotDto = {
   last_output_excerpt: string
   summary: string | null
   error_message: string | null
+  terminalRequests?: Array<{
+    requestId: string
+    runtimeId: string
+    assetId: number
+    assetName: string
+    reason: string
+    userDecisionStatus: string
+    terminalCreationStatus: string
+    expiresAt: string
+    approvalToken?: string | null
+    failureReason?: string | null
+  }>
+  terminalAuthorizations?: Array<{
+    authorizationId: string
+    runtimeId: string
+    assetId: number
+    assetName: string
+    terminalId: string
+    source: string
+    approvedBy: string
+    requestId?: string | null
+    status: string
+    replacedByAuthorizationId?: string | null
+    revokeReason?: string | null
+  }>
   created_at: string
   updated_at: string
   last_sequence: number

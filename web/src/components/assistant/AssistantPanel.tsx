@@ -30,6 +30,7 @@ type AssistantPanelProps = {
   onRun: (prompt: string, selectedSkillName?: string | null) => Promise<void>
   onApprove: (allowPrefix?: string) => void
   onReject: () => void
+  onTerminalRequestDecision?: (input: { runtimeId: string; requestId: string; approvalToken: string; approved: boolean }) => Promise<void>
   onSavePlan: (runtimeId: string, steps: PlanStep[]) => Promise<void>
   onApprovePlan: (runtimeId: string) => Promise<void>
 }
@@ -77,6 +78,7 @@ export function AssistantPanel({
   onRun,
   onApprove,
   onReject,
+  onTerminalRequestDecision,
   onSavePlan,
   onApprovePlan,
 }: AssistantPanelProps) {
@@ -120,6 +122,7 @@ export function AssistantPanel({
             pendingApprovalRuntimeId={pendingApprovalRuntimeId}
             onApprove={onApprove}
             onReject={onReject}
+            onTerminalRequestDecision={onTerminalRequestDecision}
             onSavePlan={onSavePlan}
             onApprovePlan={onApprovePlan}
           />

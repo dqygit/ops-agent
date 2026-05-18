@@ -13,17 +13,24 @@ type ConversationViewProps = {
   pendingApprovalRuntimeId: string | null
   onApprove?: (allowPrefix?: string) => void
   onReject?: () => void
+  onTerminalRequestDecision?: (input: { runtimeId: string; requestId: string; approvalToken: string; approved: boolean }) => Promise<void>
   onSavePlan?: (runtimeId: string, steps: PlanStep[]) => Promise<void>
   onApprovePlan?: (runtimeId: string) => Promise<void>
 }
 
-export function ConversationView({ events, pendingApprovalRuntimeId, onApprove, onReject, onSavePlan, onApprovePlan }: ConversationViewProps) {
+export function ConversationView({ events, pendingApprovalRuntimeId, onApprove, onReject, onTerminalRequestDecision, onSavePlan, onApprovePlan }: ConversationViewProps) {
   const scrollContainerRef = useRef<HTMLDivElement | null>(null)
   const shouldAutoScrollRef = useRef(true)
 
   const lastEvent = events[events.length - 1]
   const isStreamingNow = lastEvent?.kind === 'delta'
   const latestPlanEvent = [...events].reverse().find((event) => event.kind === 'plan')
+  const settledTerminalRequestIds = new Set<string>()
+  for (const event of events) {
+    if ((event.kind === 'terminal_session_opened' || event.kind === 'terminal_session_rejected') && event.requestId) {
+      settledTerminalRequestIds.add(event.requestId)
+    }
+  }
 
   const groups: Group[] = []
   const commandGroupMap = new Map<string, { index: number }>()
@@ -197,6 +204,8 @@ export function ConversationView({ events, pendingApprovalRuntimeId, onApprove, 
                   pendingApprovalRuntimeId={pendingApprovalRuntimeId}
                   onApprove={onApprove}
                   onReject={onReject}
+                  onTerminalRequestDecision={onTerminalRequestDecision}
+                  settledTerminalRequestIds={settledTerminalRequestIds}
                 />
               ) : null}
 
@@ -252,6 +261,8 @@ export function ConversationView({ events, pendingApprovalRuntimeId, onApprove, 
                           pendingApprovalRuntimeId={pendingApprovalRuntimeId}
                           onApprove={onApprove}
                           onReject={onReject}
+                          onTerminalRequestDecision={onTerminalRequestDecision}
+                  settledTerminalRequestIds={settledTerminalRequestIds}
                         />
                       )
                     }

@@ -38,6 +38,12 @@ export function CommandExecutionCard({
   const toolDisplayText = toolCall?.displayText || ''
   const toolDescription = toolCall?.description || ''
   const argsJson = toolCall?.args ? JSON.stringify(toolCall.args, null, 2) : '{}'
+  const args = toolCall?.args ?? {}
+  const targetAssetName = typeof args.asset_name === 'string' ? args.asset_name : undefined
+  const targetTerminalId = typeof args.terminal_id === 'string' ? args.terminal_id : ((startEvent as any)?.terminalId ?? (startEvent as any)?.terminal_id)
+  const targetLabel = [targetAssetName, targetTerminalId ? `terminal ${String(targetTerminalId).slice(0, 8)}` : undefined]
+    .filter(Boolean)
+    .join(' · ')
 
   // Parse command: if it's JSON like {"command":"lshw -short"}, extract the actual command
   const displayCommand = (() => {
@@ -105,6 +111,7 @@ export function CommandExecutionCard({
             <code className={`truncate font-mono text-[12px] ${isRunning ? 'text-ops-cyan' : 'text-ops-text/82'}`}>
               {toolSummary || (isCommandTool ? t('conversation.unknownCommand') : t('conversation.unknownTool'))}
             </code>
+            {targetLabel ? <span className="truncate text-[10px] font-semibold text-ops-muted/60">Target: {targetLabel}</span> : null}
           </div>
         </div>
 

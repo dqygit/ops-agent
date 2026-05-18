@@ -71,6 +71,31 @@ function mapRuntimeSnapshot(dto: RuntimeSnapshotDto): RuntimeSnapshot {
     lastOutputExcerpt: dto.last_output_excerpt,
     summary: dto.summary,
     errorMessage: dto.error_message,
+    terminalRequests: (dto.terminalRequests ?? []).map((request) => ({
+      requestId: request.requestId,
+      runtimeId: request.runtimeId,
+      assetId: request.assetId,
+      assetName: request.assetName,
+      reason: request.reason,
+      userDecisionStatus: request.userDecisionStatus,
+      terminalCreationStatus: request.terminalCreationStatus,
+      expiresAt: request.expiresAt,
+      approvalToken: request.approvalToken ?? null,
+      failureReason: request.failureReason ?? null,
+    })),
+    terminalAuthorizations: (dto.terminalAuthorizations ?? []).map((authorization) => ({
+      authorizationId: authorization.authorizationId,
+      runtimeId: authorization.runtimeId,
+      assetId: authorization.assetId,
+      assetName: authorization.assetName,
+      terminalId: authorization.terminalId,
+      source: authorization.source,
+      approvedBy: authorization.approvedBy,
+      requestId: authorization.requestId ?? null,
+      status: authorization.status,
+      replacedByAuthorizationId: authorization.replacedByAuthorizationId ?? null,
+      revokeReason: authorization.revokeReason ?? null,
+    })),
     createdAt: dto.created_at,
     updatedAt: dto.updated_at,
     lastSequence: dto.last_sequence,
@@ -197,6 +222,41 @@ export async function updateRuntimePlan(runtimeId: string, steps: PlanStep[]): P
     method: 'PUT',
     body: JSON.stringify({ steps }),
   })
+}
+
+export type TerminalRequestDecisionInput = {
+  runtimeId: string
+  approvalToken: string
+  approved: boolean
+}
+
+export type TerminalRequestDecisionResponse = {
+  status: string
+  requestId: string
+  authorizationId?: string | null
+  assetId?: number | null
+  assetName?: string | null
+  terminalId?: string | null
+  terminalCreationStatus?: string | null
+  channel?: string | null
+  failureReason?: string | null
+}
+
+export async function decideTerminalRequest(
+  requestId: string,
+  input: TerminalRequestDecisionInput,
+): Promise<TerminalRequestDecisionResponse> {
+  return requestJson<TerminalRequestDecisionResponse>(
+    `/api/console/terminal-requests/${encodeURIComponent(requestId)}/decision`,
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        runtimeId: input.runtimeId,
+        approvalToken: input.approvalToken,
+        approved: input.approved,
+      }),
+    },
+  )
 }
 
 export async function streamApproveRuntimePlan(runtimeId: string): Promise<AsyncGenerator<EventItem, void, void>> {

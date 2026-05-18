@@ -1,14 +1,64 @@
 from __future__ import annotations
 
+import hashlib
+import secrets
 import uuid
 from collections import deque
 from collections.abc import Iterator
-from dataclasses import dataclass
-from datetime import UTC, datetime
+from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
+from typing import Any, Literal
 
 from app.core.loop.agent_loop import AgentLoop
 from app.core.loop.loop_events import LoopEvent
 from app.core.loop.loop_state import LoopContext, LoopRuntimeStep, LoopState
+
+
+TerminalRequestDecisionStatus = Literal["pending", "approved", "rejected", "expired"]
+TerminalCreationStatus = Literal["not_started", "opening", "opened", "failed"]
+TerminalAuthorizationStatus = Literal["active", "revoked", "closed", "expired", "replaced"]
+TerminalAuthorizationSource = Literal["initial_asset", "user_approved_request"]
+TerminalAuthorizationApprover = Literal["system", "user"]
+
+
+@dataclass
+class PendingTerminalRequest:
+    request_id: str
+    runtime_id: str
+    conversation_id: str
+    asset_id: int
+    asset_name: str
+    reason: str
+    token_hash: str
+    user_decision_status: TerminalRequestDecisionStatus
+    terminal_creation_status: TerminalCreationStatus
+    created_at: datetime
+    expires_at: datetime
+    decided_at: datetime | None = None
+    terminal_started_at: datetime | None = None
+    terminal_finished_at: datetime | None = None
+    failure_reason: str | None = None
+    approval_token: str | None = None
+
+
+@dataclass
+class RuntimeTerminalAuthorization:
+    authorization_id: str
+    runtime_id: str
+    conversation_id: str
+    asset_id: int
+    asset_name: str
+    terminal_id: str
+    source: TerminalAuthorizationSource
+    approved_by: TerminalAuthorizationApprover
+    request_id: str | None
+    status: TerminalAuthorizationStatus
+    output_cursor: int
+    created_at: datetime
+    updated_at: datetime
+    revoked_at: datetime | None = None
+    revoke_reason: str | None = None
+    replaced_by_authorization_id: str | None = None
 
 
 @dataclass
@@ -22,6 +72,8 @@ class RuntimeState:
     sequence: int
     created_at: datetime
     updated_at: datetime
+    terminal_requests: dict[str, PendingTerminalRequest] = field(default_factory=dict)
+    terminal_authorizations: dict[str, RuntimeTerminalAuthorization] = field(default_factory=dict)
 
 
 class LoopRuntimeManager:
@@ -31,6 +83,405 @@ class LoopRuntimeManager:
         self._by_runtime: dict[str, RuntimeState] = {}
         self._by_conversation: dict[str, dict[str, RuntimeState]] = {}
         self._terminal_slots: dict[str, str] = {}
+
+    def _now(self) -> datetime:
+        return datetime.now(UTC)
+
+    def _hash_token(self, token: str) -> str:
+        return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+    def _request_view(self, request: PendingTerminalRequest, approval_token: str | None = None) -> dict[str, Any]:
+        return {
+            "requestId": request.request_id,
+            "runtimeId": request.runtime_id,
+            "assetId": request.asset_id,
+            "assetName": request.asset_name,
+            "reason": request.reason,
+            "userDecisionStatus": request.user_decision_status,
+            "terminalCreationStatus": request.terminal_creation_status,
+            "expiresAt": request.expires_at.isoformat(),
+            "approvalToken": approval_token,
+            "failureReason": request.failure_reason,
+        }
+
+    def _authorization_view(self, authorization: RuntimeTerminalAuthorization) -> dict[str, Any]:
+        return {
+            "authorizationId": authorization.authorization_id,
+            "runtimeId": authorization.runtime_id,
+            "assetId": authorization.asset_id,
+            "assetName": authorization.asset_name,
+            "terminalId": authorization.terminal_id,
+            "source": authorization.source,
+            "approvedBy": authorization.approved_by,
+            "requestId": authorization.request_id,
+            "status": authorization.status,
+            "replacedByAuthorizationId": authorization.replaced_by_authorization_id,
+            "revokeReason": authorization.revoke_reason,
+        }
+
+    def _append_runtime_event(self, runtime: RuntimeState, kind: str, payload: dict[str, Any]) -> dict[str, Any]:
+        runtime.sequence += 1
+        runtime.updated_at = self._now()
+        event_id = str(uuid.uuid4())
+        occurred_at = runtime.updated_at.isoformat()
+        event = {
+            "id": event_id,
+            "kind": kind,
+            "eventId": event_id,
+            "runtimeId": runtime.runtime_id,
+            "sequence": runtime.sequence,
+            "ts": occurred_at,
+            "occurredAt": occurred_at,
+            **payload,
+        }
+        stored_event = dict(event)
+        if "approvalToken" in stored_event:
+            stored_event["approvalToken"] = None
+        runtime.events.append(stored_event)
+        return event
+
+    def create_initial_terminal_authorization(
+        self,
+        runtime_id: str,
+        *,
+        conversation_id: str,
+        asset_id: int,
+        asset_name: str,
+        terminal_id: str,
+    ) -> RuntimeTerminalAuthorization:
+        runtime = self._by_runtime.get(runtime_id)
+        if runtime is None:
+            raise ValueError("runtime not found")
+        existing = next(
+            (
+                authorization
+                for authorization in runtime.terminal_authorizations.values()
+                if authorization.terminal_id == terminal_id and authorization.status == "active"
+            ),
+            None,
+        )
+        if existing is not None:
+            return existing
+        now = self._now()
+        authorization = RuntimeTerminalAuthorization(
+            authorization_id=str(uuid.uuid4()),
+            runtime_id=runtime_id,
+            conversation_id=conversation_id,
+            asset_id=asset_id,
+            asset_name=asset_name,
+            terminal_id=terminal_id,
+            source="initial_asset",
+            approved_by="system",
+            request_id=None,
+            status="active",
+            output_cursor=0,
+            created_at=now,
+            updated_at=now,
+        )
+        runtime.terminal_authorizations[authorization.authorization_id] = authorization
+        self._append_runtime_event(
+            runtime,
+            "terminal_session_opened",
+            {
+                "runtimeId": runtime_id,
+                "requestId": None,
+                "authorizationId": authorization.authorization_id,
+                "assetId": asset_id,
+                "assetName": asset_name,
+                "terminalId": terminal_id,
+                "channel": "initial terminal authorized",
+            },
+        )
+        return authorization
+
+    def _expire_terminal_requests(self, runtime: RuntimeState) -> None:
+        now = self._now()
+        for request in runtime.terminal_requests.values():
+            if request.user_decision_status != "pending" or request.expires_at > now:
+                continue
+            request.user_decision_status = "expired"
+            request.decided_at = now
+            request.approval_token = None
+            runtime.updated_at = now
+            for event in runtime.events:
+                if event.get("kind") == "terminal_session_request" and event.get("requestId") == request.request_id:
+                    event["approvalToken"] = None
+                    event["userDecisionStatus"] = "expired"
+            self._append_runtime_event(
+                runtime,
+                "terminal_session_rejected",
+                {
+                    "runtimeId": runtime.runtime_id,
+                    "requestId": request.request_id,
+                    "assetId": request.asset_id,
+                    "assetName": request.asset_name,
+                    "reason": "expired",
+                    "userDecisionStatus": "expired",
+                    "terminalCreationStatus": request.terminal_creation_status,
+                    "approvalToken": None,
+                },
+            )
+
+    def create_terminal_request(
+        self,
+        runtime_id: str,
+        *,
+        conversation_id: str,
+        asset_id: int,
+        asset_name: str,
+        reason: str,
+        ttl_seconds: int = 300,
+    ) -> tuple[PendingTerminalRequest, str, dict[str, Any]]:
+        runtime = self._by_runtime.get(runtime_id)
+        if runtime is None:
+            raise ValueError("runtime not found")
+        if ttl_seconds <= 0:
+            raise ValueError("terminal request TTL must be positive")
+        approval_token = secrets.token_urlsafe(32)
+        now = self._now()
+        request = PendingTerminalRequest(
+            request_id=str(uuid.uuid4()),
+            runtime_id=runtime_id,
+            conversation_id=conversation_id,
+            asset_id=asset_id,
+            asset_name=asset_name,
+            reason=reason,
+            token_hash=self._hash_token(approval_token),
+            user_decision_status="pending",
+            terminal_creation_status="not_started",
+            created_at=now,
+            expires_at=now + timedelta(seconds=ttl_seconds),
+            approval_token=approval_token,
+        )
+        runtime.terminal_requests[request.request_id] = request
+        event = self._append_runtime_event(
+            runtime,
+            "terminal_session_request",
+            self._request_view(request, approval_token),
+        )
+        return request, approval_token, event
+
+    def _find_active_authorization_for_request(
+        self,
+        runtime: RuntimeState,
+        request_id: str,
+    ) -> RuntimeTerminalAuthorization | None:
+        return next(
+            (
+                authorization
+                for authorization in runtime.terminal_authorizations.values()
+                if authorization.request_id == request_id and authorization.status == "active"
+            ),
+            None,
+        )
+
+    def _terminal_request_decision_response(
+        self,
+        request: PendingTerminalRequest,
+        authorization: RuntimeTerminalAuthorization | None = None,
+    ) -> dict[str, Any]:
+        return {
+            "status": request.user_decision_status,
+            "requestId": request.request_id,
+            "authorizationId": authorization.authorization_id if authorization else None,
+            "assetId": request.asset_id,
+            "assetName": request.asset_name,
+            "terminalId": authorization.terminal_id if authorization else None,
+            "terminalCreationStatus": request.terminal_creation_status,
+            "channel": "terminal connected" if authorization else None,
+            "failureReason": request.failure_reason,
+        }
+
+    async def decide_terminal_request(
+        self,
+        runtime_id: str,
+        request_id: str,
+        *,
+        approval_token: str,
+        approved: bool,
+        terminal_service: Any,
+        asset: Any,
+    ) -> dict[str, Any]:
+        runtime = self._by_runtime.get(runtime_id)
+        if runtime is None:
+            raise ValueError("runtime not found")
+        self._expire_terminal_requests(runtime)
+        request = runtime.terminal_requests.get(request_id)
+        if request is None or request.runtime_id != runtime_id:
+            raise KeyError("terminal request not found")
+        if not secrets.compare_digest(request.token_hash, self._hash_token(approval_token)):
+            raise PermissionError("invalid terminal request token")
+        now = self._now()
+        if request.user_decision_status != "pending":
+            return self._terminal_request_decision_response(
+                request,
+                self._find_active_authorization_for_request(runtime, request.request_id),
+            )
+        request.decided_at = now
+        request.approval_token = None
+        for event in runtime.events:
+            if event.get("kind") == "terminal_session_request" and event.get("requestId") == request.request_id:
+                event["approvalToken"] = None
+        if not approved:
+            request.user_decision_status = "rejected"
+            self._append_runtime_event(
+                runtime,
+                "terminal_session_rejected",
+                {
+                    "runtimeId": runtime_id,
+                    "requestId": request.request_id,
+                    "assetId": request.asset_id,
+                    "assetName": request.asset_name,
+                    "reason": "user rejected",
+                    "userDecisionStatus": request.user_decision_status,
+                    "terminalCreationStatus": request.terminal_creation_status,
+                    "approvalToken": None,
+                    "failureReason": request.failure_reason,
+                },
+            )
+            return self._terminal_request_decision_response(request)
+        request.user_decision_status = "approved"
+        request.terminal_creation_status = "opening"
+        request.terminal_started_at = now
+        try:
+            result = terminal_service.open_session(asset)
+        except Exception as exc:
+            result = {"terminal_id": None, "channel": None, "error": str(exc)}
+        terminal_id = result.get("terminal_id")
+        if not terminal_id:
+            request.terminal_creation_status = "failed"
+            request.terminal_finished_at = self._now()
+            request.failure_reason = str(result.get("error") or "terminal open failed")
+            self._append_runtime_event(
+                runtime,
+                "terminal_session_rejected",
+                {
+                    "runtimeId": runtime_id,
+                    "requestId": request.request_id,
+                    "assetId": request.asset_id,
+                    "assetName": request.asset_name,
+                    "reason": request.failure_reason,
+                    "userDecisionStatus": request.user_decision_status,
+                    "terminalCreationStatus": request.terminal_creation_status,
+                    "approvalToken": None,
+                    "failureReason": request.failure_reason,
+                },
+            )
+            return self._terminal_request_decision_response(request)
+        request.terminal_creation_status = "opened"
+        request.terminal_finished_at = self._now()
+        authorization = RuntimeTerminalAuthorization(
+            authorization_id=str(uuid.uuid4()),
+            runtime_id=runtime_id,
+            conversation_id=request.conversation_id,
+            asset_id=request.asset_id,
+            asset_name=request.asset_name,
+            terminal_id=terminal_id,
+            source="user_approved_request",
+            approved_by="user",
+            request_id=request.request_id,
+            status="active",
+            output_cursor=0,
+            created_at=request.terminal_finished_at,
+            updated_at=request.terminal_finished_at,
+        )
+        runtime.terminal_authorizations[authorization.authorization_id] = authorization
+        self._append_runtime_event(
+            runtime,
+            "terminal_session_opened",
+            {
+                "runtimeId": runtime_id,
+                "requestId": request.request_id,
+                "authorizationId": authorization.authorization_id,
+                "assetId": request.asset_id,
+                "assetName": request.asset_name,
+                "terminalId": authorization.terminal_id,
+                "channel": result.get("channel") or "terminal connected",
+            },
+        )
+        return {
+            "status": "approved",
+            "requestId": request.request_id,
+            "authorizationId": authorization.authorization_id,
+            "assetId": request.asset_id,
+            "assetName": request.asset_name,
+            "terminalId": authorization.terminal_id,
+            "terminalCreationStatus": request.terminal_creation_status,
+            "channel": result.get("channel") or "terminal connected",
+        }
+
+    def append_terminal_command_submitted(
+        self,
+        runtime_id: str,
+        *,
+        authorization_id: str,
+        asset_id: int,
+        asset_name: str,
+        terminal_id: str,
+        command: str,
+        approval_policy: str,
+    ) -> dict[str, Any]:
+        runtime = self._by_runtime.get(runtime_id)
+        if runtime is None:
+            raise ValueError("runtime not found")
+        return self._append_runtime_event(
+            runtime,
+            "terminal_command_submitted",
+            {
+                "runtimeId": runtime_id,
+                "authorizationId": authorization_id,
+                "assetId": asset_id,
+                "assetName": asset_name,
+                "terminalId": terminal_id,
+                "command": command,
+                "approvalPolicy": approval_policy,
+            },
+        )
+
+    def resolve_terminal_authorization(self, runtime_id: str, authorization_id: str) -> RuntimeTerminalAuthorization:
+        runtime = self._by_runtime.get(runtime_id)
+        if runtime is None:
+            raise ValueError("runtime not found")
+        self._expire_terminal_requests(runtime)
+        authorization = runtime.terminal_authorizations.get(authorization_id)
+        if authorization is None or authorization.status != "active":
+            raise ValueError("terminal authorization is not active")
+        return authorization
+
+    def revoke_authorizations_for_terminal(
+        self,
+        terminal_id: str,
+        *,
+        status: TerminalAuthorizationStatus,
+        reason: str,
+    ) -> list[RuntimeTerminalAuthorization]:
+        revoked: list[RuntimeTerminalAuthorization] = []
+        for runtime in self._by_runtime.values():
+            for authorization in runtime.terminal_authorizations.values():
+                if authorization.terminal_id != terminal_id or authorization.status != "active":
+                    continue
+                now = self._now()
+                authorization.status = status
+                authorization.revoked_at = now
+                authorization.updated_at = now
+                authorization.revoke_reason = reason
+                revoked.append(authorization)
+                self.release_terminal_slot(runtime.runtime_id, terminal_id)
+                self._append_runtime_event(
+                    runtime,
+                    "terminal_authorization_revoked",
+                    {
+                        "runtimeId": runtime.runtime_id,
+                        "authorizationId": authorization.authorization_id,
+                        "assetId": authorization.asset_id,
+                        "assetName": authorization.asset_name,
+                        "terminalId": authorization.terminal_id,
+                        "status": authorization.status,
+                        "reason": reason,
+                        "revokeReason": reason,
+                    },
+                )
+        return revoked
 
     def acquire_terminal_slot(self, runtime_id: str, terminal_id: str) -> bool:
         if terminal_id in self._terminal_slots and self._terminal_slots[terminal_id] != runtime_id:
@@ -53,8 +504,8 @@ class LoopRuntimeManager:
             state=state,
             events=deque(maxlen=2000),
             sequence=0,
-            created_at=datetime.now(UTC),
-            updated_at=datetime.now(UTC),
+            created_at=self._now(),
+            updated_at=self._now(),
         )
         self._by_runtime[runtime_id] = runtime
         self._by_conversation.setdefault(conversation_id, {})[runtime_id] = runtime
@@ -70,6 +521,7 @@ class LoopRuntimeManager:
         rt = self._by_runtime.get(runtime_id)
         if rt is None:
             raise ValueError("runtime not found")
+        self._expire_terminal_requests(rt)
         events = [evt for evt in rt.events if int(evt.get("sequence", 0)) > since]
         return rt.sequence, events
 
@@ -77,6 +529,7 @@ class LoopRuntimeManager:
         rt = self._by_runtime.get(runtime_id)
         if rt is None:
             raise ValueError("runtime not found")
+        self._expire_terminal_requests(rt)
         state = rt.state
         current_step = state.get_current_step()
         return {
@@ -109,6 +562,15 @@ class LoopRuntimeManager:
             "last_output_excerpt": state.last_output_excerpt,
             "summary": state.summary,
             "error_message": state.error_message,
+            "terminal_requests": [
+                self._request_view(request, request.approval_token if request.user_decision_status == "pending" else None)
+                for request in rt.terminal_requests.values()
+            ],
+            "terminal_authorizations": [
+                self._authorization_view(authorization)
+                for authorization in rt.terminal_authorizations.values()
+                if authorization.status in {"active", "revoked", "closed", "expired", "replaced"}
+            ],
             "created_at": rt.created_at,
             "updated_at": rt.updated_at,
             "last_sequence": rt.sequence,
@@ -152,7 +614,7 @@ class LoopRuntimeManager:
         ]
         state.cursor = 0
         state.plan_version += 1
-        rt.updated_at = datetime.now(UTC)
+        rt.updated_at = self._now()
         return self._append_plan_event(rt)
 
     def approve_plan(self, *, runtime_id: str, terminal_service) -> Iterator[dict]:
@@ -213,7 +675,15 @@ class LoopRuntimeManager:
         if rt is None:
             raise ValueError("runtime not found")
 
-        # In a real implementation we would verify approval_token here
+        expected_token_hash = rt.state.pending_approval_token_hash
+        if expected_token_hash is None:
+            raise ValueError("approval token is not available")
+        if approval_token is None or not secrets.compare_digest(
+            expected_token_hash,
+            hashlib.sha256(approval_token.encode("utf-8")).hexdigest(),
+        ):
+            raise PermissionError("invalid approval token")
+
         loop = AgentLoop(tools=self._tools_factory(terminal_service), usage_callback=self._usage_callback)
         for event in loop.resume_with_approval(rt.state, approved=approved):
             yield self._to_ws_event(event, rt)
@@ -230,13 +700,13 @@ class LoopRuntimeManager:
             return None
         state.latest_usage = None
         rt.sequence += 1
-        rt.updated_at = datetime.now(UTC)
+        rt.updated_at = self._now()
         event = {
             "id": f"evt-context-{uuid.uuid4().hex[:12]}",
             "kind": "context_status",
             "runtimeId": rt.runtime_id,
             "sequence": rt.sequence,
-            "ts": datetime.now(UTC).isoformat(),
+            "ts": self._now().isoformat(),
             "tokenUsage": usage,
         }
         rt.events.append(event)
@@ -244,7 +714,7 @@ class LoopRuntimeManager:
 
     def _to_ws_event(self, event: LoopEvent, rt: RuntimeState) -> dict:
         rt.sequence += 1
-        rt.updated_at = datetime.now(UTC)
+        rt.updated_at = self._now()
         kind = event.event_type.replace("loop_", "")
         
         if kind == "message_update":
@@ -262,7 +732,7 @@ class LoopRuntimeManager:
                 "kind": kind,
                 "runtimeId": event.runtime_id,
                 "sequence": rt.sequence,
-                "ts": datetime.now(UTC).isoformat(),
+                "ts": self._now().isoformat(),
                 **event.payload,
             }
         
@@ -272,8 +742,12 @@ class LoopRuntimeManager:
             ws_event["stage"] = event.stage
         if event.step_id:
             ws_event["stepId"] = event.step_id
-            
-        rt.events.append(ws_event)
+
+        stored_event = dict(ws_event)
+        tool_call = stored_event.get("toolCall")
+        if isinstance(tool_call, dict) and "approvalToken" in tool_call:
+            stored_event["toolCall"] = {**tool_call, "approvalToken": None}
+        rt.events.append(stored_event)
         return ws_event
 
 def new_runtime_id() -> str:

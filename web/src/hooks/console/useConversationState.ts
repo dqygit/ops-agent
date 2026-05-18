@@ -10,7 +10,46 @@ import {
   listConversationRuntimes,
 } from '../../api'
 import type { ConversationContextStatus, ConversationSummary, EventItem, RuntimeSnapshot, RuntimeSummary } from '../../types/ops'
-import { normalizePlanEvents, upsertConversationSummaryFromDetail } from './consoleShared'
+import { normalizePlanEvents, upsertConversationSummaryFromDetail, upsertStreamEvent } from './consoleShared'
+
+function terminalSnapshotEvents(snapshot: RuntimeSnapshot | null): EventItem[] {
+  if (!snapshot) return []
+  return [
+    ...snapshot.terminalRequests.map((request): EventItem => ({
+      id: `snapshot:terminal-request:${request.requestId}`,
+      kind: 'terminal_session_request',
+      eventId: `snapshot:terminal-request:${request.requestId}`,
+      sequence: snapshot.lastSequence,
+      occurredAt: request.expiresAt,
+      runtimeId: request.runtimeId,
+      requestId: request.requestId,
+      assetId: request.assetId,
+      assetName: request.assetName,
+      reason: request.reason,
+      approvalToken: request.approvalToken,
+      terminalCreationStatus: request.terminalCreationStatus,
+    })),
+    ...snapshot.terminalAuthorizations.map((authorization): EventItem => ({
+      id: `snapshot:terminal-authorization:${authorization.authorizationId}:${authorization.status}`,
+      kind: authorization.status === 'active' ? 'terminal_session_opened' : 'terminal_authorization_revoked',
+      eventId: `snapshot:terminal-authorization:${authorization.authorizationId}:${authorization.status}`,
+      sequence: snapshot.lastSequence,
+      occurredAt: snapshot.updatedAt,
+      runtimeId: authorization.runtimeId,
+      authorizationId: authorization.authorizationId,
+      assetId: authorization.assetId,
+      assetName: authorization.assetName,
+      terminalId: authorization.terminalId,
+      requestId: authorization.requestId,
+      reason: authorization.revokeReason ?? authorization.status,
+      revokeReason: authorization.revokeReason ?? undefined,
+    })),
+  ]
+}
+
+function mergeSnapshotTerminalEvents(events: EventItem[], snapshot: RuntimeSnapshot | null): EventItem[] {
+  return terminalSnapshotEvents(snapshot).reduce((currentEvents, event) => upsertStreamEvent(currentEvents, event), normalizePlanEvents(events))
+}
 
 export function useConversationState(selectedModel: string) {
   const [conversationSummaries, setConversationSummaries] = useState<ConversationSummary[]>([])
@@ -59,6 +98,7 @@ export function useConversationState(selectedModel: string) {
       return detail
     }
     setActiveRuntimeSnapshot(nextRuntimeSnapshot)
+    setEvents((currentEvents) => mergeSnapshotTerminalEvents(currentEvents, nextRuntimeSnapshot))
     return detail
   }, [])
 
@@ -86,7 +126,9 @@ export function useConversationState(selectedModel: string) {
       ? activeRuntimeId
       : (runtimes[0]?.runtimeId ?? null)
     setActiveRuntimeId(nextRuntimeId)
-    setActiveRuntimeSnapshot(nextRuntimeId ? await getRuntimeSnapshot(nextRuntimeId) : null)
+    const nextSnapshot = nextRuntimeId ? await getRuntimeSnapshot(nextRuntimeId) : null
+    setActiveRuntimeSnapshot(nextSnapshot)
+    setEvents((currentEvents) => mergeSnapshotTerminalEvents(currentEvents, nextSnapshot))
     return runtimes
   }, [activeRuntimeId])
 

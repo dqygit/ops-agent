@@ -97,6 +97,7 @@ export function App() {
     runAgent,
     approveRun,
     rejectRun,
+    decideTerminalAccess,
     savePlan,
     approvePlan,
   } = useAgentRun({
@@ -282,6 +283,7 @@ export function App() {
                 onReject={() => {
                   void rejectRun()
                 }}
+                onTerminalRequestDecision={decideTerminalAccess}
                 onSavePlan={savePlan}
                 onApprovePlan={approvePlan}
               />

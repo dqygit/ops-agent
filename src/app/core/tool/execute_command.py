@@ -22,6 +22,22 @@ from app.services.approval_service import get_approval_service
 class TerminalSessionResolver(Protocol):
     def get_session(self, terminal_id: str) -> Any | None: ...
 
+    def resolve_terminal_authorization(self, runtime_id: str, authorization_id: str) -> Any: ...
+
+    def session_belongs_to_asset(self, terminal_id: str, asset_id: int) -> bool: ...
+
+    def append_terminal_command_submitted(
+        self,
+        runtime_id: str,
+        *,
+        authorization_id: str,
+        asset_id: int,
+        asset_name: str,
+        terminal_id: str,
+        command: str,
+        approval_policy: str,
+    ) -> dict[str, Any]: ...
+
     def acquire_terminal_slot(self, runtime_id: str, terminal_id: str) -> bool: ...
 
     def release_terminal_slot(self, runtime_id: str, terminal_id: str) -> None: ...
@@ -39,16 +55,31 @@ class ExecuteCommandHandler:
             input_schema={
                 "type": "object",
                 "properties": {
+                    "authorization_id": {
+                        "type": "string",
+                        "description": "Runtime terminal authorization ID for the target terminal session.",
+                    },
                     "command": {"type": "string", "description": "The command to execute, must be specified."},
-                    "asset_id": {"type": "integer", "description": "Target asset ID, if not specified, the current terminal will be used"},
                     "working_directory": {"type": "string", "description": "Working directory (optional)"},
                 },
-                "required": ["command"],
+                "required": ["authorization_id", "command"],
             },
         )
 
     def needs_approval(self, args: dict[str, Any]) -> tuple[str, str]:
         command = str(args.get("command", "")).strip()
+        authorization_id = str(args.get("authorization_id", "") or "")
+        if not authorization_id:
+            return "deny", "Missing terminal authorization."
+        runtime_id = str(args.get("runtime_id", "") or "")
+        if runtime_id:
+            try:
+                authorization = self._terminal.resolve_terminal_authorization(runtime_id, authorization_id)
+            except ValueError as exc:
+                return "deny", str(exc)
+            args["asset_id"] = authorization.asset_id
+            args["asset_name"] = authorization.asset_name
+            args["terminal_id"] = authorization.terminal_id
         context = ApprovalContext(
             asset_type=str(args.get("asset_type", "") or ""),
             shell_type=str(args.get("shell_type", "") or ""),
@@ -68,33 +99,57 @@ class ExecuteCommandHandler:
 
     def execute(self, *, state: LoopState, step_id: str, args: dict[str, Any], manager: MessageManager | None = None) -> Iterator[LoopEvent]:
         ctx = state.context
-        terminal_id = ctx.terminal_id
-        
+        authorization_id = str(args.get("authorization_id", "") or "")
+        command = str(args.get("command", "")).strip()
+        if not authorization_id:
+            error = "Missing terminal authorization."
+            if manager:
+                yield from manager.update(text=f"\nError: {error}")
+            return False, error
+        try:
+            authorization = self._terminal.resolve_terminal_authorization(ctx.runtime_id, authorization_id)
+        except ValueError as exc:
+            error = str(exc)
+            if manager:
+                yield from manager.update(text=f"\nError: {error}")
+            return False, error
+        terminal_id = authorization.terminal_id
+        args["asset_id"] = authorization.asset_id
+        args["asset_name"] = authorization.asset_name
+        args["terminal_id"] = authorization.terminal_id
+        if not self._terminal.session_belongs_to_asset(terminal_id, authorization.asset_id):
+            error = "Authorized terminal no longer belongs to the expected asset."
+            if manager:
+                yield from manager.update(text=f"\nError: {error}")
+            return False, error
+
         step = state.get_step(step_id)
         if step is None:
             return False, "Step not found"
-
-        if terminal_id is None:
-            error = "Terminal not connected, cannot execute."
-            if manager:
-                yield from manager.update(text=f"\nError: {error}")
-            return False, ""
 
         session_manager = self._terminal.get_session(terminal_id)
         if session_manager is None:
             error = "Terminal session does not exist, cannot execute command."
             if manager:
                 yield from manager.update(text=f"\nError: {error}")
-            return False, ""
+            return False, error
 
         if not self._terminal.acquire_terminal_slot(ctx.runtime_id, terminal_id):
             error = "currently executing command, please wait for it to finish"
             if manager:
                 yield from manager.update(text=f"\nError: {error}")
-            return False, ""
+            return False, error
 
         try:
-            command = str(args.get("command", "")).strip()
+            self._terminal.append_terminal_command_submitted(
+                ctx.runtime_id,
+                authorization_id=authorization.authorization_id,
+                asset_id=authorization.asset_id,
+                asset_name=authorization.asset_name,
+                terminal_id=authorization.terminal_id,
+                command=command,
+                approval_policy=str(args.get("approval_policy", "allow")),
+            )
             execution_id = session_manager.start_execution(
                 command,
                 ExecutionContext(working_directory=step.working_directory),
@@ -115,6 +170,6 @@ class ExecuteCommandHandler:
             error = f"Command execution exception: {exc}"
             if manager:
                 yield from manager.update(text=f"\nError: {error}")
-            return False, ""
+            return False, error
         finally:
             self._terminal.release_terminal_slot(ctx.runtime_id, terminal_id)

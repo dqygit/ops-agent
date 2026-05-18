@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { useAppearance } from '../../../hooks/useAppearance'
 import type { EventItem } from '../../../types/ops'
 import { AssistantMessageContent } from './AssistantMessageContent'
@@ -7,10 +8,18 @@ type EventCardProps = {
   pendingApprovalRuntimeId: string | null
   onApprove?: (allowPrefix?: string) => void
   onReject?: () => void
+  onTerminalRequestDecision?: (input: { runtimeId: string; requestId: string; approvalToken: string; approved: boolean }) => Promise<void>
+  settledTerminalRequestIds?: Set<string>
 }
 
-export function EventCard({ event }: EventCardProps) {
+function eventValue(event: EventItem, key: string): string | undefined {
+  const value = (event as unknown as Record<string, unknown>)[key]
+  return typeof value === 'string' ? value : undefined
+}
+
+export function EventCard({ event, onTerminalRequestDecision, settledTerminalRequestIds }: EventCardProps) {
   const { t } = useAppearance()
+  const [submittingTerminalDecision, setSubmittingTerminalDecision] = useState(false)
 
   if (event.kind === 'error') {
     return (
@@ -37,6 +46,83 @@ export function EventCard({ event }: EventCardProps) {
           </div>
           <p className="m-0 whitespace-pre-wrap text-[14px] font-medium leading-7 text-ops-text">{event.text}</p>
         </article>
+      </div>
+    )
+  }
+
+  if (event.kind === 'terminal_session_request') {
+    const runtimeId = event.runtimeId
+    const requestId = event.requestId ?? undefined
+    const approvalToken = event.approvalToken ?? undefined
+    const assetName = event.assetName ?? `asset-${event.assetId ?? ''}`
+    const reason = event.reason ?? 'Agent requested terminal access.'
+    const settled = Boolean(requestId && settledTerminalRequestIds?.has(requestId))
+    const canDecide = Boolean(runtimeId && requestId && approvalToken && onTerminalRequestDecision && !submittingTerminalDecision && !settled)
+    return (
+      <div className="my-2 rounded-2xl border border-amber-400/35 bg-amber-400/10 p-5 shadow-[0_16px_40px_rgba(0,0,0,0.18)]">
+        <div className="mb-3 flex items-center gap-2 text-amber-200">
+          <span className="h-2 w-2 rounded-full bg-amber-300" />
+          <span className="text-[10px] font-black uppercase tracking-[0.18em]">Terminal access request</span>
+        </div>
+        <p className="m-0 text-sm font-semibold text-ops-text">{assetName}</p>
+        <p className="mt-2 whitespace-pre-wrap text-xs leading-relaxed text-ops-muted">{reason}</p>
+        {settled ? <p className="mt-3 text-xs text-ops-muted">This request has been decided.</p> : null}
+        {canDecide ? (
+          <div className="mt-4 flex gap-2">
+            <button
+              type="button"
+              className="rounded-xl border border-ops-green/30 bg-ops-green/10 px-3 py-2 text-[10px] font-black uppercase tracking-[0.14em] text-ops-green hover:bg-ops-green/20"
+              disabled={!canDecide}
+              onClick={() => {
+                if (!runtimeId || !requestId || !approvalToken || !onTerminalRequestDecision) return
+                setSubmittingTerminalDecision(true)
+                void onTerminalRequestDecision({ runtimeId, requestId, approvalToken, approved: true }).finally(() => {
+                  setSubmittingTerminalDecision(false)
+                })
+              }}
+            >
+              {submittingTerminalDecision ? 'Submitting' : 'Allow'}
+            </button>
+            <button
+              type="button"
+              className="rounded-xl border border-ops-danger/30 bg-ops-danger/10 px-3 py-2 text-[10px] font-black uppercase tracking-[0.14em] text-ops-danger hover:bg-ops-danger/20"
+              disabled={!canDecide}
+              onClick={() => {
+                if (!runtimeId || !requestId || !approvalToken || !onTerminalRequestDecision) return
+                setSubmittingTerminalDecision(true)
+                void onTerminalRequestDecision({ runtimeId, requestId, approvalToken, approved: false }).finally(() => {
+                  setSubmittingTerminalDecision(false)
+                })
+              }}
+            >
+              Reject
+            </button>
+          </div>
+        ) : null}
+      </div>
+    )
+  }
+
+  if (event.kind === 'terminal_session_opened') {
+    return (
+      <div className="my-2 rounded-2xl border border-ops-green/30 bg-ops-green/10 p-4 text-sm text-ops-text">
+        Terminal authorized for {eventValue(event, 'assetName') ?? 'asset'}
+      </div>
+    )
+  }
+
+  if (event.kind === 'terminal_session_rejected') {
+    return (
+      <div className="my-2 rounded-2xl border border-ops-danger/30 bg-ops-danger/10 p-4 text-sm text-ops-text">
+        Terminal request ended for {eventValue(event, 'assetName') ?? 'asset'}: {eventValue(event, 'reason') ?? 'rejected'}
+      </div>
+    )
+  }
+
+  if (event.kind === 'terminal_authorization_revoked') {
+    return (
+      <div className="my-2 rounded-2xl border border-ops-border/30 bg-ops-panel/60 p-4 text-sm text-ops-muted">
+        Terminal authorization ended: {eventValue(event, 'revokeReason') ?? eventValue(event, 'reason') ?? 'closed'}
       </div>
     )
   }

@@ -10,12 +10,12 @@ from app.api.assets import to_asset_view
 from app.api.conversations import get_conversation_service
 from app.api.groups import to_asset_group_view
 from app.api.ssh_keys import to_ssh_key_view
-from app.api.schemas import ConsoleApprovalRequest, ConsoleBootstrapView, ConsolePlanUpdateRequest, ConsoleRunRequest, RuntimeEventsResponse, RuntimeSnapshotView, RuntimeSummaryView
+from app.api.schemas import ConsoleApprovalRequest, ConsoleBootstrapView, ConsolePlanUpdateRequest, ConsoleRunRequest, RuntimeEventsResponse, RuntimeSnapshotView, RuntimeSummaryView, TerminalRequestDecisionRequest, TerminalRequestDecisionResponse
 from app.services.ssh_key_service import list_ssh_key_records
 from app.api.terminal import get_terminal_service
 from app.db.repositories.models import get_default_model_config, list_model_configs
 from app.db.session import get_session
-from app.services.asset_service import list_asset_group_records, list_asset_records
+from app.services.asset_service import get_asset_record, list_asset_group_records, list_asset_records
 
 from app.services.model_service import ModelService
 from app.services.terminal_service import TerminalService
@@ -180,6 +180,49 @@ def get_runtime_snapshot(runtime_id: str) -> RuntimeSnapshotView:
 def get_runtime_events(runtime_id: str, since: int = 0) -> RuntimeEventsResponse:
     latest_sequence, events = _console_app_service.runtime_manager.events_since(runtime_id, since)
     return RuntimeEventsResponse(latest_sequence=latest_sequence, events=[dict(event) for event in events])
+
+
+@router.post(
+    "/api/console/terminal-requests/{request_id}/decision",
+    response_model=TerminalRequestDecisionResponse,
+)
+async def decide_terminal_request(
+    request_id: str,
+    request: TerminalRequestDecisionRequest,
+    session: Session = Depends(get_session),
+    terminal_service: TerminalService = Depends(get_terminal_service),
+) -> TerminalRequestDecisionResponse:
+    try:
+        runtime = _console_app_service.runtime_manager.get_runtime(request.runtime_id)
+        if runtime is None:
+            raise ValueError("runtime not found")
+        terminal_request = runtime.terminal_requests.get(request_id)
+        if terminal_request is None:
+            raise KeyError("terminal request not found")
+        asset = get_asset_record(session, terminal_request.asset_id)
+        if asset is None:
+            raise LookupError("asset not found")
+        result = await _console_app_service.runtime_manager.decide_terminal_request(
+            request.runtime_id,
+            request_id,
+            approval_token=request.approval_token,
+            approved=request.approved,
+            terminal_service=terminal_service,
+            asset=asset,
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    if result["status"] == "expired":
+        raise HTTPException(status_code=409, detail=result)
+    if result.get("terminalCreationStatus") == "failed":
+        raise HTTPException(status_code=502, detail=result)
+    return TerminalRequestDecisionResponse.model_validate(result)
 
 
 @router.put("/api/console/runtimes/{runtime_id}/plan")

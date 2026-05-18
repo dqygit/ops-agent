@@ -259,6 +259,33 @@ export type RuntimeSummary = {
   updatedAt: string
 }
 
+export type RuntimeTerminalRequest = {
+  requestId: string
+  runtimeId: string
+  assetId: number
+  assetName: string
+  reason: string
+  userDecisionStatus: string
+  terminalCreationStatus: string
+  expiresAt: string
+  approvalToken: string | null
+  failureReason: string | null
+}
+
+export type RuntimeTerminalAuthorization = {
+  authorizationId: string
+  runtimeId: string
+  assetId: number
+  assetName: string
+  terminalId: string
+  source: string
+  approvedBy: string
+  requestId: string | null
+  status: string
+  replacedByAuthorizationId: string | null
+  revokeReason: string | null
+}
+
 export type RuntimeSnapshot = {
   runtimeId: string
   conversationId: string
@@ -275,6 +302,8 @@ export type RuntimeSnapshot = {
   lastOutputExcerpt: string
   summary: string | null
   errorMessage: string | null
+  terminalRequests: RuntimeTerminalRequest[]
+  terminalAuthorizations: RuntimeTerminalAuthorization[]
   createdAt: string
   updatedAt: string
   lastSequence: number
@@ -320,6 +349,27 @@ export type TerminalStatusEvent = {
   message?: string
 }
 
+export type TerminalAutonomyEvent = {
+  id: string
+  kind: 'terminal_session_request' | 'terminal_session_opened' | 'terminal_session_rejected' | 'terminal_authorization_revoked' | 'terminal_command_submitted'
+  eventId?: string
+  sequence?: number
+  occurredAt?: string
+  runtimeId?: string
+  requestId?: string | null
+  authorizationId?: string | null
+  assetId?: number
+  assetName?: string
+  terminalId?: string | null
+  terminalCreationStatus?: string
+  approvalToken?: string | null
+  channel?: string | null
+  reason?: string
+  revokeReason?: string
+  command?: string
+  approvalPolicy?: string
+}
+
 export type AgentMessage = {
   id: string
   kind: 'message'
@@ -357,6 +407,7 @@ export type EventItem =
   | ExecutionCompletedEvent
   | ContextStatusEvent
   | TerminalStatusEvent
+  | TerminalAutonomyEvent
   | AgentMessage
   | { id: string; kind: 'message_update'; payload: AgentMessage } // For raw event wrapper if needed
   | { id: string; kind: 'final'; text: string }

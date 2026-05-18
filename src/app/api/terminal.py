@@ -41,6 +41,12 @@ def get_terminal_service() -> TerminalService:
     return _terminal_service
 
 
+def _runtime_manager():
+    from app.api.console import _console_app_service
+
+    return _console_app_service.runtime_manager
+
+
 @router.post("/api/terminal/sessions")
 def open_terminal_session(
     payload: TerminalSessionRequest,
@@ -108,6 +114,11 @@ def close_terminal_session(
     closed = terminal_service.close_session(terminal_id)
     if not closed:
         raise HTTPException(status_code=404, detail="Terminal session not found")
+    _runtime_manager().revoke_authorizations_for_terminal(
+        terminal_id,
+        status="closed",
+        reason="terminal_closed",
+    )
     return Response(status_code=204)
 
 
@@ -140,8 +151,22 @@ def reconnect_terminal_session(
         )
     if asset is None:
         raise HTTPException(status_code=404, detail="Asset not found")
-    terminal_service.close_session(terminal_id)
     result = terminal_service.open_session(asset)
+    if not result.get("terminal_id"):
+        return TerminalSessionResponse(
+            terminal_id=result.get("terminal_id"),
+            channel=result.get("channel"),
+            error=result.get("error", ""),
+        )
+    closed = terminal_service.close_session(terminal_id)
+    if not closed:
+        terminal_service.close_session(str(result.get("terminal_id")))
+        raise HTTPException(status_code=404, detail="Terminal session not found")
+    _runtime_manager().revoke_authorizations_for_terminal(
+        terminal_id,
+        status="replaced",
+        reason="terminal_reconnected",
+    )
     return TerminalSessionResponse(
         terminal_id=result.get("terminal_id"),
         channel=result.get("channel"),

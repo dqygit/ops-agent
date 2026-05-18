@@ -79,8 +79,9 @@ class ConversationService:
 
     def append_events(self, conversation_id: str, events: list[dict], *, async_title_generation: bool = True) -> ConversationDetail:
         detail = self.get_conversation(conversation_id)
+        sanitized_events = [self._sanitize_event(event) for event in events]
         had_user_event = any(event.get("kind") == "user" for event in detail.events)
-        self._merge_events(detail.events, events)
+        self._merge_events(detail.events, sanitized_events)
         detail.event_count = len(detail.events)
         detail.last_event_kind = detail.events[-1].get("kind") if detail.events else None
         detail.updated_at = self._utc_now()
@@ -92,7 +93,7 @@ class ConversationService:
             first_user_text = next(
                 (
                     event.get("text")
-                    for event in events
+                    for event in sanitized_events
                     if event.get("kind") == "user" and isinstance(event.get("text"), str)
                 ),
                 None,
@@ -144,6 +145,15 @@ class ConversationService:
         detail_path.unlink()
         summaries = [item for item in self.list_conversations() if item.id != conversation_id]
         self._write_index(summaries)
+
+    def _sanitize_event(self, event: dict) -> dict:
+        sanitized = dict(event)
+        if "approvalToken" in sanitized:
+            sanitized["approvalToken"] = None
+        tool_call = sanitized.get("toolCall")
+        if isinstance(tool_call, dict) and "approvalToken" in tool_call:
+            sanitized["toolCall"] = {**tool_call, "approvalToken": None}
+        return sanitized
 
     def _merge_events(self, existing_events: list[dict], new_events: list[dict]) -> None:
         message_index_by_id = {

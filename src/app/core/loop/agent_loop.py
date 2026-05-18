@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
+import secrets
 import re
 import uuid
 from collections.abc import Generator, Iterator
@@ -67,6 +69,65 @@ class AgentLoop:
             return [self._redact_sensitive_args(item) for item in value]
         return value
 
+    def _clear_pending_approval(self, state: LoopState) -> None:
+        state.pending_tool_call_id = None
+        state.pending_tool_name = None
+        state.pending_tool_args = None
+        state.pending_message_id = None
+        state.pending_approval_token_hash = None
+        state.pending_approval_token = None
+        state.pending_approval_step_id = None
+        state.pending_approval_consistency = None
+
+    def _build_approval_consistency(self, state: LoopState, args: dict[str, Any], tool_call_id: str) -> dict[str, Any] | None:
+        authorization_id = str(args.get("authorization_id", "") or "")
+        handler = self._tools.get("execute_command")
+        terminal = getattr(handler, "_terminal", None)
+        resolver = getattr(terminal, "resolve_terminal_authorization", None)
+        if not authorization_id or resolver is None:
+            raise ValueError("Missing terminal authorization resolver.")
+        authorization = resolver(state.context.runtime_id, authorization_id)
+        return {
+            "runtime_id": state.context.runtime_id,
+            "conversation_id": state.context.conversation_id,
+            "tool_call_id": tool_call_id,
+            "authorization_id": authorization.authorization_id,
+            "status": authorization.status,
+            "asset_id": authorization.asset_id,
+            "asset_name": authorization.asset_name,
+            "terminal_id": authorization.terminal_id,
+            "command": args.get("command"),
+        }
+
+    def _approval_consistency_error(self, state: LoopState) -> str | None:
+        snapshot = state.pending_approval_consistency
+        if state.pending_tool_name != "execute_command" or not snapshot:
+            return None
+        args = state.pending_tool_args or {}
+        handler = self._tools.get("execute_command")
+        terminal = getattr(handler, "_terminal", None)
+        resolver = getattr(terminal, "resolve_terminal_authorization", None)
+        belongs_to_asset = getattr(terminal, "session_belongs_to_asset", None)
+        if resolver is None or belongs_to_asset is None:
+            return "Missing terminal authorization resolver."
+        try:
+            authorization = resolver(state.context.runtime_id, str(snapshot["authorization_id"]))
+        except ValueError as exc:
+            return str(exc)
+        if authorization.status != "active":
+            return "Terminal authorization is no longer active."
+        if authorization.terminal_id != snapshot["terminal_id"]:
+            return "Authorized terminal changed after approval was requested."
+        if authorization.asset_id != snapshot["asset_id"]:
+            return "Authorized asset changed after approval was requested."
+        if args.get("authorization_id") != snapshot["authorization_id"]:
+            return "Approval target authorization changed."
+        if args.get("command") != snapshot["command"]:
+            return "Approved command changed before execution."
+        if not belongs_to_asset(authorization.terminal_id, authorization.asset_id):
+            return "Authorized terminal is no longer valid for the asset."
+        return None
+
     def _record_usage(self, state: LoopState, usage: LLMTokenUsage | None, *, call_kind: str) -> None:
         if usage is None or self._usage_callback is None:
             return
@@ -79,7 +140,10 @@ class AgentLoop:
         if metadata.extra.get("kind") != "command":
             return args
         prepared = dict(args)
+        if state.context.default_authorization_id and not str(prepared.get("authorization_id", "") or ""):
+            prepared["authorization_id"] = state.context.default_authorization_id
         prepared.setdefault("asset_type", state.context.asset_type)
+        prepared["runtime_id"] = state.context.runtime_id
         prepared["shell_type"] = state.context.shell_type
         prepared["execution_profile"] = state.context.execution_profile
         if state.context.device_vendor:
@@ -158,10 +222,32 @@ class AgentLoop:
                     name=state.pending_tool_name,
                 )
             )
-            state.pending_tool_call_id = None
-            state.pending_tool_name = None
-            state.pending_tool_args = None
-            state.pending_message_id = None
+            self._clear_pending_approval(state)
+            if state.context.mode == "plan":
+                yield from self._run_plan_mode(state, manager=manager, continue_existing=True)
+                return
+            yield from self._tool_calling_loop(state, manager=manager)
+            return
+
+        consistency_error = self._approval_consistency_error(state)
+        if consistency_error:
+            current_step.status = "failed"
+            current_step.output = consistency_error
+            if reuse_id:
+                yield from manager.resume_message(message_id=reuse_id, message_type="say", say_type="error")
+                yield from manager.finalize(text=consistency_error)
+            else:
+                yield from manager.begin_message(message_type="say", say_type="error")
+                yield from manager.finalize(text=consistency_error)
+            state.messages.append(
+                LLMMessage(
+                    role="tool",
+                    content=consistency_error,
+                    tool_call_id=state.pending_tool_call_id,
+                    name=state.pending_tool_name,
+                )
+            )
+            self._clear_pending_approval(state)
             if state.context.mode == "plan":
                 yield from self._run_plan_mode(state, manager=manager, continue_existing=True)
                 return
@@ -209,10 +295,7 @@ class AgentLoop:
                 name=state.pending_tool_name,
             )
         )
-        state.pending_tool_call_id = None
-        state.pending_tool_name = None
-        state.pending_tool_args = None
-        state.pending_message_id = None
+        self._clear_pending_approval(state)
         yield from manager.finalize(exit_code=0 if ok else 1)
         
         if state.context.mode == "plan":
@@ -518,8 +601,10 @@ class AgentLoop:
                     step.working_directory = str(working_directory) if working_directory else None
 
                 action, reason = handler.needs_approval(args)
+                args["approval_policy"] = action
                 if action == "deny":
                     step.status = "failed"
+                    unresolved_tool_failure = True
                     state.messages.append(
                         LLMMessage(
                             role="tool",
@@ -531,13 +616,34 @@ class AgentLoop:
                     continue
 
                 if action == "ask":
+                    consistency: dict[str, Any] | None = None
+                    if tool_call.name == "execute_command":
+                        try:
+                            consistency = self._build_approval_consistency(state, args, tool_call.id)
+                        except ValueError as exc:
+                            step.status = "failed"
+                            unresolved_tool_failure = True
+                            state.messages.append(
+                                LLMMessage(
+                                    role="tool",
+                                    content=f"Command denied: {exc}",
+                                    tool_call_id=tool_call.id,
+                                    name=tool_call.name,
+                                )
+                            )
+                            continue
                     step.reason = reason
                     step.risk_level = "high"
                     state.phase = "approving"
+                    approval_token = secrets.token_urlsafe(32)
                     state.pending_tool_call_id = tool_call.id
                     state.pending_tool_name = tool_call.name
                     state.pending_tool_args = args
-                    
+                    state.pending_approval_step_id = step.step_id
+                    state.pending_approval_token = approval_token
+                    state.pending_approval_token_hash = hashlib.sha256(approval_token.encode("utf-8")).hexdigest()
+                    state.pending_approval_consistency = consistency
+
                     # Prevent HTTP 400 error by satisfying all remaining tool calls in the response
                     for remaining_tool_call in response.tool_calls[index + 1:]:
                         state.messages.append(
@@ -561,7 +667,7 @@ class AgentLoop:
                             tool_name=tool_call.name,
                             args=args,
                             command=args.get("command", command),
-                        )
+                        ) | {"approvalToken": approval_token}
                     )
                     # Save the message ID so resume_with_approval can reuse it
                     state.pending_message_id = manager.last_finalized_id

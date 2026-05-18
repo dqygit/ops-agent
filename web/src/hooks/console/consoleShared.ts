@@ -3,6 +3,22 @@ import type { AgentMessage, Asset, ConversationSummary, EventItem, PlanStepStatu
 export const LOCAL_TERMINAL_ASSET_ID = 0
 export const PENDING_ASSISTANT_MESSAGE_ID = '__pending_assistant__'
 
+const terminalAutonomyKinds = new Set([
+  'terminal_session_request',
+  'terminal_session_opened',
+  'terminal_session_rejected',
+  'terminal_authorization_revoked',
+  'terminal_command_submitted',
+])
+
+export function isTerminalAutonomyEvent(event: { kind?: string }): boolean {
+  return Boolean(event.kind && terminalAutonomyKinds.has(event.kind))
+}
+
+function getEventId(event: EventItem): string | undefined {
+  return 'eventId' in event && typeof event.eventId === 'string' ? event.eventId : undefined
+}
+
 export const defaultLocalTerminalAsset: Asset = {
   id: LOCAL_TERMINAL_ASSET_ID,
   groupId: null,
@@ -217,6 +233,20 @@ export function upsertStreamEvent(
       ...currentEvents.filter((currentEvent) => currentEvent.id !== PENDING_ASSISTANT_MESSAGE_ID),
       event,
     ])
+  }
+
+  if (isTerminalAutonomyEvent(event)) {
+    const eventKey = getEventId(event) ?? event.id
+    const nextEvents = currentEvents.map((currentEvent) => {
+      if (currentEvent.id === eventKey || getEventId(currentEvent) === eventKey) {
+        return event
+      }
+      return currentEvent
+    })
+    const hasExistingEvent = currentEvents.some(
+      (currentEvent) => currentEvent.id === eventKey || getEventId(currentEvent) === eventKey,
+    )
+    return normalizePlanEvents(hasExistingEvent ? nextEvents : [...currentEvents, event])
   }
 
   if (event.kind !== 'plan') {

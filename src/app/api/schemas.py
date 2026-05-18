@@ -2,7 +2,7 @@ from typing import Any, Literal
 
 from datetime import datetime
 
-from pydantic import BaseModel, Field, SecretStr
+from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
 
 class AssetGroupCreate(BaseModel):
@@ -458,6 +458,59 @@ class RuntimeStepView(BaseModel):
     exit_code: int | None = None
 
 
+class TerminalRequestView(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    request_id: str = Field(alias="requestId")
+    runtime_id: str = Field(alias="runtimeId")
+    asset_id: int = Field(alias="assetId")
+    asset_name: str = Field(alias="assetName")
+    reason: str
+    user_decision_status: str = Field(alias="userDecisionStatus")
+    terminal_creation_status: str = Field(alias="terminalCreationStatus")
+    expires_at: str = Field(alias="expiresAt")
+    approval_token: str | None = Field(default=None, alias="approvalToken")
+    failure_reason: str | None = Field(default=None, alias="failureReason")
+
+
+class TerminalAuthorizationView(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    authorization_id: str = Field(alias="authorizationId")
+    runtime_id: str = Field(alias="runtimeId")
+    asset_id: int = Field(alias="assetId")
+    asset_name: str = Field(alias="assetName")
+    terminal_id: str = Field(alias="terminalId")
+    source: str
+    approved_by: str = Field(alias="approvedBy")
+    request_id: str | None = Field(default=None, alias="requestId")
+    status: str
+    replaced_by_authorization_id: str | None = Field(default=None, alias="replacedByAuthorizationId")
+    revoke_reason: str | None = Field(default=None, alias="revokeReason")
+
+
+class TerminalRequestDecisionRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    runtime_id: str = Field(alias="runtimeId")
+    approval_token: str = Field(alias="approvalToken")
+    approved: bool
+
+
+class TerminalRequestDecisionResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    status: str
+    request_id: str = Field(alias="requestId")
+    authorization_id: str | None = Field(default=None, alias="authorizationId")
+    asset_id: int | None = Field(default=None, alias="assetId")
+    asset_name: str | None = Field(default=None, alias="assetName")
+    terminal_id: str | None = Field(default=None, alias="terminalId")
+    terminal_creation_status: str | None = Field(default=None, alias="terminalCreationStatus")
+    channel: str | None = None
+    failure_reason: str | None = Field(default=None, alias="failureReason")
+
+
 class RuntimeSummaryView(BaseModel):
     runtime_id: str
     conversation_id: str
@@ -474,6 +527,8 @@ class RuntimeSummaryView(BaseModel):
 
 
 class RuntimeSnapshotView(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
     runtime_id: str
     conversation_id: str
     asset_id: int
@@ -489,6 +544,8 @@ class RuntimeSnapshotView(BaseModel):
     last_output_excerpt: str = ""
     summary: str | None = None
     error_message: str | None = None
+    terminal_requests: list[TerminalRequestView] = Field(default_factory=list, alias="terminalRequests")
+    terminal_authorizations: list[TerminalAuthorizationView] = Field(default_factory=list, alias="terminalAuthorizations")
     created_at: datetime
     updated_at: datetime
     last_sequence: int = 0

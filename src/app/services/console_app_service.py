@@ -17,6 +17,7 @@ from app.core.loop.loop_state import LoopContext, LoopMode, LoopState
 from app.core.loop.runtime_manager import LoopRuntimeManager, new_runtime_id
 from app.core.tool.execute_command import ExecuteCommandHandler
 from app.core.tool.load_skill import LoadSkillHandler
+from app.core.tool.terminal_autonomy import ListAssetsHandler, RequestTerminalSessionHandler
 from app.db.repositories.assets import get_asset
 from app.db.repositories.models import get_default_model_config
 from app.db.repositories.model_usage import create_model_usage, sum_conversation_usage
@@ -39,6 +40,33 @@ class _TerminalSessionAdapter:
 
     def get_session(self, terminal_id: str) -> Any | None:
         return self._terminal_service.get_session(terminal_id)
+
+    def resolve_terminal_authorization(self, runtime_id: str, authorization_id: str) -> Any:
+        return self._runtime_manager.resolve_terminal_authorization(runtime_id, authorization_id)
+
+    def session_belongs_to_asset(self, terminal_id: str, asset_id: int) -> bool:
+        return self._terminal_service.session_belongs_to_asset(terminal_id, asset_id)
+
+    def append_terminal_command_submitted(
+        self,
+        runtime_id: str,
+        *,
+        authorization_id: str,
+        asset_id: int,
+        asset_name: str,
+        terminal_id: str,
+        command: str,
+        approval_policy: str,
+    ) -> dict[str, Any]:
+        return self._runtime_manager.append_terminal_command_submitted(
+            runtime_id,
+            authorization_id=authorization_id,
+            asset_id=asset_id,
+            asset_name=asset_name,
+            terminal_id=terminal_id,
+            command=command,
+            approval_policy=approval_policy,
+        )
 
     def acquire_terminal_slot(self, runtime_id: str, terminal_id: str) -> bool:
         return self._runtime_manager.acquire_terminal_slot(runtime_id, terminal_id)
@@ -111,6 +139,8 @@ class ConsoleAppService:
     def _build_tool_handlers(self, ts: TerminalService) -> list[Any]:
         return [
             LoadSkillHandler(self._skill_service),
+            ListAssetsHandler(),
+            RequestTerminalSessionHandler(self.runtime_manager),
             ExecuteCommandHandler(_TerminalSessionAdapter(ts, self.runtime_manager)),
             *self._mcp_service.build_tool_handlers(),
         ]
@@ -249,6 +279,17 @@ class ConsoleAppService:
             terminal_id=terminal_id,
             context=context,
         )
+        initial_runtime_events: list[dict[str, Any]] = []
+        if terminal_id:
+            authorization = self.runtime_manager.create_initial_terminal_authorization(
+                runtime_id,
+                conversation_id=conversation_id,
+                asset_id=asset_id,
+                asset_name=str(getattr(asset, "name", "") or f"asset-{asset_id}"),
+                terminal_id=terminal_id,
+            )
+            context.default_authorization_id = authorization.authorization_id
+            _, initial_runtime_events = self.runtime_manager.events_since(runtime_id, 0)
 
         yield {
             "id": f"evt-context-{runtime_id}",
@@ -262,6 +303,9 @@ class ConsoleAppService:
             "summaryRevision": context_result.summary_revision,
             "sourceConversationRevision": context_result.source_conversation_revision,
         }
+
+        for event in initial_runtime_events:
+            yield event
 
         try:
             events = self.runtime_manager.run(runtime_id=runtime_id, terminal_service=terminal_service)
@@ -304,8 +348,6 @@ class ConsoleAppService:
             return
 
         try:
-            if approved and allow_prefix:
-                get_approval_service().add_allow_prefix(allow_prefix)
             events = self.runtime_manager.resume(
                 runtime_id=runtime_id,
                 approved=approved,
@@ -314,6 +356,8 @@ class ConsoleAppService:
             )
             for event in events:
                 yield event
+            if approved and allow_prefix:
+                get_approval_service().add_allow_prefix(allow_prefix)
         except Exception as exc:
             logger.exception("stream_approve failed runtime_id=%s", runtime_id)
             yield {
