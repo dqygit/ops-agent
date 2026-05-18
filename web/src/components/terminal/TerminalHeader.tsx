@@ -28,8 +28,8 @@ export function TerminalHeader({
   const { t } = useAppearance()
 
   return (
-    <header className="flex shrink-0 flex-col border-b border-ops-border/15 bg-ops-deep relative overflow-hidden dark:border-ops-border/20 dark:bg-ops-panel/80">
-      <div className="absolute top-0 left-0 w-1 h-full bg-ops-cyan/20 pointer-events-none" />
+    <header className="flex h-[66px] shrink-0 flex-col border-b border-ops-border/15 bg-ops-deep relative overflow-hidden dark:border-ops-border/20 dark:bg-ops-panel/80">
+      <div className="absolute top- left-0 w-1 h-full bg-ops-cyan/20 pointer-events-none" />
       <div className="flex items-center gap-3 px-3 py-2">
         {/* Tabs (with close button, local terminal is permanent) */}
         <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto" aria-label={t('terminal.tabs')}>

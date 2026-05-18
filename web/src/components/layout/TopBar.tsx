@@ -9,7 +9,7 @@ export function TopBar({ onOpenSettings }: TopBarProps) {
   const { t } = useAppearance()
 
   return (
-    <header className="flex h-[55px] shrink-0 items-center justify-between border-b border-ops-border/15 bg-ops-deep px-6 z-50 dark:border-ops-border/20 dark:bg-ops-panel/80 dark:shadow-2xl">
+    <header className="flex h-[55px] shrink-0 items-center justify-between border-b border-ops-border/15 bg-ops-bg px-6 z-50 dark:border-ops-border/20 dark:bg-ops-bg/50 dark:shadow-2xl">
       <div className="flex items-center gap-5">
         <img
           src={logoUrl}
@@ -17,7 +17,7 @@ export function TopBar({ onOpenSettings }: TopBarProps) {
           className="h-10 w-10 rounded-xl border border-ops-cyan/40 bg-ops-cyan/10 object-cover shadow-glow"
         />
         <div className="hidden sm:block">
-          <h1 className="text-[14px] font-black  tracking-[0.05em] text-ops-text leading-tight">{t('topBar.title')}</h1>
+          <h1 className="text-[14px] font-black text-ops-text leading-tight">{t('topBar.title')}</h1>
           <p className="text-[9px]  tracking-[0.2em] text-ops-muted/50 font-bold">{t('topBar.subtitle')}</p>
         </div>
       </div>

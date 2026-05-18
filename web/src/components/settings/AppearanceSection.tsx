@@ -23,7 +23,7 @@ export function AppearanceSection({ language, themeMode, resolvedTheme, onLangua
     <div className="flex flex-col gap-8">
       <div className="flex items-center justify-between pb-4 border-b border-ops-border/20">
         <div>
-          <h4 className="text-[14px] font-bold tracking-[0.15em] text-ops-text">{t('settings.appearance')}</h4>
+          <h4 className="text-[14px] font-bold text-ops-text">{t('settings.appearance')}</h4>
           <p className="text-[10px] font-medium text-ops-muted mt-1 tracking-wider opacity-60">{t('settings.appearanceDescription')}</p>
         </div>
       </div>
@@ -31,7 +31,7 @@ export function AppearanceSection({ language, themeMode, resolvedTheme, onLangua
       <section className="bg-ops-deep/40 p-6 rounded-2xl border border-ops-border/20 flex flex-col gap-8">
         <div className="flex flex-col gap-4">
           <div>
-            <h5 className="text-[12px] font-bold tracking-[0.12em] text-ops-text">{t('settings.language')}</h5>
+            <h5 className="text-[12px] font-bold text-ops-text">{t('settings.language')}</h5>
           </div>
           <div className="flex flex-wrap gap-2">
             {languages.map((option) => (

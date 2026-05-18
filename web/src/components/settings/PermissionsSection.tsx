@@ -42,7 +42,7 @@ function PrefixEditor({ title, description, placeholder, tone, values, inputValu
   return (
     <section className="flex flex-col gap-4">
       <div>
-        <h5 className="text-[12px] font-bold tracking-[0.12em] text-ops-text">{title}</h5>
+        <h5 className="text-[12px] font-bold text-ops-text">{title}</h5>
         <p className="text-[10px] font-medium text-ops-muted mt-1 tracking-wider opacity-60">{description}</p>
       </div>
       <div className="flex items-center gap-3">
@@ -83,7 +83,7 @@ export function PermissionsSection({ permissionsForm, saving, onFormChange, onSa
     <div className="flex flex-col gap-8">
       <div className="flex items-center justify-between pb-4 border-b border-ops-border/20">
         <div>
-          <h4 className="text-[14px] font-bold tracking-[0.15em] text-ops-text">{t('settings.permissionsTitle')}</h4>
+          <h4 className="text-[14px] font-bold text-ops-text">{t('settings.permissionsTitle')}</h4>
           <p className="text-[10px] font-medium text-ops-muted mt-1 tracking-wider opacity-60">{t('settings.permissionsDescription')}</p>
         </div>
       </div>

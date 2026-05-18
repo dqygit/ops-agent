@@ -30,7 +30,7 @@ export function AssetSidebar({ assets, groups, conversationSummaries, activeConv
 
   return (
     <div className={`h-full flex flex-col border-r border-ops-border/30 bg-slate-50/70 backdrop-blur-sm transition-[width] duration-300 ease-in-out dark:border-ops-border/40 dark:bg-ops-panel/50 ${collapsed ? 'w-[72px]' : 'w-[300px]'}`}>
-      <div className={`relative flex items-center border-b border-ops-border/15 bg-ops-deep px-4 py-4 dark:border-ops-border/30 dark:bg-transparent ${collapsed ? 'justify-center' : 'justify-between'}`}>
+      <div className={`relative h-[66px] flex items-center border-b border-ops-border/15 bg-ops-deep px-4 py-4 dark:border-ops-border/30 dark:bg-transparent ${collapsed ? 'justify-center' : 'justify-between'}`}>
         {collapsed ? (
           <button
             type="button"
@@ -43,7 +43,7 @@ export function AssetSidebar({ assets, groups, conversationSummaries, activeConv
         ) : (
           <>
             <div>
-              <h2 className="text-[12px] font-bold  tracking-[0.15em] text-ops-cyan/90">{t('assets.navigationTitle')}</h2>
+              <h2 className="text-[12px] font-bold tracking-[0.15em] text-ops-cyan/90">{t('assets.navigationTitle')}</h2>
             </div>
             <div className="flex items-center gap-2">
               <button type="button" className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-ops-border/50 bg-ops-deep/50 text-ops-muted transition-all duration-200 hover:border-ops-cyan/50 hover:text-ops-cyan active:scale-90" aria-label={t('assets.collapseNavigation')} onClick={onToggleCollapse}>
