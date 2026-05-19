@@ -51,8 +51,8 @@ export function useConsoleBootstrap() {
         }
         setLoadError(
           error instanceof Error
-            ? `Failed to load conversations: ${error.message}`
-            : 'Failed to load conversations.'
+            ? `Failed to load console bootstrap: ${error.message}`
+            : 'Failed to load console bootstrap.'
         )
       }
     })()
