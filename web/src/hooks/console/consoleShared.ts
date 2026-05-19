@@ -19,6 +19,50 @@ function getEventId(event: EventItem): string | undefined {
   return 'eventId' in event && typeof event.eventId === 'string' ? event.eventId : undefined
 }
 
+function getTerminalRequestId(event: EventItem): string | undefined {
+  return event.kind === 'terminal_session_request' && typeof event.requestId === 'string' ? event.requestId : undefined
+}
+
+function isSameTerminalAutonomyEvent(left: EventItem, right: EventItem): boolean {
+  const leftRequestId = getTerminalRequestId(left)
+  const rightRequestId = getTerminalRequestId(right)
+  if (leftRequestId && rightRequestId) {
+    return left.kind === right.kind && leftRequestId === rightRequestId
+  }
+
+  const leftEventId = getEventId(left)
+  const rightEventId = getEventId(right)
+  return Boolean(
+    (leftEventId && (right.id === leftEventId || rightEventId === leftEventId))
+    || (rightEventId && left.id === rightEventId)
+    || left.id === right.id
+  )
+}
+
+function getApprovalToken(event: EventItem): string | null | undefined {
+  if ('toolCall' in event) return event.toolCall?.approvalToken
+  if (event.kind === 'terminal_session_request') return event.approvalToken
+  return undefined
+}
+
+function getEventSequence(event: EventItem): number | undefined {
+  return 'sequence' in event && typeof event.sequence === 'number' ? event.sequence : undefined
+}
+
+export function mergeEventsBySequence(events: EventItem[]): EventItem[] {
+  return events
+    .map((event, index) => ({ event, index }))
+    .sort((left, right) => {
+      const leftSequence = getEventSequence(left.event)
+      const rightSequence = getEventSequence(right.event)
+      if (leftSequence !== undefined && rightSequence !== undefined && leftSequence !== rightSequence) {
+        return leftSequence - rightSequence
+      }
+      return left.index - right.index
+    })
+    .map(({ event }) => event)
+}
+
 export const defaultLocalTerminalAsset: Asset = {
   id: LOCAL_TERMINAL_ASSET_ID,
   groupId: null,
@@ -201,7 +245,11 @@ export function mergePersistedEventsWithTransient(
   const pendingAssistantEvent = hasTerminalError
     ? undefined
     : currentEvents.find((event) => event.id === PENDING_ASSISTANT_MESSAGE_ID)
-  const transientEvents = currentEvents.filter((event) => (event.kind === 'delta' || 'type' in event) && event.id !== PENDING_ASSISTANT_MESSAGE_ID)
+  const transientEvents = currentEvents.filter((event) => (
+    event.kind === 'delta'
+    || event.kind === 'terminal_session_request'
+    || 'type' in event
+  ) && event.id !== PENDING_ASSISTANT_MESSAGE_ID)
   const hasAssistantDelta = hasTerminalError || deduped.some((event) => event.kind === 'delta' || 'type' in event) || transientEvents.length > 0
   const nextEvents = [...deduped]
 
@@ -214,11 +262,37 @@ export function mergePersistedEventsWithTransient(
   }
 
   const persistedIds = new Set(nextEvents.map((event) => event.id))
+  const persistedTerminalRequestIds = new Map<string, number>()
+  nextEvents.forEach((event, index) => {
+    const requestId = getTerminalRequestId(event)
+    if (requestId) {
+      persistedTerminalRequestIds.set(requestId, index)
+    }
+  })
 
   for (const event of transientEvents) {
-    if (!persistedIds.has(event.id)) {
-      nextEvents.push(event)
+    const requestId = getTerminalRequestId(event)
+    const existingIndex = persistedIds.has(event.id)
+      ? nextEvents.findIndex((nextEvent) => nextEvent.id === event.id)
+      : (requestId ? persistedTerminalRequestIds.get(requestId) ?? -1 : -1)
+
+    if (existingIndex >= 0) {
+      const approvalToken = getApprovalToken(event)
+      if (approvalToken) {
+        nextEvents[existingIndex] = {
+          ...nextEvents[existingIndex],
+          ...(nextEvents[existingIndex].kind === 'terminal_session_request' ? { approvalToken } : {}),
+          ...('toolCall' in nextEvents[existingIndex] ? {
+            toolCall: {
+              ...nextEvents[existingIndex].toolCall,
+              approvalToken,
+            },
+          } : {}),
+        } as EventItem
+      }
+      continue
     }
+    nextEvents.push(event)
   }
 
   return normalizePlanEvents(nextEvents)
@@ -236,16 +310,13 @@ export function upsertStreamEvent(
   }
 
   if (isTerminalAutonomyEvent(event)) {
-    const eventKey = getEventId(event) ?? event.id
     const nextEvents = currentEvents.map((currentEvent) => {
-      if (currentEvent.id === eventKey || getEventId(currentEvent) === eventKey) {
+      if (isSameTerminalAutonomyEvent(currentEvent, event)) {
         return event
       }
       return currentEvent
     })
-    const hasExistingEvent = currentEvents.some(
-      (currentEvent) => currentEvent.id === eventKey || getEventId(currentEvent) === eventKey,
-    )
+    const hasExistingEvent = currentEvents.some((currentEvent) => isSameTerminalAutonomyEvent(currentEvent, event))
     return normalizePlanEvents(hasExistingEvent ? nextEvents : [...currentEvents, event])
   }
 

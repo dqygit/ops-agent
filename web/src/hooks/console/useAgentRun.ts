@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react'
-import { appendConversationEvents, decideTerminalRequest, getRuntimeEvents, streamApproveAgent, streamApproveRuntimePlan, streamRunAgent, updateRuntimePlan } from '../../api'
+import { appendConversationEvents, streamApproveAgent, streamApproveRuntimePlan, streamDecideTerminalRequest, streamRunAgent, updateRuntimePlan } from '../../api'
 import type { RunMode } from '../../types/api'
 import type { AgentMessage, Asset, ConversationContextStatus, EventItem, PlanStep, RuntimeSummary } from '../../types/ops'
-import { flushDeltaBuffer, LOCAL_TERMINAL_ASSET_ID, mergeDeltaEvent, mergePersistedEventsWithTransient, PENDING_ASSISTANT_MESSAGE_ID, upsertMessageEvent, upsertStreamEvent } from './consoleShared'
+import { flushDeltaBuffer, LOCAL_TERMINAL_ASSET_ID, mergeDeltaEvent, mergeEventsBySequence, mergePersistedEventsWithTransient, PENDING_ASSISTANT_MESSAGE_ID, upsertMessageEvent, upsertStreamEvent } from './consoleShared'
 
 interface UseAgentRunProps {
   // Conversation dependencies
@@ -83,7 +83,7 @@ function derivePendingApprovalState(events: EventItem[]): PendingApprovalState |
     if (approvalKey && 'type' in event && event.type === 'ask') {
       const runtimeId = (event as any).runtimeId
       if (runtimeId) {
-        return { runtimeId, approvalToken: null, approvalKey }
+        return { runtimeId, approvalToken: event.toolCall?.approvalToken ?? null, approvalKey }
       }
     }
   }
@@ -182,6 +182,7 @@ export function useAgentRun({
             const runtimeId = (event as any).runtimeId
             if (runtimeId) {
               setPendingApprovalRuntimeId(runtimeId)
+              setPendingApprovalToken(message.toolCall?.approvalToken ?? null)
             }
           }
           
@@ -236,7 +237,7 @@ export function useAgentRun({
       // Batch persist: only the latest snapshot per message, plus non-delta events
       const finalMessageSnapshots = Array.from(latestMessageSnapshots.values()) as EventItem[]
       const finalEvents = flushDeltaBuffer(deltaBuffer, events)
-      const allPersistEvents = [...pendingPersistEvents, ...finalMessageSnapshots, ...finalEvents]
+      const allPersistEvents = mergeEventsBySequence([...pendingPersistEvents, ...finalMessageSnapshots, ...finalEvents])
       if (allPersistEvents.length > 0) {
         const detail = await appendConversationEvents(conversationId, allPersistEvents)
         upsertConversationSummary(detail)
@@ -338,6 +339,7 @@ export function useAgentRun({
               const eventRuntimeId = (event as any).runtimeId
               if (eventRuntimeId) {
                 setPendingApprovalRuntimeId(eventRuntimeId)
+                setPendingApprovalToken(message.toolCall?.approvalToken ?? null)
               }
             }
             latestMessageSnapshots.set(message.id, message)
@@ -381,7 +383,7 @@ export function useAgentRun({
         // Batch persist all non-delta events + message snapshots + delta buffer after stream ends
         const finalMessageSnapshots = Array.from(latestMessageSnapshots.values()) as EventItem[]
         const finalEvents = flushDeltaBuffer(deltaBuffer, events)
-        const allPersistEvents = [...pendingPersistEvents, ...finalMessageSnapshots, ...finalEvents]
+        const allPersistEvents = mergeEventsBySequence([...pendingPersistEvents, ...finalMessageSnapshots, ...finalEvents])
         if (allPersistEvents.length > 0) {
           const detail = await appendConversationEvents(conversationId, allPersistEvents)
           upsertConversationSummary(detail)
@@ -464,35 +466,60 @@ export function useAgentRun({
     }
 
     try {
-      const response = await decideTerminalRequest(input.requestId, {
+      const stream = await streamDecideTerminalRequest(input.requestId, {
         runtimeId: input.runtimeId,
         approvalToken: input.approvalToken,
         approved: input.approved,
       })
-      const runtimeEvents = await getRuntimeEvents(input.runtimeId)
-      const event = [...runtimeEvents.events]
-        .reverse()
-        .find((candidate) => (
-          (candidate.kind === 'terminal_session_opened' || candidate.kind === 'terminal_session_rejected')
-          && candidate.requestId === input.requestId
-        )) as EventItem | undefined
+      const deltaBuffer = new Map<string, string>()
+      const pendingPersistEvents: EventItem[] = []
+      const latestMessageSnapshots = new Map<string, AgentMessage>()
 
-      await persistEvent(event ?? {
-        id: `${input.requestId}:${response.status}:${response.terminalCreationStatus ?? 'decision'}`,
-        kind: input.approved ? 'terminal_session_opened' : 'terminal_session_rejected',
-        eventId: `${input.requestId}:${response.status}:${response.terminalCreationStatus ?? 'decision'}`,
-        sequence: Date.now(),
-        occurredAt: new Date().toISOString(),
-        runtimeId: input.runtimeId,
-        requestId: input.requestId,
-        authorizationId: response.authorizationId ?? undefined,
-        assetId: response.assetId ?? undefined,
-        assetName: response.assetName ?? undefined,
-        terminalId: response.terminalId ?? undefined,
-        terminalCreationStatus: response.terminalCreationStatus ?? undefined,
-        channel: response.channel ?? undefined,
-        reason: response.failureReason ?? response.status,
-      })
+      for await (const event of stream) {
+        if (event.kind === 'message_update') {
+          const message = { ...event, kind: 'message' as const } as unknown as AgentMessage
+          if (activeConversationIdRef.current === activeConversationId) {
+            setEvents((currentEvents: EventItem[]) => upsertMessageEvent(currentEvents, message))
+          }
+          latestMessageSnapshots.set(message.id, message)
+          continue
+        }
+
+        if (event.kind === 'delta' && event.messageId) {
+          const currentText = deltaBuffer.get(event.messageId) || ''
+          const newText = currentText + event.text
+          deltaBuffer.set(event.messageId, newText)
+          if (activeConversationIdRef.current === activeConversationId) {
+            setEvents((currentEvents: EventItem[]) =>
+              mergeDeltaEvent(
+                currentEvents,
+                event.messageId!,
+                newText,
+                'stage' in event ? event.stage : undefined
+              )
+            )
+          }
+          continue
+        }
+
+        if (activeConversationIdRef.current === activeConversationId) {
+          setEvents((currentEvents: EventItem[]) => upsertStreamEvent(currentEvents, event))
+        }
+        pendingPersistEvents.push(event)
+      }
+
+      const finalMessageSnapshots = Array.from(latestMessageSnapshots.values()) as EventItem[]
+      const finalEvents = flushDeltaBuffer(deltaBuffer, events)
+      const allPersistEvents = mergeEventsBySequence([...pendingPersistEvents, ...finalMessageSnapshots, ...finalEvents])
+      if (allPersistEvents.length > 0) {
+        const detail = await appendConversationEvents(activeConversationId, allPersistEvents)
+        upsertConversationSummary(detail)
+        if (activeConversationIdRef.current === activeConversationId) {
+          setEvents((currentEvents: EventItem[]) => mergePersistedEventsWithTransient(detail.events, currentEvents))
+        } else {
+          applyConversationDetailIfActive(activeConversationId, detail)
+        }
+      }
       await syncConversationRuntimes(activeConversationId)
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to decide terminal request.'
@@ -546,7 +573,7 @@ export function useAgentRun({
       pendingPersistEvents.push(event)
     }
 
-    const allPersistEvents = [...pendingPersistEvents, ...Array.from(latestMessageSnapshots.values()) as EventItem[]]
+    const allPersistEvents = mergeEventsBySequence([...pendingPersistEvents, ...Array.from(latestMessageSnapshots.values()) as EventItem[]])
     if (allPersistEvents.length > 0) {
       const detail = await appendConversationEvents(activeConversationId, allPersistEvents)
       upsertConversationSummary(detail)

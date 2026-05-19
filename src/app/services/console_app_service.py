@@ -120,6 +120,13 @@ class TaskOrchestrator:
             terminal_service=self._terminal_service,
         )
 
+    def stream_after_terminal_request(self, *, runtime_id: str, resume_message: str) -> Iterator[dict]:
+        return self._app_service.stream_after_terminal_request(
+            runtime_id=runtime_id,
+            resume_message=resume_message,
+            terminal_service=self._terminal_service,
+        )
+
 class ConsoleAppService:
     def __init__(
         self,
@@ -200,6 +207,8 @@ class ConsoleAppService:
     ) -> Iterator[dict]:
         asset = self._resolve_asset(session, asset_id)
         model_config = self._resolve_model_config(session, model_name)
+        if terminal_id is None:
+            terminal_id = terminal_service.find_session_id(f"asset:{asset_id}")
         if terminal_id and not terminal_service.session_belongs_to_asset(terminal_id, asset_id):
             logger.warning(
                 "Ignoring terminal_id that does not belong to asset: asset_id=%s terminal_id=%s",
@@ -348,6 +357,8 @@ class ConsoleAppService:
             return
 
         try:
+            if approved and allow_prefix:
+                get_approval_service().add_allow_prefix(allow_prefix)
             events = self.runtime_manager.resume(
                 runtime_id=runtime_id,
                 approved=approved,
@@ -356,8 +367,6 @@ class ConsoleAppService:
             )
             for event in events:
                 yield event
-            if approved and allow_prefix:
-                get_approval_service().add_allow_prefix(allow_prefix)
         except Exception as exc:
             logger.exception("stream_approve failed runtime_id=%s", runtime_id)
             yield {
@@ -380,6 +389,27 @@ class ConsoleAppService:
                 yield event
         except Exception as exc:
             logger.exception("stream_plan_approval failed runtime_id=%s", runtime_id)
+            yield {
+                "id": f"evt-error-{runtime_id}",
+                "kind": "error",
+                "runtimeId": runtime_id,
+                "sequence": -1,
+                "ts": "",
+                "text": str(exc),
+                "recoverable": True,
+            }
+
+    def stream_after_terminal_request(self, *, runtime_id: str, resume_message: str, terminal_service: TerminalService) -> Iterator[dict]:
+        try:
+            events = self.runtime_manager.resume_after_terminal_request(
+                runtime_id=runtime_id,
+                resume_message=resume_message,
+                terminal_service=terminal_service,
+            )
+            for event in events:
+                yield event
+        except Exception as exc:
+            logger.exception("stream_after_terminal_request failed runtime_id=%s", runtime_id)
             yield {
                 "id": f"evt-error-{runtime_id}",
                 "kind": "error",

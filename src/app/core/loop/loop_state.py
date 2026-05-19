@@ -13,6 +13,7 @@ LoopPhase = Literal[
     "planning",
     "waiting_plan_approval",
     "approving",
+    "waiting_terminal_approval",
     "executing",
     "completed",
     "failed",

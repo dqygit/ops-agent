@@ -12,6 +12,7 @@ from typing import Any, Literal
 from app.core.loop.agent_loop import AgentLoop
 from app.core.loop.loop_events import LoopEvent
 from app.core.loop.loop_state import LoopContext, LoopRuntimeStep, LoopState
+from app.core.llm.types import LLMMessage
 
 
 TerminalRequestDecisionStatus = Literal["pending", "approved", "rejected", "expired"]
@@ -261,6 +262,17 @@ class LoopRuntimeManager:
         )
         return request, approval_token, event
 
+    def has_active_initial_authorization(self, runtime_id: str, asset_id: int) -> bool:
+        runtime = self._by_runtime.get(runtime_id)
+        if runtime is None:
+            raise ValueError("runtime not found")
+        return any(
+            authorization.asset_id == asset_id
+            and authorization.source == "initial_asset"
+            and authorization.status == "active"
+            for authorization in runtime.terminal_authorizations.values()
+        )
+
     def _find_active_authorization_for_request(
         self,
         runtime: RuntimeState,
@@ -408,6 +420,10 @@ class LoopRuntimeManager:
             "terminalId": authorization.terminal_id,
             "terminalCreationStatus": request.terminal_creation_status,
             "channel": result.get("channel") or "terminal connected",
+            "resumeMessage": (
+                f"Terminal access approved for asset {request.asset_name}. "
+                f"Use authorization_id {authorization.authorization_id} when executing commands on this asset."
+            ),
         }
 
     def append_terminal_command_submitted(
@@ -444,6 +460,12 @@ class LoopRuntimeManager:
             raise ValueError("runtime not found")
         self._expire_terminal_requests(runtime)
         authorization = runtime.terminal_authorizations.get(authorization_id)
+        if authorization is None:
+            for candidate in self._by_conversation.get(runtime.conversation_id, {}).values():
+                self._expire_terminal_requests(candidate)
+                authorization = candidate.terminal_authorizations.get(authorization_id)
+                if authorization is not None:
+                    break
         if authorization is None or authorization.status != "active":
             raise ValueError("terminal authorization is not active")
         return authorization
@@ -690,6 +712,54 @@ class LoopRuntimeManager:
             usage_event = self._build_usage_event(rt)
             if usage_event is not None:
                 yield usage_event
+
+    def resume_after_terminal_request(
+        self,
+        *,
+        runtime_id: str,
+        resume_message: str,
+        terminal_service,
+    ) -> Iterator[dict]:
+        rt = self._by_runtime.get(runtime_id)
+        if rt is None:
+            raise ValueError("runtime not found")
+        rt.state.phase = "executing"
+        rt.state.context.default_authorization_id = self._authorization_id_from_resume_message(resume_message) or rt.state.context.default_authorization_id
+        rt.state.messages.append(LLMMessage(role="user", content=self._terminal_request_resume_prompt(rt, resume_message)))
+        loop = AgentLoop(tools=self._tools_factory(terminal_service), usage_callback=self._usage_callback)
+        for event in loop.run(rt.state):
+            yield self._to_ws_event(event, rt)
+            usage_event = self._build_usage_event(rt)
+            if usage_event is not None:
+                yield usage_event
+
+    def _terminal_request_resume_prompt(self, rt: RuntimeState, resume_message: str) -> str:
+        active_authorizations = [
+            authorization
+            for authorization in rt.terminal_authorizations.values()
+            if authorization.status == "active"
+        ]
+        authorization_lines = [
+            f"- {authorization.asset_name} (asset_id={authorization.asset_id}) authorization_id={authorization.authorization_id}"
+            for authorization in active_authorizations
+        ]
+        authorization_summary = "\n".join(authorization_lines) if authorization_lines else "- None"
+        return (
+            f"Terminal request result: {resume_message}\n\n"
+            f"Original task: {rt.state.context.user_prompt}\n\n"
+            "Active terminal authorizations for this runtime:\n"
+            f"{authorization_summary}\n\n"
+            "Continue the original task. If the user requested additional assets that are not listed above, "
+            "request terminal access for those assets before executing commands or producing the final summary. "
+            "Use execute_command with the matching authorization_id for each authorized asset."
+        )
+
+    def _authorization_id_from_resume_message(self, resume_message: str) -> str | None:
+        marker = "Use authorization_id "
+        if marker not in resume_message:
+            return None
+        authorization_id = resume_message.split(marker, 1)[1].split(" ", 1)[0].strip().strip(".")
+        return authorization_id or None
 
     def _build_usage_event(self, rt: RuntimeState) -> dict | None:
         state = rt.state

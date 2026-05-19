@@ -3,7 +3,7 @@ export type { AssetPayload } from './assets'
 export {
   getConsoleBootstrap,
   getRuntimeEvents,
-  decideTerminalRequest,
+  streamDecideTerminalRequest,
   getRuntimeSnapshot,
   listConversationRuntimes,
   streamApproveAgent,

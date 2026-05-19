@@ -84,19 +84,11 @@ export function CommandExecutionCard({
 
   const isRunning = message ? message.partial : (!endEvent && !approvalStatus)
 
-  // Auto-expand if it's an ask message or if command is running/has output
   useEffect(() => {
-    if (isMessageAsk) {
+    if (showApprovalActions && approvalStatus === 'pending') {
       setIsExpanded(true)
     }
-  }, [isMessageAsk])
-
-  // Auto-expand when command starts running or has output
-  useEffect(() => {
-    if (isRunning || outputText) {
-      setIsExpanded(true)
-    }
-  }, [isRunning, outputText])
+  }, [showApprovalActions, approvalStatus])
 
   return (
     <div className={`group/card my-2 overflow-hidden rounded-[22px] border border-ops-border/25 bg-ops-panel/28 shadow-[0_14px_38px_rgb(var(--ops-bg)/0.14)] transition-all duration-300 ${isExpanded ? 'p-4' : 'px-3 py-2.5'}`}>
@@ -156,13 +148,6 @@ export function CommandExecutionCard({
         <div className="mt-4 flex flex-col gap-4 animate-in fade-in slide-in-from-top-2 duration-200">
           <div className="flex flex-col gap-1.5">
             <span className="text-[9px] font-black uppercase tracking-[0.16em] text-ops-muted/48">{isCommandTool ? t('conversation.commandPayload') : t('conversation.toolArgs')}</span>
-            {!isCommandTool && (toolName || toolDisplayText || toolDescription) ? (
-              <div className="rounded-2xl border border-ops-border/20 bg-ops-deep/45 px-4 py-3 text-[12px] leading-relaxed text-ops-text/82">
-                {toolName ? <div><span className="font-bold text-ops-muted/70">{t('conversation.name')}:</span> {toolName}</div> : null}
-                {toolDisplayText ? <div><span className="font-bold text-ops-muted/70">{t('conversation.display')}:</span> {toolDisplayText}</div> : null}
-                {toolDescription ? <div><span className="font-bold text-ops-muted/70">{t('conversation.description')}:</span> {toolDescription}</div> : null}
-              </div>
-            ) : null}
             <code className="block whitespace-pre-wrap break-all rounded-2xl border border-ops-border/20 bg-ops-deep/80 px-4 py-3 font-mono text-[12px] leading-relaxed text-ops-text/90 shadow-[inset_0_1px_0_rgb(var(--ops-text)/0.04)]">
               {isCommandTool ? displayCommand : argsJson}
             </code>

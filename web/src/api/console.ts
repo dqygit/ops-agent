@@ -230,23 +230,11 @@ export type TerminalRequestDecisionInput = {
   approved: boolean
 }
 
-export type TerminalRequestDecisionResponse = {
-  status: string
-  requestId: string
-  authorizationId?: string | null
-  assetId?: number | null
-  assetName?: string | null
-  terminalId?: string | null
-  terminalCreationStatus?: string | null
-  channel?: string | null
-  failureReason?: string | null
-}
-
-export async function decideTerminalRequest(
+export async function streamDecideTerminalRequest(
   requestId: string,
   input: TerminalRequestDecisionInput,
-): Promise<TerminalRequestDecisionResponse> {
-  return requestJson<TerminalRequestDecisionResponse>(
+): Promise<AsyncGenerator<EventItem, void, void>> {
+  const response = await requestEventStream(
     `/api/console/terminal-requests/${encodeURIComponent(requestId)}/decision`,
     {
       method: 'POST',
@@ -257,6 +245,7 @@ export async function decideTerminalRequest(
       }),
     },
   )
+  return readEventStream(response)
 }
 
 export async function streamApproveRuntimePlan(runtimeId: string): Promise<AsyncGenerator<EventItem, void, void>> {

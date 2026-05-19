@@ -388,6 +388,7 @@ export type AgentMessage = {
     originalName?: string
     serverId?: string
     command?: string
+    approvalToken?: string | null
     args: Record<string, any>
   }
   toolOutput?: string

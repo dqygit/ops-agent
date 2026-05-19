@@ -79,6 +79,41 @@ class AgentLoop:
         state.pending_approval_step_id = None
         state.pending_approval_consistency = None
 
+    def _append_pending_tool_result(self, state: LoopState, *, content: str) -> None:
+        message = LLMMessage(
+            role="tool",
+            content=content,
+            tool_call_id=state.pending_tool_call_id,
+            name=state.pending_tool_name,
+        )
+        pending_tool_call_id = state.pending_tool_call_id
+        if pending_tool_call_id is None:
+            state.messages.append(message)
+            return
+        for index in range(len(state.messages) - 1, -1, -1):
+            candidate = state.messages[index]
+            if candidate.role != "assistant":
+                continue
+            tool_call_ids = [tool_call.id for tool_call in candidate.tool_calls]
+            if pending_tool_call_id not in tool_call_ids:
+                continue
+            insert_at = index + 1
+            for tool_call_id in tool_call_ids:
+                if tool_call_id == pending_tool_call_id:
+                    break
+                while insert_at < len(state.messages):
+                    existing = state.messages[insert_at]
+                    if existing.role == "tool" and existing.tool_call_id == tool_call_id:
+                        insert_at += 1
+                        break
+                    if existing.role == "tool":
+                        insert_at += 1
+                        continue
+                    break
+            state.messages.insert(insert_at, message)
+            return
+        state.messages.append(message)
+
     def _build_approval_consistency(self, state: LoopState, args: dict[str, Any], tool_call_id: str) -> dict[str, Any] | None:
         authorization_id = str(args.get("authorization_id", "") or "")
         handler = self._tools.get("execute_command")
@@ -214,14 +249,7 @@ class AgentLoop:
                 yield from manager.finalize(text="Command execution rejected by user.")
             
             current_step.output = "Command execution rejected by user."
-            state.messages.append(
-                LLMMessage(
-                    role="tool",
-                    content=current_step.output,
-                    tool_call_id=state.pending_tool_call_id,
-                    name=state.pending_tool_name,
-                )
-            )
+            self._append_pending_tool_result(state, content=current_step.output)
             self._clear_pending_approval(state)
             if state.context.mode == "plan":
                 yield from self._run_plan_mode(state, manager=manager, continue_existing=True)
@@ -239,14 +267,7 @@ class AgentLoop:
             else:
                 yield from manager.begin_message(message_type="say", say_type="error")
                 yield from manager.finalize(text=consistency_error)
-            state.messages.append(
-                LLMMessage(
-                    role="tool",
-                    content=consistency_error,
-                    tool_call_id=state.pending_tool_call_id,
-                    name=state.pending_tool_name,
-                )
-            )
+            self._append_pending_tool_result(state, content=consistency_error)
             self._clear_pending_approval(state)
             if state.context.mode == "plan":
                 yield from self._run_plan_mode(state, manager=manager, continue_existing=True)
@@ -287,14 +308,7 @@ class AgentLoop:
 
         current_step.status = "completed" if ok else "failed"
         current_step.output = output if ok else f"Command Failed: {output}"
-        state.messages.append(
-            LLMMessage(
-                role="tool",
-                content=current_step.output,
-                tool_call_id=state.pending_tool_call_id,
-                name=state.pending_tool_name,
-            )
-        )
+        self._append_pending_tool_result(state, content=current_step.output)
         self._clear_pending_approval(state)
         yield from manager.finalize(exit_code=0 if ok else 1)
         
@@ -690,7 +704,7 @@ class AgentLoop:
                 
                 # handler.execute should yield output deltas to the manager
                 ok, output = yield from handler.execute(state=state, step_id=step.step_id, args=args, manager=manager)
-                
+
                 step.status = "completed" if ok else "failed"
                 tool_content = output if ok else f"Command Failed: {output}"
                 step.output = tool_content
@@ -704,6 +718,23 @@ class AgentLoop:
                     )
                 )
                 yield from manager.finalize(exit_code=0 if ok else 1)
+
+                if ok and tool_call.name == "request_terminal_session":
+                    state.phase = "waiting_terminal_approval"
+                    cancellation_content = (
+                        "Paused because terminal access requires separate user confirmation. "
+                        "Wait for the terminal decision before continuing."
+                    )
+                    for remaining_tool_call in response.tool_calls[index + 1:]:
+                        state.messages.append(
+                            LLMMessage(
+                                role="tool",
+                                content=cancellation_content,
+                                tool_call_id=remaining_tool_call.id,
+                                name=remaining_tool_call.name,
+                            )
+                        )
+                    return True, None, ""
 
                 if ok and tool_call.name == "load_skill":
                     cancellation_content = (

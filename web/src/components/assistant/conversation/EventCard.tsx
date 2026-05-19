@@ -57,7 +57,8 @@ export function EventCard({ event, onTerminalRequestDecision, settledTerminalReq
     const assetName = event.assetName ?? `asset-${event.assetId ?? ''}`
     const reason = event.reason ?? 'Agent requested terminal access.'
     const settled = Boolean(requestId && settledTerminalRequestIds?.has(requestId))
-    const canDecide = Boolean(runtimeId && requestId && approvalToken && onTerminalRequestDecision && !submittingTerminalDecision && !settled)
+    if (settled) return null
+    const canDecide = Boolean(runtimeId && requestId && approvalToken && onTerminalRequestDecision && !submittingTerminalDecision)
     return (
       <div className="my-2 rounded-2xl border border-amber-400/35 bg-amber-400/10 p-5 shadow-[0_16px_40px_rgba(0,0,0,0.18)]">
         <div className="mb-3 flex items-center gap-2 text-amber-200">
@@ -104,27 +105,15 @@ export function EventCard({ event, onTerminalRequestDecision, settledTerminalReq
   }
 
   if (event.kind === 'terminal_session_opened') {
-    return (
-      <div className="my-2 rounded-2xl border border-ops-green/30 bg-ops-green/10 p-4 text-sm text-ops-text">
-        Terminal authorized for {eventValue(event, 'assetName') ?? 'asset'}
-      </div>
-    )
+    return null
   }
 
   if (event.kind === 'terminal_session_rejected') {
-    return (
-      <div className="my-2 rounded-2xl border border-ops-danger/30 bg-ops-danger/10 p-4 text-sm text-ops-text">
-        Terminal request ended for {eventValue(event, 'assetName') ?? 'asset'}: {eventValue(event, 'reason') ?? 'rejected'}
-      </div>
-    )
+    return null
   }
 
   if (event.kind === 'terminal_authorization_revoked') {
-    return (
-      <div className="my-2 rounded-2xl border border-ops-border/30 bg-ops-panel/60 p-4 text-sm text-ops-muted">
-        Terminal authorization ended: {eventValue(event, 'revokeReason') ?? eventValue(event, 'reason') ?? 'closed'}
-      </div>
-    )
+    return null
   }
 
   if ((event.kind === 'approval_required' || event.kind === 'approval_decision') && event.status === 'rejected') {

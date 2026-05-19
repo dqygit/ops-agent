@@ -10,7 +10,7 @@ from app.api.assets import to_asset_view
 from app.api.conversations import get_conversation_service
 from app.api.groups import to_asset_group_view
 from app.api.ssh_keys import to_ssh_key_view
-from app.api.schemas import ConsoleApprovalRequest, ConsoleBootstrapView, ConsolePlanUpdateRequest, ConsoleRunRequest, RuntimeEventsResponse, RuntimeSnapshotView, RuntimeSummaryView, TerminalRequestDecisionRequest, TerminalRequestDecisionResponse
+from app.api.schemas import ConsoleApprovalRequest, ConsoleBootstrapView, ConsolePlanUpdateRequest, ConsoleRunRequest, RuntimeEventsResponse, RuntimeSnapshotView, RuntimeSummaryView, TerminalRequestDecisionRequest
 from app.services.ssh_key_service import list_ssh_key_records
 from app.api.terminal import get_terminal_service
 from app.db.repositories.models import get_default_model_config, list_model_configs
@@ -182,18 +182,17 @@ def get_runtime_events(runtime_id: str, since: int = 0) -> RuntimeEventsResponse
     return RuntimeEventsResponse(latest_sequence=latest_sequence, events=[dict(event) for event in events])
 
 
-@router.post(
-    "/api/console/terminal-requests/{request_id}/decision",
-    response_model=TerminalRequestDecisionResponse,
-)
+@router.post("/api/console/terminal-requests/{request_id}/decision")
 async def decide_terminal_request(
     request_id: str,
-    request: TerminalRequestDecisionRequest,
+    request: Request,
     session: Session = Depends(get_session),
     terminal_service: TerminalService = Depends(get_terminal_service),
-) -> TerminalRequestDecisionResponse:
+    orchestrator: TaskOrchestrator = Depends(get_task_orchestrator),
+):
+    payload = await _parse_request_model(request, TerminalRequestDecisionRequest)
     try:
-        runtime = _console_app_service.runtime_manager.get_runtime(request.runtime_id)
+        runtime = _console_app_service.runtime_manager.get_runtime(payload.runtime_id)
         if runtime is None:
             raise ValueError("runtime not found")
         terminal_request = runtime.terminal_requests.get(request_id)
@@ -203,10 +202,10 @@ async def decide_terminal_request(
         if asset is None:
             raise LookupError("asset not found")
         result = await _console_app_service.runtime_manager.decide_terminal_request(
-            request.runtime_id,
+            payload.runtime_id,
             request_id,
-            approval_token=request.approval_token,
-            approved=request.approved,
+            approval_token=payload.approval_token,
+            approved=payload.approved,
             terminal_service=terminal_service,
             asset=asset,
         )
@@ -217,12 +216,40 @@ async def decide_terminal_request(
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     if result["status"] == "expired":
         raise HTTPException(status_code=409, detail=result)
     if result.get("terminalCreationStatus") == "failed":
         raise HTTPException(status_code=502, detail=result)
-    return TerminalRequestDecisionResponse.model_validate(result)
+
+    response_event = {
+        "id": f"evt-terminal-decision-{request_id}",
+        "kind": "terminal_session_opened" if result.get("status") == "approved" else "terminal_session_rejected",
+        "runtimeId": payload.runtime_id,
+        "requestId": result.get("requestId"),
+        "authorizationId": result.get("authorizationId"),
+        "assetId": result.get("assetId"),
+        "assetName": result.get("assetName"),
+        "terminalId": result.get("terminalId"),
+        "terminalCreationStatus": result.get("terminalCreationStatus"),
+        "status": result.get("status"),
+        "channel": result.get("channel"),
+        "reason": result.get("failureReason") or result.get("status"),
+    }
+    stream = orchestrator.stream_after_terminal_request(
+        runtime_id=payload.runtime_id,
+        resume_message=str(result.get("resumeMessage") or "Terminal request was rejected by the user."),
+    )
+
+    def event_stream():
+        yield _sse_event(response_event)
+        try:
+            for event in stream:
+                yield _sse_event(event)
+        except Exception as exc:
+            yield _sse_event({"id": "error-terminal-decision", "kind": "error", "text": str(exc), "recoverable": True})
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 
 @router.put("/api/console/runtimes/{runtime_id}/plan")

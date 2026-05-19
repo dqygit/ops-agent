@@ -23,9 +23,8 @@ class OpenAICompatibleLLMProvider:
         config: ModelConfig,
         request: LLMCompletionRequest,
     ) -> Iterator[LLMCompletionChunk]:
-        response = self._get_client(config).chat.completions.create(
-            **self._build_completion_params(config=config, request=request, stream=True)
-        )
+        params = self._build_completion_params(config=config, request=request, stream=True)
+        response = self._get_client(config).chat.completions.create(**params)
         finish_reason: str | None = None
         usage: LLMTokenUsage | None = None
         tool_call_fragments: dict[int, dict[str, Any]] = {}
@@ -138,7 +137,7 @@ class OpenAICompatibleLLMProvider:
         payload = {"role": message.role, "content": message.content}
         if message.tool_call_id:
             payload["tool_call_id"] = message.tool_call_id
-        if message.name:
+        if message.name and message.role != "tool":
             payload["name"] = message.name
         if message.role == "assistant" and message.tool_calls:
             payload["tool_calls"] = [
@@ -147,7 +146,7 @@ class OpenAICompatibleLLMProvider:
                     "type": "function",
                     "function": {
                         "name": tool_call.name,
-                        "arguments": tool_call.raw_arguments if isinstance(tool_call.raw_arguments, str) else json.dumps(tool_call.arguments),
+                        "arguments": tool_call.raw_arguments if isinstance(tool_call.raw_arguments, str) and tool_call.raw_arguments else json.dumps(tool_call.arguments),
                     },
                 }
                 for tool_call in message.tool_calls

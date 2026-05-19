@@ -18,12 +18,29 @@ class ListAssetsHandler:
     def definition(self) -> LLMToolDefinition:
         return LLMToolDefinition(
             name="list_assets",
-            description="List visible diagnostic assets with non-secret connection summaries.",
-            input_schema={"type": "object", "properties": {}, "required": []},
+            description="List visible diagnostic assets with non-secret connection summaries. Only call this when remote asset discovery is required for the user's task.",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "intent": {
+                        "type": "string",
+                        "enum": ["user_requested_assets", "remote_execution_required"],
+                        "description": "Why asset discovery is needed. Use user_requested_assets when the user asked about assets/hosts; use remote_execution_required when the task cannot be completed in the current authorized terminal context.",
+                    },
+                    "justification": {
+                        "type": "string",
+                        "description": "A concise explanation grounded in the user's request or current task requirements.",
+                    },
+                },
+                "required": ["intent", "justification"],
+            },
         )
 
     def needs_approval(self, args: dict[str, Any]) -> tuple[str, str]:
-        _ = args
+        intent = str(args.get("intent") or "").strip()
+        justification = str(args.get("justification") or "").strip()
+        if intent not in {"user_requested_assets", "remote_execution_required"} or not justification:
+            return "deny", "Asset discovery requires an explicit intent and justification."
         return "allow", "Listing assets only returns non-secret summaries."
 
     def display_metadata(self, args: dict[str, Any]) -> ToolDisplayMetadata:
@@ -73,13 +90,21 @@ class RequestTerminalSessionHandler:
                 "properties": {
                     "asset_id": {"type": "integer", "description": "Target asset ID."},
                     "reason": {"type": "string", "description": "Why this terminal session is needed."},
+                    "intent": {
+                        "type": "string",
+                        "enum": ["user_requested_connection", "remote_execution_required"],
+                        "description": "Why remote terminal access is needed. Use user_requested_connection when the user asked to connect to an asset; use remote_execution_required when the task cannot be completed in the current authorized terminal context.",
+                    },
                 },
-                "required": ["asset_id", "reason"],
+                "required": ["asset_id", "reason", "intent"],
             },
         )
 
     def needs_approval(self, args: dict[str, Any]) -> tuple[str, str]:
-        _ = args
+        intent = str(args.get("intent") or "").strip()
+        reason = str(args.get("reason") or "").strip()
+        if intent not in {"user_requested_connection", "remote_execution_required"} or not reason:
+            return "deny", "Remote terminal requests require an explicit intent and reason."
         return "allow", "Terminal session requests require separate user confirmation."
 
     def display_metadata(self, args: dict[str, Any]) -> ToolDisplayMetadata:
@@ -112,12 +137,23 @@ class RequestTerminalSessionHandler:
                 if manager:
                     yield from manager.update(tool_output=output)
                 return False, output
-            request, _token, _event = self._runtime_manager.create_terminal_request(
+            if self._runtime_manager.has_active_initial_authorization(state.context.runtime_id, asset.id):
+                output = "The current terminal is already authorized for this asset. Use execute_command with the current authorization instead of requesting a new terminal session."
+                if manager:
+                    yield from manager.update(tool_output=output)
+                return False, output
+            request, _token, event = self._runtime_manager.create_terminal_request(
                 state.context.runtime_id,
                 conversation_id=state.context.conversation_id,
                 asset_id=asset.id,
                 asset_name=asset.name,
                 reason=reason,
+            )
+            yield LoopEvent(
+                event_type="terminal_session_request",  # type: ignore[arg-type]
+                runtime_id=state.context.runtime_id,
+                phase=state.phase,
+                payload=event,
             )
         output = str(
             {
