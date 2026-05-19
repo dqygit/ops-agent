@@ -719,12 +719,13 @@ class LoopRuntimeManager:
         runtime_id: str,
         resume_message: str,
         terminal_service,
+        authorization_id: str | None = None,
     ) -> Iterator[dict]:
         rt = self._by_runtime.get(runtime_id)
         if rt is None:
             raise ValueError("runtime not found")
         rt.state.phase = "executing"
-        rt.state.context.default_authorization_id = self._authorization_id_from_resume_message(resume_message) or rt.state.context.default_authorization_id
+        rt.state.context.default_authorization_id = authorization_id or self._latest_active_authorization_id(rt) or rt.state.context.default_authorization_id
         rt.state.messages.append(LLMMessage(role="user", content=self._terminal_request_resume_prompt(rt, resume_message)))
         loop = AgentLoop(tools=self._tools_factory(terminal_service), usage_callback=self._usage_callback)
         for event in loop.run(rt.state):
@@ -754,12 +755,34 @@ class LoopRuntimeManager:
             "Use execute_command with the matching authorization_id for each authorized asset."
         )
 
-    def _authorization_id_from_resume_message(self, resume_message: str) -> str | None:
-        marker = "Use authorization_id "
-        if marker not in resume_message:
+    def _latest_active_authorization_id(self, rt: RuntimeState) -> str | None:
+        active_authorizations = [
+            authorization
+            for authorization in rt.terminal_authorizations.values()
+            if authorization.status == "active"
+        ]
+        if not active_authorizations:
             return None
-        authorization_id = resume_message.split(marker, 1)[1].split(" ", 1)[0].strip().strip(".")
-        return authorization_id or None
+        latest_authorization = max(active_authorizations, key=lambda authorization: authorization.created_at)
+        return latest_authorization.authorization_id
+
+    def _context_percent_for_tokens(self, token_count: int, model_config) -> int:
+        model_name = model_config.model_name.lower()
+        if "claude" in model_name:
+            context_window_tokens = 200_000
+        elif "gpt-4" in model_name or "gpt-5" in model_name:
+            context_window_tokens = 128_000
+        else:
+            context_window_tokens = 32_000
+        available_tokens = max(1, context_window_tokens - 4_000)
+        return min(100, max(0, round(token_count * 100 / available_tokens)))
+
+    def _context_status_for_percent(self, context_percent: int) -> Literal["normal", "warning", "critical"]:
+        if context_percent >= 90:
+            return "critical"
+        if context_percent >= 70:
+            return "warning"
+        return "normal"
 
     def _build_usage_event(self, rt: RuntimeState) -> dict | None:
         state = rt.state
@@ -768,6 +791,7 @@ class LoopRuntimeManager:
         usage = getattr(state, "latest_usage", None)
         if usage is None:
             return None
+        context_percent = self._context_percent_for_tokens(int(usage.get("totalTokens") or 0), state.context.model_config)
         state.latest_usage = None
         rt.sequence += 1
         rt.updated_at = self._now()
@@ -777,6 +801,8 @@ class LoopRuntimeManager:
             "runtimeId": rt.runtime_id,
             "sequence": rt.sequence,
             "ts": self._now().isoformat(),
+            "contextPercent": context_percent,
+            "contextStatus": self._context_status_for_percent(context_percent),
             "tokenUsage": usage,
         }
         rt.events.append(event)

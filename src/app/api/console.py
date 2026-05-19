@@ -239,6 +239,7 @@ async def decide_terminal_request(
     stream = orchestrator.stream_after_terminal_request(
         runtime_id=payload.runtime_id,
         resume_message=str(result.get("resumeMessage") or "Terminal request was rejected by the user."),
+        authorization_id=result.get("authorizationId"),
     )
 
     def event_stream():

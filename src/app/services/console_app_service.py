@@ -120,11 +120,12 @@ class TaskOrchestrator:
             terminal_service=self._terminal_service,
         )
 
-    def stream_after_terminal_request(self, *, runtime_id: str, resume_message: str) -> Iterator[dict]:
+    def stream_after_terminal_request(self, *, runtime_id: str, resume_message: str, authorization_id: str | None = None) -> Iterator[dict]:
         return self._app_service.stream_after_terminal_request(
             runtime_id=runtime_id,
             resume_message=resume_message,
             terminal_service=self._terminal_service,
+            authorization_id=authorization_id,
         )
 
 class ConsoleAppService:
@@ -188,6 +189,14 @@ class ConsoleAppService:
             "cacheReadInputTokens": usage.cache_read_input_tokens,
             "totalTokens": usage.total_tokens,
         }
+
+    def _context_percent_for_status_event(self, *, context_percent: int, token_usage: dict[str, int], model_config) -> int:
+        if context_percent > 0:
+            return context_percent
+        return self._context_manager().context_percent_for_tokens(int(token_usage.get("totalTokens") or 0), model_config)
+
+    def _context_status_for_percent(self, context_percent: int):
+        return self._context_manager().status_for_percent(context_percent)
 
     def build_orchestrator(self, terminal_service: TerminalService) -> TaskOrchestrator:
         return TaskOrchestrator(self, terminal_service)
@@ -300,13 +309,19 @@ class ConsoleAppService:
             context.default_authorization_id = authorization.authorization_id
             _, initial_runtime_events = self.runtime_manager.events_since(runtime_id, 0)
 
+        token_usage = self._conversation_token_usage_payload(conversation_id)
+        context_percent = self._context_percent_for_status_event(
+            context_percent=context_result.context_percent,
+            token_usage=token_usage,
+            model_config=model_config,
+        )
         yield {
             "id": f"evt-context-{runtime_id}",
             "kind": "context_status",
             "runtimeId": runtime_id,
-            "contextPercent": context_result.context_percent,
-            "contextStatus": context_result.context_status,
-            "tokenUsage": self._conversation_token_usage_payload(conversation_id),
+            "contextPercent": context_percent,
+            "contextStatus": self._context_status_for_percent(context_percent),
+            "tokenUsage": token_usage,
             "compactionApplied": context_result.compaction_applied,
             "fitStatus": context_result.fit_status,
             "summaryRevision": context_result.summary_revision,
@@ -399,12 +414,13 @@ class ConsoleAppService:
                 "recoverable": True,
             }
 
-    def stream_after_terminal_request(self, *, runtime_id: str, resume_message: str, terminal_service: TerminalService) -> Iterator[dict]:
+    def stream_after_terminal_request(self, *, runtime_id: str, resume_message: str, terminal_service: TerminalService, authorization_id: str | None = None) -> Iterator[dict]:
         try:
             events = self.runtime_manager.resume_after_terminal_request(
                 runtime_id=runtime_id,
                 resume_message=resume_message,
                 terminal_service=terminal_service,
+                authorization_id=authorization_id,
             )
             for event in events:
                 yield event

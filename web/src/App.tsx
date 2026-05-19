@@ -94,6 +94,9 @@ export function App() {
 
   const {
     pendingApprovalRuntimeId,
+    backgroundRun,
+    activeBackgroundRun,
+    clearBackgroundRunUnread,
     runAgent,
     approveRun,
     rejectRun,
@@ -102,6 +105,7 @@ export function App() {
     approvePlan,
   } = useAgentRun({
     activeConversationId,
+    activeConversationTitle,
     activeConversationIdRef,
     events,
     setEvents,
@@ -227,6 +231,7 @@ export function App() {
           groups={bootstrap.groups}
           conversationSummaries={conversationSummaries}
           activeConversationId={activeConversationId}
+          backgroundRun={backgroundRun}
           selectedAssetId={selectedAssetId}
           collapsed={sidebarCollapsed}
           onToggleCollapse={() => setSidebarCollapsed((current) => !current)}
@@ -251,6 +256,7 @@ export function App() {
                 conversationSummaries={conversationSummaries}
                 activeConversationId={activeConversationId}
                 activeConversationTitle={activeConversationTitle}
+                backgroundRun={activeBackgroundRun}
                 events={events}
                 pendingApprovalRuntimeId={pendingApprovalRuntimeId}
                 runtimeSummaries={runtimeSummaries}
@@ -265,11 +271,18 @@ export function App() {
                 onModelChange={setSelectedModel}
                 onRunModeChange={setRunMode}
                 onPromptChange={setPrompt}
+                onViewBackgroundRun={(conversationId) => {
+                  void loadConversation(conversationId).then(() => {
+                    clearBackgroundRunUnread(conversationId)
+                  })
+                }}
                 onCreateConversation={() => {
                   void createConversation()
                 }}
                 onSelectConversation={(conversationId) => {
-                  void loadConversation(conversationId)
+                  void loadConversation(conversationId).then(() => {
+                    clearBackgroundRunUnread(conversationId)
+                  })
                 }}
                 onDeleteConversation={(conversationId) => {
                   void deleteConversation(conversationId)

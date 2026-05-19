@@ -1,9 +1,16 @@
 import { useAppearance } from '../../hooks/useAppearance'
 import type { ConversationSummary, EventItem } from '../../types/ops'
 
+type ConversationRunBadge = {
+  conversationId: string
+  status: 'running' | 'needs_approval' | 'completed' | 'failed'
+  hasUnread: boolean
+}
+
 type ConversationListProps = {
   items: ConversationSummary[]
   activeConversationId: string | null
+  backgroundRun: ConversationRunBadge | null
   onSelect: (conversationId: string) => void
   onDelete: (conversationId: string) => void
 }
@@ -94,7 +101,15 @@ function getInitial(title: string) {
   return ch || '·'
 }
 
-export function ConversationList({ items, activeConversationId, onSelect, onDelete }: ConversationListProps) {
+function getRunBadgeMeta(run: ConversationRunBadge | null) {
+  if (!run) return null
+  if (run.status === 'needs_approval') return { label: '需审批', color: 'border-ops-warning/35 bg-ops-warning/10 text-ops-warning' }
+  if (run.status === 'completed') return { label: run.hasUnread ? '已完成' : '完成', color: 'border-ops-emerald/30 bg-ops-emerald/10 text-ops-emerald' }
+  if (run.status === 'failed') return { label: '失败', color: 'border-ops-danger/30 bg-ops-danger/10 text-ops-danger' }
+  return { label: run.hasUnread ? '有新输出' : '运行中', color: 'border-ops-cyan/35 bg-ops-cyan/10 text-ops-cyan' }
+}
+
+export function ConversationList({ items, activeConversationId, backgroundRun, onSelect, onDelete }: ConversationListProps) {
   const { t } = useAppearance()
 
   return (
@@ -107,6 +122,7 @@ export function ConversationList({ items, activeConversationId, onSelect, onDele
               const status = getStatusMeta(normalizeStatusKind(item.lastEventKind))
               const isUntitled = !item.title || item.title.trim() === '' || item.title.trim() === 'New'
               const displayTitle = isUntitled ? t('conversation.untitledSession') : item.title
+              const runBadge = getRunBadgeMeta(backgroundRun?.conversationId === item.id ? backgroundRun : null)
 
               return (
                 <li key={item.id} className="group relative">
@@ -145,6 +161,11 @@ export function ConversationList({ items, activeConversationId, onSelect, onDele
                         >
                           {displayTitle}
                         </h3>
+                        {runBadge ? (
+                          <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[9px] font-black ${runBadge.color}`}>
+                            {runBadge.label}
+                          </span>
+                        ) : null}
                       </div>
 
                       <div className="mt-2 flex items-center gap-2 text-[10px] font-bold leading-none text-ops-muted">

@@ -6,10 +6,20 @@ import { ConversationView } from './ConversationView'
 import { PromptInput } from './PromptInput'
 import { useAppearance } from '../../hooks/useAppearance'
 
+type BackgroundRunStatus = 'running' | 'needs_approval' | 'completed' | 'failed'
+
+type BackgroundRunState = {
+  conversationId: string
+  title: string
+  status: BackgroundRunStatus
+  hasUnread: boolean
+}
+
 type AssistantPanelProps = {
   conversationSummaries: ConversationSummary[]
   activeConversationId: string | null
   activeConversationTitle: string
+  backgroundRun: BackgroundRunState | null
   events: EventItem[]
   pendingApprovalRuntimeId: string | null
   runtimeSummaries: RuntimeSummary[]
@@ -24,6 +34,7 @@ type AssistantPanelProps = {
   onModelChange: (model: string) => void
   onRunModeChange: (mode: RunMode) => void
   onPromptChange: (prompt: string) => void
+  onViewBackgroundRun: (conversationId: string) => void
   onCreateConversation: () => void
   onSelectConversation: (conversationId: string) => void
   onDeleteConversation: (conversationId: string) => void
@@ -54,10 +65,24 @@ function formatHeaderTime(value: string | null) {
   return headerTimeFormatter.format(date)
 }
 
+function backgroundRunCopy(run: BackgroundRunState) {
+  if (run.status === 'needs_approval') {
+    return { message: `会话「${run.title}」需要审批`, action: '前往处理', tone: 'warning' as const }
+  }
+  if (run.status === 'completed') {
+    return { message: `会话「${run.title}」已完成`, action: '查看', tone: 'success' as const }
+  }
+  if (run.status === 'failed') {
+    return { message: `会话「${run.title}」执行失败`, action: '查看', tone: 'danger' as const }
+  }
+  return { message: `会话「${run.title}」正在后台运行`, action: '查看', tone: 'running' as const }
+}
+
 export function AssistantPanel({
   conversationSummaries,
   activeConversationId,
   activeConversationTitle,
+  backgroundRun,
   events,
   pendingApprovalRuntimeId,
   runtimeSummaries,
@@ -72,6 +97,7 @@ export function AssistantPanel({
   onModelChange,
   onRunModeChange,
   onPromptChange,
+  onViewBackgroundRun,
   onCreateConversation,
   onSelectConversation,
   onDeleteConversation,
@@ -87,6 +113,8 @@ export function AssistantPanel({
     () => conversationSummaries.find((item) => item.id === activeConversationId) ?? null,
     [activeConversationId, conversationSummaries],
   )
+
+  const backgroundRunInfo = backgroundRun ? backgroundRunCopy(backgroundRun) : null
 
   return (
     <div className="flex h-full w-full flex-col overflow-hidden bg-ops-bg">
@@ -117,6 +145,20 @@ export function AssistantPanel({
             </div>
           ) : null}
 
+          {backgroundRun && backgroundRunInfo ? (
+            <div className={`relative z-10 mx-4 mt-4 flex items-center gap-3 rounded-2xl border px-4 py-3 text-xs font-bold ${backgroundRunInfo.tone === 'warning' ? 'border-ops-warning/35 bg-ops-warning/10 text-ops-warning' : backgroundRunInfo.tone === 'danger' ? 'border-ops-danger/35 bg-ops-danger/10 text-ops-danger' : backgroundRunInfo.tone === 'success' ? 'border-ops-emerald/30 bg-ops-emerald/10 text-ops-emerald' : 'border-ops-cyan/30 bg-ops-cyan/10 text-ops-cyan'}`}>
+              <span className="min-w-0 flex-1 truncate">{backgroundRunInfo.message}</span>
+              {backgroundRun.hasUnread ? <span className="rounded-full bg-current/10 px-2 py-0.5 text-[10px]">有新输出</span> : null}
+              <button
+                type="button"
+                className="shrink-0 rounded-xl border border-current/30 px-3 py-1.5 text-[10px] font-black transition hover:bg-current/10 active:scale-95"
+                onClick={() => onViewBackgroundRun(backgroundRun.conversationId)}
+              >
+                {backgroundRunInfo.action}
+              </button>
+            </div>
+          ) : null}
+
           <ConversationView
             events={events}
             pendingApprovalRuntimeId={pendingApprovalRuntimeId}
@@ -134,6 +176,8 @@ export function AssistantPanel({
             runMode={runMode}
             selectedAsset={selectedAsset}
             contextStatus={contextStatus}
+            blockedRun={backgroundRun && (backgroundRun.status === 'running' || backgroundRun.status === 'needs_approval') ? { message: '另一个会话正在运行，当前暂不支持并行执行', actionLabel: backgroundRun.status === 'needs_approval' ? '前往处理' : '查看运行会话' } : null}
+            onViewBlockedRun={backgroundRun ? () => onViewBackgroundRun(backgroundRun.conversationId) : undefined}
             onPromptChange={onPromptChange}
             onModelChange={onModelChange}
             onRunModeChange={onRunModeChange}

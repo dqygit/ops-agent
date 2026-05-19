@@ -12,6 +12,8 @@ type PromptInputProps = {
   runMode: RunMode
   selectedAsset: Asset
   contextStatus: ConversationContextStatus | null
+  blockedRun: { message: string; actionLabel: string } | null
+  onViewBlockedRun?: () => void
   onPromptChange: (prompt: string) => void
   onModelChange: (model: string) => void
   onRunModeChange: (mode: RunMode) => void
@@ -91,6 +93,8 @@ export function PromptInput({
   runMode,
   selectedAsset,
   contextStatus,
+  blockedRun,
+  onViewBlockedRun,
   onPromptChange,
   onModelChange,
   onRunModeChange,
@@ -165,6 +169,10 @@ export function PromptInput({
     const currentPrompt = prompt
 
     if (!currentPrompt.trim()) {
+      return
+    }
+
+    if (blockedRun) {
       return
     }
 
@@ -245,7 +253,7 @@ export function PromptInput({
           />
 
           <button
-            className={`absolute bottom-3 right-3 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border transition-all duration-200 active:scale-95 ${prompt.trim()
+            className={`absolute bottom-3 right-3 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border transition-all duration-200 active:scale-95 ${prompt.trim() && !blockedRun
               ? 'border-ops-cyan/45 bg-ops-cyan text-ops-deep shadow-[0_0_28px_rgb(var(--ops-cyan)/0.38)] hover:-translate-y-0.5 hover:bg-cyan-300 hover:shadow-[0_0_36px_rgb(var(--ops-cyan)/0.55)]'
               : 'cursor-not-allowed border-ops-border/20 bg-ops-panel/70 text-ops-muted/25'
               }`}
@@ -253,12 +261,27 @@ export function PromptInput({
             onClick={() => {
               void submitPrompt()
             }}
-            disabled={!prompt.trim()}
+            disabled={!prompt.trim() || Boolean(blockedRun)}
             aria-label={t('assistant.runMission')}
           >
             <svg aria-hidden="true" viewBox="0 0 24 24" focusable="false" className="h-5 w-5 fill-current"><path d="M5 3.8 20.2 12 5 20.2v-6.1L13.4 12 5 9.9z" /></svg>
           </button>
         </div>
+
+        {blockedRun ? (
+          <div className="relative flex items-center gap-2 border-t border-ops-warning/15 bg-ops-warning/8 px-3 py-2 text-[11px] font-bold text-ops-warning">
+            <span className="min-w-0 flex-1 truncate">{blockedRun.message}</span>
+            {onViewBlockedRun ? (
+              <button
+                type="button"
+                className="shrink-0 rounded-lg border border-ops-warning/30 px-2.5 py-1 text-[10px] font-black transition hover:bg-ops-warning/10 active:scale-95"
+                onClick={onViewBlockedRun}
+              >
+                {blockedRun.actionLabel}
+              </button>
+            ) : null}
+          </div>
+        ) : null}
 
         <div className="relative flex items-center gap-3 border-t border-ops-border/10 bg-ops-deep/45 px-3 py-2">
           <div className="flex flex-1 items-center gap-3 overflow-x-auto scrollbar-none">

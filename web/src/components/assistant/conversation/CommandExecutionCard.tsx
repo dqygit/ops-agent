@@ -4,6 +4,91 @@ import type { AgentMessage } from '../../../types/ops'
 import type { Approval, CommandStart, CommandChunk, CommandEnd } from './types'
 import { OutputBlock } from './OutputBlock'
 
+type TerminalToolOutput =
+  | {
+      tool: 'list_assets'
+      status: string
+      assets?: Array<{
+        asset_id?: number
+        assetId?: number
+        name?: string
+        asset_type?: string
+        assetType?: string
+        tags?: string[]
+        connectable?: boolean
+      }>
+    }
+  | {
+      tool: 'request_terminal_session'
+      status: string
+      requestId?: string
+      assetId?: number
+      assetName?: string
+      reason?: string
+      message?: string
+    }
+
+function parseTerminalToolOutput(output: string): TerminalToolOutput | null {
+  if (!output.trim()) return null
+  try {
+    const parsed = JSON.parse(output) as TerminalToolOutput
+    if (parsed?.tool === 'list_assets' || parsed?.tool === 'request_terminal_session') return parsed
+  } catch {
+    return null
+  }
+  return null
+}
+
+function StructuredTerminalToolOutput({ output }: { output: TerminalToolOutput }) {
+  if (output.tool === 'list_assets') {
+    const assets = output.assets ?? []
+    return (
+      <div className="rounded-2xl border border-ops-cyan/18 bg-ops-deep/50 p-3">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <span className="text-[9px] font-black uppercase tracking-[0.16em] text-ops-cyan/85">Visible assets</span>
+          <span className="rounded-full border border-ops-cyan/20 bg-ops-cyan/8 px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.12em] text-ops-cyan">{assets.length} found</span>
+        </div>
+        <div className="grid gap-2 md:grid-cols-2">
+          {assets.map((asset) => {
+            const assetId = asset.asset_id ?? asset.assetId
+            const assetType = asset.asset_type ?? asset.assetType ?? 'asset'
+            return (
+              <div key={`${assetId ?? asset.name}`} className="rounded-xl border border-ops-border/18 bg-ops-panel/30 px-3 py-2">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="truncate text-[12px] font-bold text-ops-text/88">{asset.name || `asset-${assetId ?? ''}`}</span>
+                  <span className="shrink-0 rounded-full border border-ops-border/20 bg-ops-deep/45 px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.1em] text-ops-muted/70">{assetType}</span>
+                </div>
+                <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[10px] text-ops-muted/62">
+                  {assetId !== undefined ? <span className="font-mono">id:{assetId}</span> : null}
+                  {asset.connectable !== undefined ? <span>{asset.connectable ? 'connectable' : 'unavailable'}</span> : null}
+                  {(asset.tags ?? []).slice(0, 3).map((tag) => <span key={tag} className="rounded-full bg-ops-deep/65 px-1.5 py-0.5">{tag}</span>)}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    )
+  }
+
+  const isError = output.status === 'error'
+  return (
+    <div className={`rounded-2xl border p-3 ${isError ? 'border-ops-danger/25 bg-ops-danger/8' : 'border-ops-warning/25 bg-ops-warning/8'}`}>
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <span className={`text-[9px] font-black uppercase tracking-[0.16em] ${isError ? 'text-ops-danger' : 'text-ops-warning'}`}>Terminal request</span>
+        <span className={`rounded-full border px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.12em] ${isError ? 'border-ops-danger/25 text-ops-danger' : 'border-ops-warning/25 text-ops-warning'}`}>{output.status.replace(/_/g, ' ')}</span>
+      </div>
+      {output.assetName ? <div className="text-[12px] font-bold text-ops-text/88">{output.assetName}</div> : null}
+      {output.reason ? <p className="mt-1 m-0 whitespace-pre-wrap text-[11px] leading-relaxed text-ops-muted/72">{output.reason}</p> : null}
+      {output.message ? <p className="mt-1 m-0 whitespace-pre-wrap text-[11px] leading-relaxed text-ops-muted/72">{output.message}</p> : null}
+      <div className="mt-2 flex flex-wrap gap-2 font-mono text-[10px] text-ops-muted/58">
+        {output.assetId !== undefined ? <span>asset:{output.assetId}</span> : null}
+        {output.requestId ? <span>request:{output.requestId.slice(0, 8)}</span> : null}
+      </div>
+    </div>
+  )
+}
+
 type CommandExecutionCardProps = {
   message?: AgentMessage
   approvalEvent?: Approval
@@ -67,6 +152,7 @@ export function CommandExecutionCard({
     : (toolDisplayText || toolDescription || toolName ? [toolDisplayText || toolName, toolDescription].filter(Boolean).join(' — ') : '')
 
   const outputText = message?.toolOutput ?? chunkEvents.map((event) => event.text).join('')
+  const structuredOutput = parseTerminalToolOutput(outputText)
   const exitCode = message ? message.exitCode : ((endEvent as any)?.exitCode ?? (endEvent as any)?.exit_code)
   const hasExecutionResult = message ? message.type === 'say' && message.say === 'tool_use' && !message.partial : !!endEvent
   const commandTokens = displayCommand.trim().split(/\s+/).filter(Boolean)
@@ -224,7 +310,7 @@ export function CommandExecutionCard({
           {hasExecutionResult && (
             <div className="flex flex-col gap-1.5">
               <span className="text-[9px] font-bold tracking-widest text-ops-muted/60 uppercase">{t('conversation.executionOutput')}</span>
-              <OutputBlock text={outputText || t('conversation.noOutput')} label={t('conversation.trace')} />
+              {structuredOutput ? <StructuredTerminalToolOutput output={structuredOutput} /> : <OutputBlock text={outputText || t('conversation.noOutput')} />}
             </div>
           )}
         </div>

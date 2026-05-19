@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from collections.abc import Iterator
 from typing import Any
 
@@ -11,6 +12,10 @@ from app.core.tool.handler import ToolDisplayMetadata
 from app.core.tool.schema import LLMToolDefinition
 from app.db.repositories.assets import get_asset, list_assets
 from app.db.session import Session, engine
+
+
+def _json_tool_output(tool: str, status: str, payload: dict[str, Any] | None = None) -> str:
+    return json.dumps({"tool": tool, "status": status, **(payload or {})}, ensure_ascii=False, separators=(",", ":"))
 
 
 class ListAssetsHandler:
@@ -70,7 +75,7 @@ class ListAssetsHandler:
                     if asset.id is not None
                 ]
             }
-        output = str(result)
+        output = _json_tool_output("list_assets", "ok", result)
         if manager:
             yield from manager.update(tool_output=output)
         return True, output
@@ -120,25 +125,33 @@ class RequestTerminalSessionHandler:
         try:
             asset_id = int(args.get("asset_id") or -1)
         except (TypeError, ValueError):
-            output = "A valid asset_id is required to request terminal access."
+            output = _json_tool_output("request_terminal_session", "error", {"message": "A valid asset_id is required to request terminal access."})
             if manager:
                 yield from manager.update(tool_output=output)
             return False, output
         reason = str(args.get("reason") or "").strip()
         if not reason:
-            output = "A reason is required to request terminal access."
+            output = _json_tool_output("request_terminal_session", "error", {"message": "A reason is required to request terminal access."})
             if manager:
                 yield from manager.update(tool_output=output)
             return False, output
         with Session(engine) as session:
             asset = get_asset(session, asset_id)
             if asset is None or asset.id is None:
-                output = "Asset is not visible or does not exist."
+                output = _json_tool_output("request_terminal_session", "error", {"assetId": asset_id, "message": "Asset is not visible or does not exist."})
                 if manager:
                     yield from manager.update(tool_output=output)
                 return False, output
             if self._runtime_manager.has_active_initial_authorization(state.context.runtime_id, asset.id):
-                output = "The current terminal is already authorized for this asset. Use execute_command with the current authorization instead of requesting a new terminal session."
+                output = _json_tool_output(
+                    "request_terminal_session",
+                    "already_authorized",
+                    {
+                        "assetId": asset.id,
+                        "assetName": asset.name,
+                        "message": "The current terminal is already authorized for this asset. Use execute_command with the current authorization instead of requesting a new terminal session.",
+                    },
+                )
                 if manager:
                     yield from manager.update(tool_output=output)
                 return False, output
@@ -150,19 +163,20 @@ class RequestTerminalSessionHandler:
                 reason=reason,
             )
             yield LoopEvent(
-                event_type="terminal_session_request",  # type: ignore[arg-type]
+                event_type="terminal_session_request",
                 runtime_id=state.context.runtime_id,
                 phase=state.phase,
                 payload=event,
             )
-        output = str(
+        output = _json_tool_output(
+            "request_terminal_session",
+            "pending_user_confirmation",
             {
-                "request_id": request.request_id,
-                "status": "pending_user_confirmation",
-                "asset_id": request.asset_id,
-                "asset_name": request.asset_name,
+                "requestId": request.request_id,
+                "assetId": request.asset_id,
+                "assetName": request.asset_name,
                 "reason": request.reason,
-            }
+            },
         )
         if manager:
             yield from manager.update(tool_output=output)

@@ -6,11 +6,18 @@ import { ConversationList } from '../assistant/ConversationList'
 import { AssetList } from './AssetList'
 import { useAppearance } from '../../hooks/useAppearance'
 
+type ConversationRunBadge = {
+  conversationId: string
+  status: 'running' | 'needs_approval' | 'completed' | 'failed'
+  hasUnread: boolean
+}
+
 type AssetSidebarProps = {
   assets: Asset[]
   groups: AssetGroup[]
   conversationSummaries: ConversationSummary[]
   activeConversationId: string | null
+  backgroundRun: ConversationRunBadge | null
   selectedAssetId: number
   collapsed: boolean
   onToggleCollapse: () => void
@@ -24,7 +31,7 @@ type AssetSidebarProps = {
   onDeleteAssetConfirm?: (asset: Asset) => void
 }
 
-export function AssetSidebar({ assets, groups, conversationSummaries, activeConversationId, selectedAssetId, collapsed, onToggleCollapse, onSelectAsset, onSelectConversation, onDeleteConversation, onUpdateAsset, onDeleteAsset, onAddAsset, onEditAsset, onDeleteAssetConfirm }: AssetSidebarProps) {
+export function AssetSidebar({ assets, groups, conversationSummaries, activeConversationId, backgroundRun, selectedAssetId, collapsed, onToggleCollapse, onSelectAsset, onSelectConversation, onDeleteConversation, onUpdateAsset, onDeleteAsset, onAddAsset, onEditAsset, onDeleteAssetConfirm }: AssetSidebarProps) {
   const { t } = useAppearance()
   const [activeTab, setActiveTab] = useState<'assets' | 'conversations'>('assets')
 
@@ -133,6 +140,9 @@ export function AssetSidebar({ assets, groups, conversationSummaries, activeConv
                     onClick={() => onSelectConversation(conversation.id)}
                     title={conversation.title}
                   >
+                    {backgroundRun?.conversationId === conversation.id ? (
+                      <span className={`absolute right-2 top-2 h-2.5 w-2.5 rounded-full ${backgroundRun.status === 'needs_approval' ? 'bg-ops-warning' : backgroundRun.status === 'failed' ? 'bg-ops-danger' : backgroundRun.status === 'completed' ? 'bg-ops-emerald' : 'bg-ops-cyan'} ${backgroundRun.hasUnread ? 'shadow-glow' : ''}`} />
+                    ) : null}
                     <svg
                       width="20"
                       height="20"
@@ -173,6 +183,7 @@ export function AssetSidebar({ assets, groups, conversationSummaries, activeConv
             <ConversationList
               items={conversationSummaries}
               activeConversationId={activeConversationId}
+              backgroundRun={backgroundRun}
               onSelect={onSelectConversation}
               onDelete={onDeleteConversation}
             />
