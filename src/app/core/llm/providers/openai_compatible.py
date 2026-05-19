@@ -24,37 +24,42 @@ class OpenAICompatibleLLMProvider:
         request: LLMCompletionRequest,
     ) -> Iterator[LLMCompletionChunk]:
         params = self._build_completion_params(config=config, request=request, stream=True)
-        response = self._get_client(config).chat.completions.create(**params)
-        finish_reason: str | None = None
-        usage: LLMTokenUsage | None = None
-        tool_call_fragments: dict[int, dict[str, Any]] = {}
-        for chunk in response:
-            if not chunk.choices:
-                continue
-            usage = self._extract_usage(chunk) or usage
-            choice = chunk.choices[0]
-            finish_reason = getattr(choice, "finish_reason", finish_reason)
-            delta = getattr(choice, "delta", None)
-            text = getattr(delta, "content", None)
-            reasoning = getattr(delta, "reasoning_content", None)
-            for tool_call in getattr(delta, "tool_calls", None) or []:
-                index = getattr(tool_call, "index", 0) or 0
-                current = tool_call_fragments.setdefault(index, {"id": "", "name": "", "arguments": ""})
-                tool_call_id = getattr(tool_call, "id", None)
-                if isinstance(tool_call_id, str) and tool_call_id:
-                    current["id"] = tool_call_id
-                function = getattr(tool_call, "function", None)
-                function_name = getattr(function, "name", None)
-                if isinstance(function_name, str) and function_name:
-                    current["name"] = function_name
-                function_arguments = getattr(function, "arguments", None)
-                if isinstance(function_arguments, str) and function_arguments:
-                    current["arguments"] += function_arguments
-                    yield LLMCompletionChunk(tool_arguments_delta=function_arguments)
-            if isinstance(reasoning, str) and reasoning:
-                yield LLMCompletionChunk(thinking_delta=reasoning)
-            if isinstance(text, str) and text:
-                yield LLMCompletionChunk(delta=text)
+        try:
+            response = self._get_client(config).chat.completions.create(**params)
+            finish_reason: str | None = None
+            usage: LLMTokenUsage | None = None
+            tool_call_fragments: dict[int, dict[str, Any]] = {}
+            for chunk in response:
+                if not chunk.choices:
+                    continue
+                usage = self._extract_usage(chunk) or usage
+                choice = chunk.choices[0]
+                finish_reason = getattr(choice, "finish_reason", finish_reason)
+                delta = getattr(choice, "delta", None)
+                text = getattr(delta, "content", None)
+                reasoning = getattr(delta, "reasoning_content", None)
+                for tool_call in getattr(delta, "tool_calls", None) or []:
+                    index = getattr(tool_call, "index", 0) or 0
+                    current = tool_call_fragments.setdefault(index, {"id": "", "name": "", "arguments": ""})
+                    tool_call_id = getattr(tool_call, "id", None)
+                    if isinstance(tool_call_id, str) and tool_call_id:
+                        current["id"] = tool_call_id
+                    function = getattr(tool_call, "function", None)
+                    function_name = getattr(function, "name", None)
+                    if isinstance(function_name, str) and function_name:
+                        current["name"] = function_name
+                    function_arguments = getattr(function, "arguments", None)
+                    if isinstance(function_arguments, str) and function_arguments:
+                        current["arguments"] += function_arguments
+                        yield LLMCompletionChunk(tool_arguments_delta=function_arguments)
+                if isinstance(reasoning, str) and reasoning:
+                    yield LLMCompletionChunk(thinking_delta=reasoning)
+                if isinstance(text, str) and text:
+                    yield LLMCompletionChunk(delta=text)
+        except Exception as exc:
+            if self._is_openai_api_error(exc):
+                self._log_api_error(exc, config=config, params=params)
+            raise
         yield LLMCompletionChunk(
             tool_calls=self._build_stream_tool_calls(tool_call_fragments),
             finish_reason=finish_reason,
@@ -93,6 +98,63 @@ class OpenAICompatibleLLMProvider:
         input_tokens = int(getattr(usage, "prompt_tokens", 0) or getattr(usage, "input_tokens", 0) or 0)
         output_tokens = int(getattr(usage, "completion_tokens", 0) or getattr(usage, "output_tokens", 0) or 0)
         return LLMTokenUsage(input_tokens=input_tokens, output_tokens=output_tokens)
+
+    def _is_openai_api_error(self, exc: Exception) -> bool:
+        return exc.__class__.__name__ == "APIError" and exc.__class__.__module__.startswith("openai")
+
+    def _log_api_error(self, exc: Exception, *, config: ModelConfig, params: dict[str, Any]) -> None:
+        logger.error(
+            "OpenAI-compatible API request failed: status_code=%s body=%s model=%s provider=%s base_url=%s message_roles=%s tool_call_ids=%s",
+            getattr(exc, "status_code", None),
+            self._extract_error_body(exc),
+            config.model_name,
+            config.provider,
+            config.base_url,
+            self._message_roles(params),
+            self._tool_call_ids(params),
+        )
+
+    def _extract_error_body(self, exc: Exception) -> Any:
+        body = getattr(exc, "body", None)
+        if body is not None:
+            return body
+        response = getattr(exc, "response", None)
+        if response is None:
+            return None
+        try:
+            return response.json()
+        except Exception:
+            try:
+                return response.text
+            except Exception:
+                return None
+
+    def _message_roles(self, params: dict[str, Any]) -> list[str]:
+        messages = params.get("messages")
+        if not isinstance(messages, list):
+            return []
+        return [str(message.get("role", "")) for message in messages if isinstance(message, dict)]
+
+    def _tool_call_ids(self, params: dict[str, Any]) -> dict[str, list[str]]:
+        assistant_ids: list[str] = []
+        tool_ids: list[str] = []
+        messages = params.get("messages")
+        if not isinstance(messages, list):
+            return {"assistant": assistant_ids, "tool": tool_ids}
+        for message in messages:
+            if not isinstance(message, dict):
+                continue
+            if message.get("role") == "assistant":
+                for tool_call in message.get("tool_calls") or []:
+                    if isinstance(tool_call, dict):
+                        tool_call_id = tool_call.get("id")
+                        if tool_call_id:
+                            assistant_ids.append(str(tool_call_id))
+            if message.get("role") == "tool":
+                tool_call_id = message.get("tool_call_id")
+                if tool_call_id:
+                    tool_ids.append(str(tool_call_id))
+        return {"assistant": assistant_ids, "tool": tool_ids}
 
     def _build_completion_params(self, *, config: ModelConfig, request: LLMCompletionRequest, stream: bool) -> dict[str, Any]:
         preset = get_provider_preset(config.provider)

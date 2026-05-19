@@ -6,8 +6,9 @@ import logging
 from datetime import UTC, datetime
 from pathlib import Path
 import re
-from tempfile import NamedTemporaryFile
 from uuid import uuid4
+
+from app.utils.file_store import atomic_write_json
 
 logger = logging.getLogger(__name__)
 CONVERSATION_ID_PATTERN = re.compile(r"^conv_[A-Za-z0-9]+$")
@@ -60,9 +61,7 @@ class ConversationService:
         )
         self._ensure_base_dir()
         self._write_detail(detail)
-        summaries = self.list_conversations()
-        summaries.append(self._to_summary(detail))
-        self._write_index(summaries)
+        self._upsert_summary(detail)
         return self._to_summary(detail)
 
     def list_conversations(self) -> list[ConversationSummary]:
@@ -104,9 +103,7 @@ class ConversationService:
                     detail.title = generated_title_sync
 
         self._write_detail(detail)
-        summaries = [item for item in self.list_conversations() if item.id != conversation_id]
-        summaries.append(self._to_summary(detail))
-        self._write_index(summaries)
+        self._upsert_summary(detail)
 
         if should_generate_title and first_user_text and async_title_generation:
             import threading
@@ -132,9 +129,7 @@ class ConversationService:
                     detail.title = generated_title
                     detail.updated_at = self._utc_now()
                     self._write_detail(detail)
-                    summaries = [item for item in self.list_conversations() if item.id != conversation_id]
-                    summaries.append(self._to_summary(detail))
-                    self._write_index(summaries)
+                    self._upsert_summary(detail)
         except Exception:
             logger.exception("Failed to update conversation title conversation_id=%s", conversation_id)
 
@@ -143,8 +138,7 @@ class ConversationService:
         if not detail_path.exists():
             raise FileNotFoundError(conversation_id)
         detail_path.unlink()
-        summaries = [item for item in self.list_conversations() if item.id != conversation_id]
-        self._write_index(summaries)
+        self._delete_summary(conversation_id)
 
     def _sanitize_event(self, event: dict) -> dict:
         sanitized = dict(event)
@@ -218,6 +212,16 @@ class ConversationService:
     def _write_detail(self, detail: ConversationDetail) -> None:
         self._write_json(self._detail_path(detail.id), asdict(detail))
 
+    def _upsert_summary(self, detail: ConversationDetail) -> None:
+        conversation_id = detail.id
+        summaries = [item for item in self.list_conversations() if item.id != conversation_id]
+        summaries.append(self._to_summary(detail))
+        self._write_index(summaries)
+
+    def _delete_summary(self, conversation_id: str) -> None:
+        summaries = [item for item in self.list_conversations() if item.id != conversation_id]
+        self._write_index(summaries)
+
     def _write_index(self, summaries: list[ConversationSummary]) -> None:
         ordered = self._sort_summaries(summaries)
         self._write_json(self._index_path(), [asdict(item) for item in ordered])
@@ -226,12 +230,7 @@ class ConversationService:
         return sorted(summaries, key=lambda item: item.updated_at, reverse=True)
 
     def _write_json(self, path: Path, payload: dict | list) -> None:
-        self._ensure_base_dir()
-        with NamedTemporaryFile("w", encoding="utf-8", dir=self._base_dir, delete=False) as handle:
-            json.dump(payload, handle, ensure_ascii=False, indent=2)
-            handle.write("\n")
-            temp_path = Path(handle.name)
-        temp_path.replace(path)
+        atomic_write_json(path, payload)
 
     def _utc_now(self) -> str:
         return datetime.now(UTC).isoformat()

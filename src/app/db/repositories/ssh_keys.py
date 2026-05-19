@@ -1,8 +1,8 @@
-from datetime import UTC, datetime
-
+from sqlalchemy import func
 from sqlmodel import Session, col, select
 
 from app.db.models import Asset, SSHKey
+from app.db.repositories.common import commit_refresh, touch_updated_at
 
 
 def list_ssh_keys(session: Session) -> list[SSHKey]:
@@ -31,10 +31,7 @@ def create_ssh_key(
         passphrase_encryption_version=passphrase_encryption_version,
         encrypted_passphrase=encrypted_passphrase,
     )
-    session.add(row)
-    session.commit()
-    session.refresh(row)
-    return row
+    return commit_refresh(session, row)
 
 
 def update_ssh_key(session: Session, ssh_key_id: int, **updates) -> SSHKey | None:
@@ -43,11 +40,8 @@ def update_ssh_key(session: Session, ssh_key_id: int, **updates) -> SSHKey | Non
         return None
     for key, value in updates.items():
         setattr(row, key, value)
-    row.updated_at = datetime.now(UTC)
-    session.add(row)
-    session.commit()
-    session.refresh(row)
-    return row
+    touch_updated_at(row)
+    return commit_refresh(session, row)
 
 
 def delete_ssh_key(session: Session, ssh_key_id: int) -> bool:
@@ -60,4 +54,4 @@ def delete_ssh_key(session: Session, ssh_key_id: int) -> bool:
 
 
 def count_assets_by_ssh_key_id(session: Session, ssh_key_id: int) -> int:
-    return len(session.exec(select(Asset).where(Asset.ssh_key_id == ssh_key_id)).all())
+    return session.exec(select(func.count()).select_from(Asset).where(Asset.ssh_key_id == ssh_key_id)).one()

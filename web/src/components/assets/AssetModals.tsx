@@ -1,4 +1,5 @@
-import { type FormEvent, forwardRef, useImperativeHandle, useState, useEffect } from 'react'
+import { type FormEvent, forwardRef, useEffect, useImperativeHandle, useState } from 'react'
+import { getSerialPorts, type SerialPort } from '../../api'
 import type { Asset, AssetGroup, SSHKey } from '../../types/ops'
 import { useAppearance } from '../../hooks/useAppearance'
 
@@ -70,22 +71,220 @@ interface AssetModalsProps {
   onDeleteAsset: (id: number) => Promise<void>
 }
 
+type AssetFormModalProps = {
+  mode: 'add-asset' | 'edit-asset'
+  form: AddAssetForm
+  groups: AssetGroup[]
+  sshKeys: SSHKey[]
+  serialPorts: SerialPort[]
+  error: string | null
+  onChange: (field: keyof AddAssetForm, value: string) => void
+  onClose: () => void
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void
+}
+
+type DeleteAssetModalProps = {
+  asset: Asset
+  error: string | null
+  onClose: () => void
+  onDelete: () => Promise<void>
+}
+
+function AssetFormModal({ mode, form, groups, sshKeys, serialPorts, error, onChange, onClose, onSubmit }: AssetFormModalProps) {
+  const { t } = useAppearance()
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ops-bg/60 backdrop-blur-md animate-in fade-in duration-300" role="presentation">
+      <form className="w-[520px] max-w-[90vw] max-h-[90vh] overflow-y-auto bg-ops-panel/90 border border-ops-border/40 rounded-2xl p-8 shadow-2xl flex flex-col gap-6 backdrop-blur-xl animate-in zoom-in-95 duration-300" role="dialog" aria-modal="true" aria-labelledby="add-asset-title" onSubmit={onSubmit}>
+        <div className="flex items-center justify-between pb-4 border-b border-ops-border/20">
+          <h3 id="add-asset-title" className="text-[16px] font-bold  tracking-[0.15em] text-ops-cyan">
+            {mode === 'edit-asset' ? t('assets.updateInfrastructure') : t('assets.newInfrastructure')}
+          </h3>
+          <button type="button" onClick={onClose} className="text-ops-muted hover:text-ops-text transition-colors">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6L6 18M6 6l12 12" /></svg>
+          </button>
+        </div>
+        <div className="grid grid-cols-2 gap-4">
+          <label className="flex flex-col gap-2 text-[11px] font-bold  tracking-widest text-ops-muted/70 col-span-2 sm:col-span-1">
+            {t('assets.connectionMode')}
+            <select className="field-control" value={form.mode} onChange={(event) => onChange('mode', event.target.value as ConnectionMode)}>
+              <option value="ssh">{t('assets.sshProtocol')}</option>
+              <option value="serial">{t('assets.serialConnection')}</option>
+            </select>
+          </label>
+          {form.mode === 'ssh' ? (
+            <label className="flex flex-col gap-2 text-[11px] font-bold  tracking-widest text-ops-muted/70 col-span-2 sm:col-span-1">
+              {t('assets.environment')}
+              <select className="field-control" value={form.assetKind} onChange={(event) => onChange('assetKind', event.target.value as AssetKind)}>
+                <option value="linux">{t('assets.linuxServer')}</option>
+                <option value="cisco">Cisco IOS</option>
+                <option value="huawei">Huawei VRP</option>
+                <option value="juniper">Juniper JunOS</option>
+                <option value="h3c">H3C Comware</option>
+                <option value="network">{t('assets.genericNetwork')}</option>
+              </select>
+            </label>
+          ) : (
+            <div className="col-span-2 sm:col-span-1" />
+          )}
+          <label className="flex flex-col gap-2 text-[11px] font-bold  tracking-widest text-ops-muted/70 col-span-2 sm:col-span-1">
+            {t('assets.displayName')}
+            <input className="field-control" value={form.name} onChange={(event) => onChange('name', event.target.value)} placeholder={form.mode === 'serial' ? 'serial-dev-01' : 'prod-server-01'} required />
+          </label>
+          <label className="flex flex-col gap-2 text-[11px] font-bold  tracking-widest text-ops-muted/70 col-span-2 sm:col-span-1">
+            {t('assets.resourceGroup')}
+            <select className="field-control" value={form.groupId} onChange={(event) => onChange('groupId', event.target.value)}>
+              <option value="">{t('settings.defaultGroup')}</option>
+              {groups.map((group) => (
+                <option key={group.id} value={group.id}>{group.name}</option>
+              ))}
+            </select>
+          </label>
+          {form.mode === 'ssh' ? (
+            <>
+              <label className="flex flex-col gap-2 text-[11px] font-bold  tracking-widest text-ops-muted/70 col-span-2 sm:col-span-1">
+                {t('assets.endpointHost')}
+                <input className="field-control font-mono" value={form.host} onChange={(event) => onChange('host', event.target.value)} placeholder="10.0.0.1" required />
+              </label>
+              <label className="flex flex-col gap-2 text-[11px] font-bold  tracking-widest text-ops-muted/70 col-span-2 sm:col-span-1">
+                {t('assets.port')}
+                <input className="field-control font-mono" type="number" min="1" max="65535" value={form.port} onChange={(event) => onChange('port', event.target.value)} placeholder="22" required />
+              </label>
+              <label className="flex flex-col gap-2 text-[11px] font-bold  tracking-widest text-ops-muted/70 col-span-2 sm:col-span-1">
+                {t('assets.systemUser')}
+                <input className="field-control font-mono" value={form.username} onChange={(event) => onChange('username', event.target.value)} placeholder="root" required />
+              </label>
+              <label className="flex flex-col gap-2 text-[11px] font-bold  tracking-widest text-ops-muted/70 col-span-2 sm:col-span-1">
+                {t('assets.authStrategy')}
+                <select className="field-control" value={form.authType} onChange={(event) => onChange('authType', event.target.value)}>
+                  <option value="password">{t('assets.password')}</option>
+                  <option value="key">{t('assets.sshKeypair')}</option>
+                  <option value="password_and_key">{t('assets.twoFactor')}</option>
+                </select>
+              </label>
+              {['key', 'password_and_key'].includes(form.authType) ? (
+                <label className="flex flex-col gap-2 text-[11px] font-bold  tracking-widest text-ops-muted/70 col-span-2 sm:col-span-1">
+                  {t('assets.selectSshKey')}
+                  <select className="field-control" value={form.sshKeyId} onChange={(event) => onChange('sshKeyId', event.target.value)} required>
+                    <option value="">{t('assets.selectIdentity')}</option>
+                    {sshKeys.map((sshKey) => (
+                      <option key={sshKey.id} value={sshKey.id}>{sshKey.name}</option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
+              <label className="flex flex-col gap-2 text-[11px] font-bold  tracking-widest text-ops-muted/70 col-span-2">
+                {t('assets.credentialPassphrase')}
+                <input className="field-control font-mono" type="password" value={form.credentialSecret} onChange={(event) => onChange('credentialSecret', event.target.value)} placeholder="••••••••••••" required={mode !== 'edit-asset'} />
+              </label>
+            </>
+          ) : null}
+          {form.mode === 'serial' ? (
+            <>
+              <label className="flex flex-col gap-1 text-sm text-ops-muted col-span-2 sm:col-span-1">
+                {t('assets.serialPort')}
+                <input className="field-control" list="serial-ports-list" value={form.serialPort} onChange={(event) => onChange('serialPort', event.target.value)} placeholder="COM3 / /dev/ttyUSB0" required />
+                <datalist id="serial-ports-list">
+                  {serialPorts.map((port) => (
+                    <option key={port.device} value={port.device}>
+                      {port.description && port.description !== 'n/a' ? `${port.device} (${port.description})` : port.device}
+                    </option>
+                  ))}
+                </datalist>
+              </label>
+              <label className="flex flex-col gap-1 text-sm text-ops-muted col-span-2 sm:col-span-1">
+                {t('assets.baudRate')}
+                <input className="field-control" type="number" value={form.baudRate} onChange={(event) => onChange('baudRate', event.target.value)} placeholder="9600" required />
+              </label>
+              <label className="flex flex-col gap-1 text-sm text-ops-muted col-span-2 sm:col-span-1">
+                {t('assets.dataBits')}
+                <select className="field-control" value={form.dataBits} onChange={(event) => onChange('dataBits', event.target.value)}>
+                  <option value="5">5</option>
+                  <option value="6">6</option>
+                  <option value="7">7</option>
+                  <option value="8">8</option>
+                </select>
+              </label>
+              <label className="flex flex-col gap-1 text-sm text-ops-muted col-span-2 sm:col-span-1">
+                {t('assets.parity')}
+                <select className="field-control" value={form.parity} onChange={(event) => onChange('parity', event.target.value)}>
+                  <option value="none">{t('assets.parityNone')}</option>
+                  <option value="odd">{t('assets.parityOdd')}</option>
+                  <option value="even">{t('assets.parityEven')}</option>
+                </select>
+              </label>
+              <label className="flex flex-col gap-1 text-sm text-ops-muted col-span-2 sm:col-span-1">
+                {t('assets.stopBits')}
+                <select className="field-control" value={form.stopBits} onChange={(event) => onChange('stopBits', event.target.value)}>
+                  <option value="1">1</option>
+                  <option value="1.5">1.5</option>
+                  <option value="2">2</option>
+                </select>
+              </label>
+            </>
+          ) : null}
+        </div>
+        {error ? <div className="settings-error text-center py-2 px-4 bg-ops-danger/10 border border-ops-danger/20 rounded-lg">{error}</div> : null}
+        <div className="flex items-center justify-end gap-3 pt-4 border-t border-ops-border/20">
+          <button type="button" className="button px-6" onClick={onClose}>{t('common.cancel')}</button>
+          <button type="submit" className="button button-primary px-8 shadow-glow">{t('assets.authorizeAndSave')}</button>
+        </div>
+      </form>
+    </div>
+  )
+}
+
+function DeleteAssetModal({ asset, error, onClose, onDelete }: DeleteAssetModalProps) {
+  const { t } = useAppearance()
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ops-bg/60 backdrop-blur-md animate-in fade-in duration-300" role="presentation">
+      <div className="w-[420px] max-w-[90vw] bg-ops-panel/90 border border-ops-border/40 rounded-2xl p-8 shadow-2xl flex flex-col gap-6 backdrop-blur-xl animate-in zoom-in-95 duration-300" role="dialog" aria-modal="true">
+        <div className="flex items-center gap-4 text-ops-danger">
+          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-ops-danger/10">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></svg>
+          </div>
+          <h3 className="text-lg font-bold  tracking-wider">{t('assets.confirmDeletion')}</h3>
+        </div>
+        <p className="text-[13px] leading-relaxed text-ops-text/80">
+          {t('assets.confirmDeleteAsset', { name: asset.name })}
+        </p>
+        <div className="flex items-center justify-end gap-3 pt-2">
+          <button type="button" className="button px-6" onClick={onClose}>{t('common.cancel')}</button>
+          <button type="button" className="button button-danger px-8" onClick={() => void onDelete()}>
+            {t('assets.decommission')}
+          </button>
+        </div>
+        {error ? <p className="settings-error mt-2">{error}</p> : null}
+      </div>
+    </div>
+  )
+}
+
 export const AssetModals = forwardRef<AssetModalsRef, AssetModalsProps>(
   ({ groups, sshKeys, onAddAsset, onUpdateAsset, onDeleteAsset }, ref) => {
-    const { t } = useAppearance()
     const [activeModal, setActiveModal] = useState<ActiveModal>(null)
     const [targetAsset, setTargetAsset] = useState<Asset | null>(null)
     const [addAssetForm, setAddAssetForm] = useState<AddAssetForm>(emptyAddAssetForm)
     const [addAssetError, setAddAssetError] = useState<string | null>(null)
-    const [systemSerialPorts, setSystemSerialPorts] = useState<{device: string, description: string}[]>([])
+    const [systemSerialPorts, setSystemSerialPorts] = useState<SerialPort[]>([])
 
     useEffect(() => {
-      if ((activeModal === 'add-asset' || activeModal === 'edit-asset') && addAssetForm.mode === 'serial') {
-        fetch('/api/system/serial-ports')
-          .then(res => res.json())
-          .then(data => setSystemSerialPorts(data))
-          .catch(err => console.error('Failed to fetch serial ports:', err))
+      if ((activeModal !== 'add-asset' && activeModal !== 'edit-asset') || addAssetForm.mode !== 'serial') {
+        return
       }
+
+      const controller = new AbortController()
+      getSerialPorts(controller.signal)
+        .then(setSystemSerialPorts)
+        .catch((error) => {
+          if (error instanceof DOMException && error.name === 'AbortError') {
+            return
+          }
+          console.error('Failed to fetch serial ports:', error)
+        })
+
+      return () => controller.abort()
     }, [activeModal, addAssetForm.mode])
 
     const updateAddAssetForm = (field: keyof AddAssetForm, value: string) => {
@@ -185,180 +384,42 @@ export const AssetModals = forwardRef<AssetModalsRef, AssetModalsProps>(
       }
     }
 
+    const handleAssetDelete = async () => {
+      if (!targetAsset) {
+        return
+      }
+      setAddAssetError(null)
+      try {
+        await onDeleteAsset(targetAsset.id)
+        closeModal()
+      } catch (error) {
+        setAddAssetError(error instanceof Error ? error.message : 'Deletion Failed')
+      }
+    }
+
     return (
       <>
         {(activeModal === 'add-asset' || activeModal === 'edit-asset') ? (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-ops-bg/60 backdrop-blur-md animate-in fade-in duration-300" role="presentation">
-            <form className="w-[520px] max-w-[90vw] max-h-[90vh] overflow-y-auto bg-ops-panel/90 border border-ops-border/40 rounded-2xl p-8 shadow-2xl flex flex-col gap-6 backdrop-blur-xl animate-in zoom-in-95 duration-300" role="dialog" aria-modal="true" aria-labelledby="add-asset-title" onSubmit={handleAssetSubmit}>
-              <div className="flex items-center justify-between pb-4 border-b border-ops-border/20">
-                <h3 id="add-asset-title" className="text-[16px] font-bold  tracking-[0.15em] text-ops-cyan">
-                  {activeModal === 'edit-asset' ? t('assets.updateInfrastructure') : t('assets.newInfrastructure')}
-                </h3>
-                <button type="button" onClick={closeModal} className="text-ops-muted hover:text-ops-text transition-colors">
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6L6 18M6 6l12 12" /></svg>
-                </button>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <label className="flex flex-col gap-2 text-[11px] font-bold  tracking-widest text-ops-muted/70 col-span-2 sm:col-span-1">
-                  {t('assets.connectionMode')}
-                  <select className="field-control" value={addAssetForm.mode} onChange={(event) => updateAddAssetForm('mode', event.target.value as ConnectionMode)}>
-                    <option value="ssh">{t('assets.sshProtocol')}</option>
-                    <option value="serial">{t('assets.serialConnection')}</option>
-                  </select>
-                </label>
-                {addAssetForm.mode === 'ssh' ? (
-                  <label className="flex flex-col gap-2 text-[11px] font-bold  tracking-widest text-ops-muted/70 col-span-2 sm:col-span-1">
-                    {t('assets.environment')}
-                    <select className="field-control" value={addAssetForm.assetKind} onChange={(event) => updateAddAssetForm('assetKind', event.target.value as AssetKind)}>
-                      <option value="linux">{t('assets.linuxServer')}</option>
-                      <option value="cisco">Cisco IOS</option>
-                      <option value="huawei">Huawei VRP</option>
-                      <option value="juniper">Juniper JunOS</option>
-                      <option value="h3c">H3C Comware</option>
-                      <option value="network">{t('assets.genericNetwork')}</option>
-                    </select>
-                  </label>
-                ) : (
-                  <div className="col-span-2 sm:col-span-1" />
-                )}
-                <label className="flex flex-col gap-2 text-[11px] font-bold  tracking-widest text-ops-muted/70 col-span-2 sm:col-span-1">
-                  {t('assets.displayName')}
-                  <input className="field-control" value={addAssetForm.name} onChange={(event) => updateAddAssetForm('name', event.target.value)} placeholder={addAssetForm.mode === 'serial' ? 'serial-dev-01' : 'prod-server-01'} required />
-                </label>
-                <label className="flex flex-col gap-2 text-[11px] font-bold  tracking-widest text-ops-muted/70 col-span-2 sm:col-span-1">
-                  {t('assets.resourceGroup')}
-                  <select className="field-control" value={addAssetForm.groupId} onChange={(event) => updateAddAssetForm('groupId', event.target.value)}>
-                    <option value="">{t('settings.defaultGroup')}</option>
-                    {groups.map((group) => (
-                      <option key={group.id} value={group.id}>{group.name}</option>
-                    ))}
-                  </select>
-                </label>
-                {addAssetForm.mode === 'ssh' ? (
-                  <>
-                    <label className="flex flex-col gap-2 text-[11px] font-bold  tracking-widest text-ops-muted/70 col-span-2 sm:col-span-1">
-                      {t('assets.endpointHost')}
-                      <input className="field-control font-mono" value={addAssetForm.host} onChange={(event) => updateAddAssetForm('host', event.target.value)} placeholder="10.0.0.1" required />
-                    </label>
-                    <label className="flex flex-col gap-2 text-[11px] font-bold  tracking-widest text-ops-muted/70 col-span-2 sm:col-span-1">
-                      {t('assets.port')}
-                      <input className="field-control font-mono" type="number" min="1" max="65535" value={addAssetForm.port} onChange={(event) => updateAddAssetForm('port', event.target.value)} placeholder="22" required />
-                    </label>
-                    <label className="flex flex-col gap-2 text-[11px] font-bold  tracking-widest text-ops-muted/70 col-span-2 sm:col-span-1">
-                      {t('assets.systemUser')}
-                      <input className="field-control font-mono" value={addAssetForm.username} onChange={(event) => updateAddAssetForm('username', event.target.value)} placeholder="root" required />
-                    </label>
-                    <label className="flex flex-col gap-2 text-[11px] font-bold  tracking-widest text-ops-muted/70 col-span-2 sm:col-span-1">
-                      {t('assets.authStrategy')}
-                      <select className="field-control" value={addAssetForm.authType} onChange={(event) => updateAddAssetForm('authType', event.target.value)}>
-                        <option value="password">{t('assets.password')}</option>
-                        <option value="key">{t('assets.sshKeypair')}</option>
-                        <option value="password_and_key">{t('assets.twoFactor')}</option>
-                      </select>
-                    </label>
-                    {['key', 'password_and_key'].includes(addAssetForm.authType) ? (
-                      <label className="flex flex-col gap-2 text-[11px] font-bold  tracking-widest text-ops-muted/70 col-span-2 sm:col-span-1">
-                        {t('assets.selectSshKey')}
-                        <select className="field-control" value={addAssetForm.sshKeyId} onChange={(event) => updateAddAssetForm('sshKeyId', event.target.value)} required>
-                          <option value="">{t('assets.selectIdentity')}</option>
-                          {sshKeys.map((sshKey) => (
-                            <option key={sshKey.id} value={sshKey.id}>{sshKey.name}</option>
-                          ))}
-                        </select>
-                      </label>
-                    ) : null}
-                    <label className="flex flex-col gap-2 text-[11px] font-bold  tracking-widest text-ops-muted/70 col-span-2">
-                      {t('assets.credentialPassphrase')}
-                      <input className="field-control font-mono" type="password" value={addAssetForm.credentialSecret} onChange={(event) => updateAddAssetForm('credentialSecret', event.target.value)} placeholder="••••••••••••" required={activeModal !== 'edit-asset'} />
-                    </label>
-                  </>
-                ) : null}
-                {addAssetForm.mode === 'serial' ? (
-                  <>
-                    <label className="flex flex-col gap-1 text-sm text-ops-muted col-span-2 sm:col-span-1">
-                      {t('assets.serialPort')}
-                      <input className="field-control" list="serial-ports-list" value={addAssetForm.serialPort} onChange={(event) => updateAddAssetForm('serialPort', event.target.value)} placeholder="COM3 / /dev/ttyUSB0" required />
-                      <datalist id="serial-ports-list">
-                        {systemSerialPorts.map((port) => (
-                          <option key={port.device} value={port.device}>
-                            {port.description && port.description !== 'n/a' ? `${port.device} (${port.description})` : port.device}
-                          </option>
-                        ))}
-                      </datalist>
-                    </label>
-                    <label className="flex flex-col gap-1 text-sm text-ops-muted col-span-2 sm:col-span-1">
-                      {t('assets.baudRate')}
-                      <input className="field-control" type="number" value={addAssetForm.baudRate} onChange={(event) => updateAddAssetForm('baudRate', event.target.value)} placeholder="9600" required />
-                    </label>
-                    <label className="flex flex-col gap-1 text-sm text-ops-muted col-span-2 sm:col-span-1">
-                      {t('assets.dataBits')}
-                      <select className="field-control" value={addAssetForm.dataBits} onChange={(event) => updateAddAssetForm('dataBits', event.target.value)}>
-                        <option value="5">5</option>
-                        <option value="6">6</option>
-                        <option value="7">7</option>
-                        <option value="8">8</option>
-                      </select>
-                    </label>
-                    <label className="flex flex-col gap-1 text-sm text-ops-muted col-span-2 sm:col-span-1">
-                      {t('assets.parity')}
-                      <select className="field-control" value={addAssetForm.parity} onChange={(event) => updateAddAssetForm('parity', event.target.value)}>
-                        <option value="none">{t('assets.parityNone')}</option>
-                        <option value="odd">{t('assets.parityOdd')}</option>
-                        <option value="even">{t('assets.parityEven')}</option>
-                      </select>
-                    </label>
-                    <label className="flex flex-col gap-1 text-sm text-ops-muted col-span-2 sm:col-span-1">
-                      {t('assets.stopBits')}
-                      <select className="field-control" value={addAssetForm.stopBits} onChange={(event) => updateAddAssetForm('stopBits', event.target.value)}>
-                        <option value="1">1</option>
-                        <option value="1.5">1.5</option>
-                        <option value="2">2</option>
-                      </select>
-                    </label>
-                  </>
-                ) : null}
-              </div>
-              {addAssetError ? <div className="settings-error text-center py-2 px-4 bg-ops-danger/10 border border-ops-danger/20 rounded-lg">{addAssetError}</div> : null}
-              <div className="flex items-center justify-end gap-3 pt-4 border-t border-ops-border/20">
-                <button type="button" className="button px-6" onClick={closeModal}>{t('common.cancel')}</button>
-                <button type="submit" className="button button-primary px-8 shadow-glow">{t('assets.authorizeAndSave')}</button>
-              </div>
-            </form>
-          </div>
+          <AssetFormModal
+            mode={activeModal}
+            form={addAssetForm}
+            groups={groups}
+            sshKeys={sshKeys}
+            serialPorts={systemSerialPorts}
+            error={addAssetError}
+            onChange={updateAddAssetForm}
+            onClose={closeModal}
+            onSubmit={handleAssetSubmit}
+          />
         ) : null}
 
         {activeModal === 'delete-asset' && targetAsset ? (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-ops-bg/60 backdrop-blur-md animate-in fade-in duration-300" role="presentation">
-            <div className="w-[420px] max-w-[90vw] bg-ops-panel/90 border border-ops-border/40 rounded-2xl p-8 shadow-2xl flex flex-col gap-6 backdrop-blur-xl animate-in zoom-in-95 duration-300" role="dialog" aria-modal="true">
-              <div className="flex items-center gap-4 text-ops-danger">
-                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-ops-danger/10">
-                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></svg>
-                </div>
-                <h3 className="text-lg font-bold  tracking-wider">{t('assets.confirmDeletion')}</h3>
-              </div>
-              <p className="text-[13px] leading-relaxed text-ops-text/80">
-                {t('assets.confirmDeleteAsset', { name: targetAsset.name })}
-              </p>
-              <div className="flex items-center justify-end gap-3 pt-2">
-                <button type="button" className="button px-6" onClick={closeModal}>{t('common.cancel')}</button>
-                <button
-                  type="button"
-                  className="button button-danger px-8"
-                  onClick={async () => {
-                    try {
-                      await onDeleteAsset(targetAsset.id)
-                      closeModal()
-                    } catch (error) {
-                      setAddAssetError(error instanceof Error ? error.message : 'Deletion Failed')
-                    }
-                  }}
-                >
-                  {t('assets.decommission')}
-                </button>
-              </div>
-              {addAssetError ? <p className="settings-error mt-2">{addAssetError}</p> : null}
-            </div>
-          </div>
+          <DeleteAssetModal
+            asset={targetAsset}
+            error={addAssetError}
+            onClose={closeModal}
+            onDelete={handleAssetDelete}
+          />
         ) : null}
       </>
     )

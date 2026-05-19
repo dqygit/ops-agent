@@ -6,6 +6,7 @@ import {
 } from '../../api'
 import { getDesktopApiBaseUrl } from '../../desktop'
 import type { Asset } from '../../types/ops'
+import { stripAnsi } from '../../components/assistant/conversation/utils'
 import {
   buildTerminalWebSocketUrl,
   defaultLocalTerminalAsset,
@@ -213,7 +214,7 @@ export function useTerminalSessions({
     const tab = terminalTabsRef.current.find((item) => item.assetId === activeTerminalAssetId)
     const raw = tab?.output ?? ''
     if (!raw) return false
-    const cleaned = raw.replace(/[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g, '')
+    const cleaned = stripAnsi(raw)
     try {
       await navigator.clipboard.writeText(cleaned)
       return true

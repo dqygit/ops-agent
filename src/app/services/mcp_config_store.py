@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 import json
-import os
 import re
-import tempfile
 import threading
 import uuid
 from dataclasses import dataclass, field
@@ -12,6 +10,7 @@ from pathlib import Path
 from typing import Any, Literal, cast
 
 from app.shared.config import MCP_SERVERS_PATH
+from app.utils.file_store import atomic_write_json
 
 MCPTransport = Literal["stdio", "http_sse"]
 MCPApprovalPolicy = Literal["allow", "ask", "deny"]
@@ -162,25 +161,7 @@ class MCPConfigStore:
             "version": 1,
             "servers": [self._server_to_dict(server) for server in normalized],
         }
-        self._path.parent.mkdir(parents=True, exist_ok=True)
-
-        fd, tmp_name = tempfile.mkstemp(
-            prefix=f"{self._path.stem}.",
-            suffix=".tmp",
-            dir=self._path.parent,
-            text=True,
-        )
-        try:
-            with os.fdopen(fd, "w", encoding="utf-8") as handle:
-                json.dump(payload, handle, ensure_ascii=False, indent=2)
-                handle.write("\n")
-            os.replace(tmp_name, self._path)
-        except Exception:
-            try:
-                os.unlink(tmp_name)
-            except FileNotFoundError:
-                pass
-            raise
+        atomic_write_json(self._path, payload)
         return normalized
 
     def list_servers(self) -> list[MCPServerConfig]:

@@ -1,15 +1,15 @@
 import json
-from datetime import UTC, datetime
 
 from sqlmodel import select
 
 from app.db.models import Asset, AssetGroup
 from app.db.repositories.assets import create_asset, create_asset_group, delete_asset_graph, delete_asset_group, get_asset_group, list_asset_groups, list_assets, update_asset_group
 from app.db.repositories.audit import create_audit_log
+from app.db.repositories.common import commit_refresh, touch_updated_at
 from app.db.repositories.credentials import create_credential, get_credential_by_asset_id, update_credential
 from app.db.repositories.ssh_keys import get_ssh_key
+from app.utils.credential_factory import build_credential_service
 from app.services.credential_service import CredentialService
-from app.services.secret_key import get_ops_agent_secret_key
 
 
 class GroupNotFoundError(ValueError):
@@ -19,9 +19,6 @@ class GroupNotFoundError(ValueError):
 class SSHKeyNotFoundError(ValueError):
     pass
 
-
-def _build_credential_service():
-    return CredentialService(secret_key=get_ops_agent_secret_key())
 
 
 def _ensure_group_exists(session, group_id):
@@ -71,7 +68,7 @@ def create_asset_record(session, asset_data):
     credential_secret = asset_data.credential_secret
     if credential_secret is None:
         return asset
-    encrypted_blob = _build_credential_service().encrypt_secret(credential_secret.get_secret_value())
+    encrypted_blob = build_credential_service().encrypt_secret(credential_secret.get_secret_value())
     create_credential(
         session,
         asset_id=asset_id,
@@ -106,16 +103,14 @@ def update_asset_record(session, asset_id, asset_data):
 
     for key, value in payload.items():
         setattr(asset, key, value)
-    asset.updated_at = datetime.now(UTC)
+    touch_updated_at(asset)
 
-    session.add(asset)
-    session.commit()
-    session.refresh(asset)
+    commit_refresh(session, asset)
 
     credential_secret = asset_data.credential_secret
     if credential_secret is None:
         return asset
-    encrypted_blob = _build_credential_service().encrypt_secret(credential_secret.get_secret_value())
+    encrypted_blob = build_credential_service().encrypt_secret(credential_secret.get_secret_value())
     updated_credential = update_credential(
         session,
         asset_id,

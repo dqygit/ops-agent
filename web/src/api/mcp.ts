@@ -1,4 +1,5 @@
 import { requestJson, requestVoid } from './client'
+import { mapTimestamps } from './mappers'
 import type { MCPApprovalPolicy, MCPConnectionTestResult, MCPServer, MCPTool, MCPTransport } from '../types/ops'
 
 export type MCPServerPayload = {
@@ -144,8 +145,7 @@ export function mapMCPTool(dto: MCPToolDto): MCPTool {
     enabled: dto.enabled,
     discovered: dto.discovered,
     lastDiscoveredAt: dto.last_discovered_at,
-    createdAt: dto.created_at,
-    updatedAt: dto.updated_at,
+    ...mapTimestamps(dto),
   }
 }
 
@@ -168,8 +168,7 @@ export function mapMCPServer(dto: MCPServerDto): MCPServer {
     lastDiscoveredAt: dto.last_discovered_at,
     lastRefreshSucceeded: dto.last_refresh_succeeded,
     tools: dto.tools.map(mapMCPTool),
-    createdAt: dto.created_at,
-    updatedAt: dto.updated_at,
+    ...mapTimestamps(dto),
   }
 }
 

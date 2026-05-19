@@ -7,6 +7,7 @@ from app.api.schemas import AssetContextView
 from app.core.connectors.server import connector_factory
 from app.db.session import get_session
 from app.services.asset_service import get_asset_record
+from app.utils.local_terminal_asset import build_local_terminal_asset
 from app.services.terminal_service import TerminalService
 
 router = APIRouter()
@@ -135,20 +136,7 @@ def reconnect_terminal_session(
 ) -> TerminalSessionResponse:
     asset = get_asset_record(session, payload.asset_id)
     if asset is None and payload.asset_id == 0:
-        # Local terminal fallback when asset not persisted in DB.
-        from types import SimpleNamespace
-
-        asset = SimpleNamespace(
-            id=0,
-            name="local-terminal",
-            asset_type="local_terminal",
-            host="localhost",
-            port=0,
-            username="",
-            auth_type="",
-            tags=[],
-            ssh_key_id=None,
-        )
+        asset = build_local_terminal_asset()
     if asset is None:
         raise HTTPException(status_code=404, detail="Asset not found")
     result = terminal_service.open_session(asset)

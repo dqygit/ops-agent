@@ -1,4 +1,5 @@
 import { requestJson } from './client'
+import { mapRequiredUpdatedAt } from './mappers'
 import type { SkillPackageDto, SkillsResponseDto } from '../types/api'
 import type { SkillPackage } from '../types/ops'
 
@@ -9,7 +10,7 @@ export function mapSkillPackage(dto: SkillPackageDto): SkillPackage {
     path: dto.path,
     valid: dto.valid,
     error: dto.error,
-    updatedAt: dto.updated_at,
+    ...mapRequiredUpdatedAt(dto),
     bodySize: dto.body_size,
   }
 }

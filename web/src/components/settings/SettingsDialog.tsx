@@ -14,7 +14,6 @@ import {
   getGroups,
   getModelConfigs,
   getSSHKeys,
-  getSkills,
   listMCPServers,
   refreshMCPServer,
   setDefaultModelConfig,
@@ -29,7 +28,8 @@ import {
   updateSSHKey,
 } from '../../api'
 import { useAppearance } from '../../hooks/useAppearance'
-import type { AssetGroup, MCPServer, MCPTool, ModelConfig, SSHKey, SkillPackage } from '../../types/ops'
+import { useSkillPackages } from '../../hooks/useSkillPackages'
+import type { AssetGroup, MCPServer, MCPTool, ModelConfig, SSHKey } from '../../types/ops'
 import { AppearanceSection } from './AppearanceSection'
 import { DeleteConfirmDialog } from './DeleteConfirmDialog'
 import { GroupsSection } from './GroupsSection'
@@ -145,20 +145,38 @@ function modelToForm(config: ModelConfig): ModelForm {
   }
 }
 
+type OperationDomain = 'groups' | 'models' | 'sshKeys' | 'permissions' | 'mcp'
+
+const emptySavingByDomain: Record<OperationDomain, boolean> = {
+  groups: false,
+  models: false,
+  sshKeys: false,
+  permissions: false,
+  mcp: false,
+}
+
+const emptyErrorByDomain: Record<OperationDomain, string | null> = {
+  groups: null,
+  models: null,
+  sshKeys: null,
+  permissions: null,
+  mcp: null,
+}
+
 export function SettingsDialog({ initialGroups, selectedModel, sshKeys: initialSSHKeys, onSelectedModelChange, onGroupsChange, onModelOptionsChange, onSSHKeysChange, onClose }: SettingsDialogProps) {
   const { language, themeMode, resolvedTheme, setLanguage, setThemeMode, t } = useAppearance()
   const [activeSection, setActiveSection] = useState<SettingsSection>('appearance')
   const [groups, setGroups] = useState<AssetGroup[]>(initialGroups)
   const [modelConfigs, setModelConfigs] = useState<ModelConfig[]>([])
   const [sshKeys, setSSHKeys] = useState<SSHKey[]>(initialSSHKeys)
-  const [skills, setSkills] = useState<SkillPackage[]>([])
+  const { skillPackages: skills, loading: skillsLoading, error: skillsError, loadSkillPackages } = useSkillPackages()
   const [mcpServers, setMCPServers] = useState<MCPServer[]>([])
   const [loading, setLoading] = useState(true)
-  const [skillsLoading, setSkillsLoading] = useState(false)
   const [mcpLoading, setMCPLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [skillsError, setSkillsError] = useState<string | null>(null)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [mcpError, setMCPError] = useState<string | null>(null)
+  const [savingByDomain, setSavingByDomain] = useState<Record<OperationDomain, boolean>>(emptySavingByDomain)
+  const [errorByDomain, setErrorByDomain] = useState<Record<OperationDomain, string | null>>(emptyErrorByDomain)
   const [groupForm, setGroupForm] = useState<GroupForm>(emptyGroupForm)
   const [showGroupForm, setShowGroupForm] = useState(false)
   const [editingGroup, setEditingGroup] = useState<AssetGroup | null>(null)
@@ -177,15 +195,15 @@ export function SettingsDialog({ initialGroups, selectedModel, sshKeys: initialS
   const [editingMCPServer, setEditingMCPServer] = useState<MCPServer | null>(null)
   const [deletingMCPServer, setDeletingMCPServer] = useState<MCPServer | null>(null)
   const [selectedMCPServerId, setSelectedMCPServerId] = useState<string | null>(null)
-  const [saving, setSaving] = useState(false)
-  const [testResult, setTestResult] = useState<string | null>(null)
+  const [modelTestResult, setModelTestResult] = useState<string | null>(null)
+  const [mcpTestResult, setMCPTestResult] = useState<string | null>(null)
   const [discoveredModels, setDiscoveredModels] = useState<string[]>([])
   const [discoveringModels, setDiscoveringModels] = useState(false)
   const [modelDiscoveryMessage, setModelDiscoveryMessage] = useState<string | null>(null)
 
   const loadSettings = async () => {
     setLoading(true)
-    setError(null)
+    setLoadError(null)
     try {
       const [nextGroups, nextModels, nextSSHKeys, nextApprovalPolicy] = await Promise.all([getGroups(), getModelConfigs(), getSSHKeys(), getApprovalPolicy()])
       setGroups(nextGroups)
@@ -196,7 +214,7 @@ export function SettingsDialog({ initialGroups, selectedModel, sshKeys: initialS
       onSSHKeysChange(nextSSHKeys)
       setPermissionsForm({ allow: nextApprovalPolicy.permissions.allow, deny: nextApprovalPolicy.permissions.deny, allowInput: '', denyInput: '' })
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : 'Failed to load settings')
+      setLoadError(loadError instanceof Error ? loadError.message : 'Failed to load settings')
     } finally {
       setLoading(false)
     }
@@ -217,16 +235,7 @@ export function SettingsDialog({ initialGroups, selectedModel, sshKeys: initialS
   }
 
   const loadSkills = async () => {
-    setSkillsLoading(true)
-    setSkillsError(null)
-    try {
-      const nextSkills = await getSkills()
-      setSkills(nextSkills)
-    } catch (loadError) {
-      setSkillsError(loadError instanceof Error ? loadError.message : 'Failed to load skills')
-    } finally {
-      setSkillsLoading(false)
-    }
+    await loadSkillPackages(true)
   }
 
   useEffect(() => {
@@ -234,6 +243,21 @@ export function SettingsDialog({ initialGroups, selectedModel, sshKeys: initialS
     void loadSkills()
     void loadMCPServers()
   }, [])
+
+  const runWithSaving = async (domain: OperationDomain, action: () => Promise<void>, fallbackMessage: string) => {
+    setSavingByDomain((current) => ({ ...current, [domain]: true }))
+    setErrorByDomain((current) => ({ ...current, [domain]: null }))
+    try {
+      await action()
+    } catch (actionError) {
+      setErrorByDomain((current) => ({
+        ...current,
+        [domain]: actionError instanceof Error ? actionError.message : fallbackMessage,
+      }))
+    } finally {
+      setSavingByDomain((current) => ({ ...current, [domain]: false }))
+    }
+  }
 
   const startCreateGroup = () => {
     setEditingGroup(null)
@@ -257,9 +281,7 @@ export function SettingsDialog({ initialGroups, selectedModel, sshKeys: initialS
 
   const saveGroup = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    setSaving(true)
-    setError(null)
-    try {
+    await runWithSaving('groups', async () => {
       const payload = { name: groupForm.name.trim(), description: groupForm.description.trim() }
       const savedGroup = editingGroup
         ? await updateGroup(editingGroup.id, payload)
@@ -270,36 +292,26 @@ export function SettingsDialog({ initialGroups, selectedModel, sshKeys: initialS
       setGroups(nextGroups)
       onGroupsChange(nextGroups)
       cancelGroupForm()
-    } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : 'Failed to save group')
-    } finally {
-      setSaving(false)
-    }
+    }, 'Failed to save group')
   }
 
   const confirmDeleteGroup = async () => {
     if (!deletingGroup) {
       return
     }
-    setSaving(true)
-    setError(null)
-    try {
+    await runWithSaving('groups', async () => {
       await deleteGroup(deletingGroup.id)
       const nextGroups = groups.filter((group) => group.id !== deletingGroup.id)
       setGroups(nextGroups)
       onGroupsChange(nextGroups)
       setDeletingGroup(null)
-    } catch (deleteError) {
-      setError(deleteError instanceof Error ? deleteError.message : 'Failed to delete group')
-    } finally {
-      setSaving(false)
-    }
+    }, 'Failed to delete group')
   }
 
   const startCreateModel = () => {
     setEditingModel(null)
     setDeletingModel(null)
-    setTestResult(null)
+    setModelTestResult(null)
     setDiscoveredModels([])
     setModelDiscoveryMessage(null)
     setModelForm({ ...emptyModelForm, modelName: '' })
@@ -329,7 +341,7 @@ export function SettingsDialog({ initialGroups, selectedModel, sshKeys: initialS
   const startEditModel = (config: ModelConfig) => {
     setEditingModel(config)
     setDeletingModel(null)
-    setTestResult(null)
+    setModelTestResult(null)
     setDiscoveredModels([config.modelName])
     setModelDiscoveryMessage(null)
     setModelForm(modelToForm(config))
@@ -339,7 +351,7 @@ export function SettingsDialog({ initialGroups, selectedModel, sshKeys: initialS
   const cancelModelForm = () => {
     setEditingModel(null)
     setShowModelForm(false)
-    setTestResult(null)
+    setModelTestResult(null)
     setDiscoveredModels([])
     setModelDiscoveryMessage(null)
     setModelForm(emptyModelForm)
@@ -380,8 +392,8 @@ export function SettingsDialog({ initialGroups, selectedModel, sshKeys: initialS
   const discoverModels = async () => {
     setDiscoveringModels(true)
     setModelDiscoveryMessage(null)
-    setTestResult(null)
-    setError(null)
+    setModelTestResult(null)
+    setErrorByDomain((current) => ({ ...current, models: null }))
     try {
       const result = await discoverModelConfigModels({
         provider: modelForm.provider,
@@ -397,7 +409,10 @@ export function SettingsDialog({ initialGroups, selectedModel, sshKeys: initialS
       setDiscoveredModels([])
       setModelForm((current) => ({ ...current, modelName: '' }))
       setModelDiscoveryMessage(null)
-      setError(discoverError instanceof Error ? discoverError.message : 'Model discovery failed')
+      setErrorByDomain((current) => ({
+        ...current,
+        models: discoverError instanceof Error ? discoverError.message : 'Model discovery failed',
+      }))
     } finally {
       setDiscoveringModels(false)
     }
@@ -405,9 +420,7 @@ export function SettingsDialog({ initialGroups, selectedModel, sshKeys: initialS
 
   const saveModel = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    setSaving(true)
-    setError(null)
-    try {
+    await runWithSaving('models', async () => {
       const savedConfig = editingModel
         ? await updateModelConfig(editingModel.id, toModelPayload())
         : await createModelConfig(toModelPayload())
@@ -420,53 +433,35 @@ export function SettingsDialog({ initialGroups, selectedModel, sshKeys: initialS
         onSelectedModelChange(savedConfig.modelName)
       }
       cancelModelForm()
-    } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : 'Failed to save model')
-    } finally {
-      setSaving(false)
-    }
+    }, 'Failed to save model')
   }
 
   const setDefaultModel = async (config: ModelConfig) => {
-    setSaving(true)
-    setError(null)
-    try {
+    await runWithSaving('models', async () => {
       const defaultConfig = await setDefaultModelConfig(config.id)
       const nextModels = modelConfigs.map((item) => ({ ...item, isDefault: item.id === defaultConfig.id }))
       setModelConfigs(nextModels)
       onModelOptionsChange(getModelOptions(nextModels))
       onSelectedModelChange(defaultConfig.modelName)
-    } catch (defaultError) {
-      setError(defaultError instanceof Error ? defaultError.message : 'Failed to set default model')
-    } finally {
-      setSaving(false)
-    }
+    }, 'Failed to set default model')
   }
 
   const confirmDeleteModel = async () => {
     if (!deletingModel || deletingModel.isDefault) {
       return
     }
-    setSaving(true)
-    setError(null)
-    try {
+    await runWithSaving('models', async () => {
       await deleteModelConfig(deletingModel.id)
       const nextModels = modelConfigs.filter((config) => config.id !== deletingModel.id)
       setModelConfigs(nextModels)
       onModelOptionsChange(getModelOptions(nextModels))
       setDeletingModel(null)
-    } catch (deleteError) {
-      setError(deleteError instanceof Error ? deleteError.message : 'Failed to delete model')
-    } finally {
-      setSaving(false)
-    }
+    }, 'Failed to delete model')
   }
 
   const testModel = async () => {
-    setSaving(true)
-    setTestResult(null)
-    setError(null)
-    try {
+    setModelTestResult(null)
+    await runWithSaving('models', async () => {
       const result = await testModelConfig({
         provider: modelForm.provider,
         baseUrl: modelForm.baseUrl.trim(),
@@ -477,19 +472,13 @@ export function SettingsDialog({ initialGroups, selectedModel, sshKeys: initialS
         maxTokens: Number(modelForm.maxTokens) || 1024,
         providerOptions: modelForm.providerOptions,
       })
-      setTestResult(result.message)
-    } catch (testError) {
-      setError(testError instanceof Error ? testError.message : 'Connection test failed')
-    } finally {
-      setSaving(false)
-    }
+      setModelTestResult(result.message)
+    }, 'Connection test failed')
   }
 
   const saveSSHKey = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    setSaving(true)
-    setError(null)
-    try {
+    await runWithSaving('sshKeys', async () => {
       const payload = {
         name: sshKeyForm.name.trim(),
         public_key: sshKeyForm.publicKey.trim(),
@@ -510,44 +499,28 @@ export function SettingsDialog({ initialGroups, selectedModel, sshKeys: initialS
       setSSHKeys(nextSSHKeys)
       onSSHKeysChange(nextSSHKeys)
       cancelSSHKeyForm()
-    } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : 'Failed to save SSH key')
-    } finally {
-      setSaving(false)
-    }
+    }, 'Failed to save SSH key')
   }
 
   const confirmDeleteSSHKey = async () => {
     if (!deletingSSHKey) {
       return
     }
-    setSaving(true)
-    setError(null)
-    try {
+    await runWithSaving('sshKeys', async () => {
       await deleteSSHKey(deletingSSHKey.id)
       const nextSSHKeys = sshKeys.filter((item) => item.id !== deletingSSHKey.id)
       setSSHKeys(nextSSHKeys)
       onSSHKeysChange(nextSSHKeys)
       setDeletingSSHKey(null)
-    } catch (deleteError) {
-      setError(deleteError instanceof Error ? deleteError.message : 'Failed to delete SSH key')
-    } finally {
-      setSaving(false)
-    }
+    }, 'Failed to delete SSH key')
   }
 
   const savePermissions = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    setSaving(true)
-    setError(null)
-    try {
+    await runWithSaving('permissions', async () => {
       await updateApprovalPolicy({ permissions: { allow: permissionsForm.allow, deny: permissionsForm.deny } })
       setPermissionsForm({ ...permissionsForm, allowInput: '', denyInput: '' })
-    } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : 'Failed to save permissions')
-    } finally {
-      setSaving(false)
-    }
+    }, 'Failed to save permissions')
   }
 
   const updateMCPServerInList = (server: MCPServer) => {
@@ -558,7 +531,7 @@ export function SettingsDialog({ initialGroups, selectedModel, sshKeys: initialS
   const startCreateMCPServer = () => {
     setEditingMCPServer(null)
     setDeletingMCPServer(null)
-    setTestResult(null)
+    setMCPTestResult(null)
     setMCPServerForm(emptyMCPServerForm)
     setShowMCPServerForm(true)
   }
@@ -566,7 +539,7 @@ export function SettingsDialog({ initialGroups, selectedModel, sshKeys: initialS
   const startEditMCPServer = (server: MCPServer) => {
     setEditingMCPServer(server)
     setDeletingMCPServer(null)
-    setTestResult(null)
+    setMCPTestResult(null)
     setMCPServerForm(mcpServerToForm(server))
     setShowMCPServerForm(true)
     setSelectedMCPServerId(server.id)
@@ -575,7 +548,7 @@ export function SettingsDialog({ initialGroups, selectedModel, sshKeys: initialS
   const cancelMCPServerForm = () => {
     setEditingMCPServer(null)
     setShowMCPServerForm(false)
-    setTestResult(null)
+    setMCPTestResult(null)
     setMCPServerForm(emptyMCPServerForm)
   }
 
@@ -608,93 +581,67 @@ export function SettingsDialog({ initialGroups, selectedModel, sshKeys: initialS
 
   const saveMCPServer = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    setSaving(true)
-    setError(null)
-    try {
+    await runWithSaving('mcp', async () => {
       const savedServer = editingMCPServer
         ? await updateMCPServer(editingMCPServer.id, toMCPServerUpdatePayload(editingMCPServer))
         : await createMCPServer(toMCPServerCreatePayload())
       setMCPServers((current) => (editingMCPServer ? current.map((server) => (server.id === savedServer.id ? savedServer : server)) : [savedServer, ...current]))
       setSelectedMCPServerId(savedServer.id)
       cancelMCPServerForm()
-    } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : 'Failed to save MCP server')
-    } finally {
-      setSaving(false)
-    }
+    }, 'Failed to save MCP server')
   }
 
   const confirmDeleteMCPServer = async () => {
     if (!deletingMCPServer) {
       return
     }
-    setSaving(true)
-    setError(null)
-    try {
+    await runWithSaving('mcp', async () => {
       await deleteMCPServer(deletingMCPServer.id)
       const nextServers = mcpServers.filter((server) => server.id !== deletingMCPServer.id)
       setMCPServers(nextServers)
       setSelectedMCPServerId((current) => (current === deletingMCPServer.id ? nextServers[0]?.id ?? null : current))
       setDeletingMCPServer(null)
-    } catch (deleteError) {
-      setError(deleteError instanceof Error ? deleteError.message : 'Failed to delete MCP server')
-    } finally {
-      setSaving(false)
-    }
+    }, 'Failed to delete MCP server')
   }
 
   const testMCP = async (server: MCPServer) => {
-    setSaving(true)
-    setTestResult(null)
-    setError(null)
-    try {
+    setMCPTestResult(null)
+    await runWithSaving('mcp', async () => {
       const result = await testMCPServer(server.id)
       if (result.server) {
         updateMCPServerInList(result.server)
       }
-      setTestResult(result.message)
-    } catch (testError) {
-      setError(testError instanceof Error ? testError.message : 'MCP server test failed')
-    } finally {
-      setSaving(false)
-    }
+      setMCPTestResult(result.message)
+    }, 'MCP server test failed')
   }
 
   const refreshMCP = async (server: MCPServer) => {
-    setSaving(true)
-    setError(null)
-    try {
+    await runWithSaving('mcp', async () => {
       updateMCPServerInList(await refreshMCPServer(server.id))
-    } catch (refreshError) {
-      setError(refreshError instanceof Error ? refreshError.message : 'Failed to refresh MCP server')
-    } finally {
-      setSaving(false)
-    }
+    }, 'Failed to refresh MCP server')
   }
 
   const setMCPEnabled = async (server: MCPServer, enabled: boolean) => {
-    setSaving(true)
-    setError(null)
-    try {
+    await runWithSaving('mcp', async () => {
       updateMCPServerInList(await setMCPServerEnabled(server.id, enabled))
-    } catch (enableError) {
-      setError(enableError instanceof Error ? enableError.message : 'Failed to update MCP server')
-    } finally {
-      setSaving(false)
-    }
+    }, 'Failed to update MCP server')
   }
 
   const updateMCPToolSettings = async (tool: MCPTool, updates: { enabled?: boolean; approvalPolicy?: 'allow' | 'ask' | 'deny' }) => {
-    setSaving(true)
-    setError(null)
-    try {
+    await runWithSaving('mcp', async () => {
       updateMCPServerInList(await updateMCPTool(tool.id, updates))
-    } catch (toolError) {
-      setError(toolError instanceof Error ? toolError.message : 'Failed to update MCP tool')
-    } finally {
-      setSaving(false)
-    }
+    }, 'Failed to update MCP tool')
   }
+
+  const sectionError = activeSection === 'groups'
+    ? errorByDomain.groups
+    : activeSection === 'models'
+      ? errorByDomain.models
+      : activeSection === 'sshKeys'
+        ? errorByDomain.sshKeys
+        : activeSection === 'permissions'
+          ? errorByDomain.permissions
+          : null
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-ops-bg/60 backdrop-blur-md animate-in fade-in duration-300" role="presentation">
@@ -717,7 +664,8 @@ export function SettingsDialog({ initialGroups, selectedModel, sshKeys: initialS
             <button type="button" className={`w-full text-left px-4 py-3 rounded-xl transition-all duration-200 text-[11px] font-bold  active:scale-[0.98] ${activeSection === 'mcp' ? 'bg-ops-cyan/15 text-ops-cyan shadow-glow border border-ops-cyan/30' : 'text-ops-muted hover:text-ops-text hover:bg-ops-panel/60 border border-transparent'}`} onClick={() => setActiveSection('mcp')}>{t('settings.mcp')}</button>
           </nav>
           <div className="flex-1 p-6 overflow-y-auto bg-ops-panel/50 relative">
-            {error ? <div className="p-4 mb-6 rounded-md bg-red-500/10 border border-red-500/20 text-red-500 text-sm flex items-center justify-between">{error}<button type="button" className="px-3 py-1.5 rounded-md bg-ops-border/20 hover:bg-ops-border/30 transition-colors text-ops-text text-sm" onClick={() => void loadSettings()}>{t('common.retry')}</button></div> : null}
+            {loadError ? <div className="p-4 mb-6 rounded-md bg-red-500/10 border border-red-500/20 text-red-500 text-sm flex items-center justify-between">{loadError}<button type="button" className="px-3 py-1.5 rounded-md bg-ops-border/20 hover:bg-ops-border/30 transition-colors text-ops-text text-sm" onClick={() => void loadSettings()}>{t('common.retry')}</button></div> : null}
+            {sectionError ? <div className="p-4 mb-6 rounded-md bg-red-500/10 border border-red-500/20 text-red-500 text-sm flex items-center justify-between">{sectionError}</div> : null}
             {activeSection === 'appearance' ? (
               <AppearanceSection
                 language={language}
@@ -733,7 +681,7 @@ export function SettingsDialog({ initialGroups, selectedModel, sshKeys: initialS
                 groups={groups}
                 groupForm={groupForm}
                 showGroupForm={showGroupForm}
-                saving={saving}
+                saving={savingByDomain.groups}
                 onStartCreate={startCreateGroup}
                 onStartEdit={startEditGroup}
                 onStartDelete={setDeletingGroup}
@@ -748,8 +696,8 @@ export function SettingsDialog({ initialGroups, selectedModel, sshKeys: initialS
                 modelForm={modelForm}
                 showModelForm={showModelForm}
                 editingModel={editingModel}
-                saving={saving}
-                testResult={testResult}
+                saving={savingByDomain.models}
+                testResult={modelTestResult}
                 discoveredModels={discoveredModels}
                 discoveringModels={discoveringModels}
                 modelDiscoveryMessage={modelDiscoveryMessage}
@@ -771,7 +719,7 @@ export function SettingsDialog({ initialGroups, selectedModel, sshKeys: initialS
                 sshKeyForm={sshKeyForm}
                 showSSHKeyForm={showSSHKeyForm}
                 editingSSHKey={editingSSHKey}
-                saving={saving}
+                saving={savingByDomain.sshKeys}
                 onStartCreate={startCreateSSHKey}
                 onStartEdit={startEditSSHKey}
                 onStartDelete={setDeletingSSHKey}
@@ -782,13 +730,13 @@ export function SettingsDialog({ initialGroups, selectedModel, sshKeys: initialS
             ) : activeSection === 'permissions' ? (
               <PermissionsSection
                 permissionsForm={permissionsForm}
-                saving={saving}
+                saving={savingByDomain.permissions}
                 onFormChange={setPermissionsForm}
                 onSave={savePermissions}
               />
             ) : activeSection === 'skills' ? (
               <SkillsSection
-                skills={skills}
+                skills={skills ?? []}
                 loading={skillsLoading}
                 error={skillsError}
                 onRetry={() => void loadSkills()}
@@ -801,9 +749,9 @@ export function SettingsDialog({ initialGroups, selectedModel, sshKeys: initialS
                 editingServer={editingMCPServer}
                 selectedServerId={selectedMCPServerId}
                 loading={mcpLoading}
-                error={mcpError}
-                saving={saving}
-                testResult={testResult}
+                error={mcpError ?? errorByDomain.mcp}
+                saving={savingByDomain.mcp}
+                testResult={mcpTestResult}
                 onRetry={() => void loadMCPServers()}
                 onStartCreate={startCreateMCPServer}
                 onStartEdit={startEditMCPServer}
@@ -825,7 +773,7 @@ export function SettingsDialog({ initialGroups, selectedModel, sshKeys: initialS
             titleId="delete-group-title"
             title={t('settings.confirmGroupDeletion')}
             message={deletingGroup.name}
-            saving={saving}
+            saving={savingByDomain.groups}
             onCancel={() => setDeletingGroup(null)}
             onConfirm={() => void confirmDeleteGroup()}
           />
@@ -835,7 +783,7 @@ export function SettingsDialog({ initialGroups, selectedModel, sshKeys: initialS
             titleId="delete-model-title"
             title={t('settings.confirmModelDeletion')}
             message={deletingModel.isDefault ? t('settings.defaultModelCannotDelete') : deletingModel.name}
-            saving={saving}
+            saving={savingByDomain.models}
             confirmDisabled={deletingModel.isDefault}
             onCancel={() => setDeletingModel(null)}
             onConfirm={() => void confirmDeleteModel()}
@@ -846,7 +794,7 @@ export function SettingsDialog({ initialGroups, selectedModel, sshKeys: initialS
             titleId="delete-ssh-key-title"
             title={t('settings.confirmSshKeyDeletion')}
             message={deletingSSHKey.name}
-            saving={saving}
+            saving={savingByDomain.sshKeys}
             onCancel={() => setDeletingSSHKey(null)}
             onConfirm={() => void confirmDeleteSSHKey()}
           />
@@ -856,7 +804,7 @@ export function SettingsDialog({ initialGroups, selectedModel, sshKeys: initialS
             titleId="delete-mcp-server-title"
             title={t('settings.confirmMcpServerDeletion')}
             message={deletingMCPServer.name}
-            saving={saving}
+            saving={savingByDomain.mcp}
             onCancel={() => setDeletingMCPServer(null)}
             onConfirm={() => void confirmDeleteMCPServer()}
           />

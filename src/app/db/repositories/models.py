@@ -1,9 +1,9 @@
-from datetime import UTC, datetime
 from typing import Any, cast
 from sqlalchemy import desc
 from sqlmodel import Session, select
 
 from app.db.models import ModelConfigRecord
+from app.db.repositories.common import commit_refresh, touch_updated_at
 
 
 def create_model_config(
@@ -36,10 +36,7 @@ def create_model_config(
         max_tokens=max_tokens,
         description=description,
     )
-    session.add(row)
-    session.commit()
-    session.refresh(row)
-    return row
+    return commit_refresh(session, row)
 
 
 def list_model_configs(session: Session) -> list[ModelConfigRecord]:
@@ -67,7 +64,7 @@ def clear_default_model_configs(session: Session) -> None:
     rows = session.exec(select(ModelConfigRecord).where(ModelConfigRecord.is_default == True)).all()
     for row in rows:
         row.is_default = False
-        row.updated_at = datetime.now(UTC)
+        touch_updated_at(row)
         session.add(row)
     session.commit()
 
@@ -78,11 +75,8 @@ def set_default_model_config(session: Session, model_config_id: int) -> ModelCon
         return None
     clear_default_model_configs(session)
     row.is_default = True
-    row.updated_at = datetime.now(UTC)
-    session.add(row)
-    session.commit()
-    session.refresh(row)
-    return row
+    touch_updated_at(row)
+    return commit_refresh(session, row)
 
 
 def update_model_config(session: Session, model_config_id: int, **updates: Any) -> ModelConfigRecord | None:
@@ -94,11 +88,8 @@ def update_model_config(session: Session, model_config_id: int, **updates: Any) 
     for key, value in updates.items():
         if hasattr(row, key) and value is not None:
             setattr(row, key, value)
-    row.updated_at = datetime.now(UTC)
-    session.add(row)
-    session.commit()
-    session.refresh(row)
-    return row
+    touch_updated_at(row)
+    return commit_refresh(session, row)
 
 
 def delete_model_config(session: Session, model_config_id: int) -> bool:

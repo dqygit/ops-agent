@@ -1,14 +1,9 @@
 import { useAppearance } from '../../hooks/useAppearance'
 import type { SkillPackage } from '../../types/ops'
+import { formatDateTime } from '../../utils/dateTime'
 import type { SkillsSectionProps } from './settingsTypes'
 
-function formatTimestamp(value: string) {
-  const timestamp = new Date(value)
-  if (Number.isNaN(timestamp.getTime())) {
-    return value
-  }
-  return timestamp.toLocaleString()
-}
+const timestampFormatter = new Intl.DateTimeFormat()
 
 function formatBodySize(value: number) {
   if (value < 1024) {
@@ -47,7 +42,7 @@ function SkillCard({ skill }: { skill: SkillPackage }) {
           </div>
           <div className="flex flex-col gap-1 rounded-xl border border-ops-border/10 bg-ops-deep/30 px-4 py-3">
             <dt className="text-[10px] font-bold tracking-widest text-ops-muted/70">{t('settings.updated')}</dt>
-            <dd className="text-[11px] text-ops-text">{formatTimestamp(skill.updatedAt)}</dd>
+            <dd className="text-[11px] text-ops-text">{formatDateTime(skill.updatedAt, timestampFormatter, skill.updatedAt)}</dd>
           </div>
           <div className="flex flex-col gap-1 rounded-xl border border-ops-border/10 bg-ops-deep/30 px-4 py-3">
             <dt className="text-[10px] font-bold tracking-widest text-ops-muted/70">{t('settings.bodySize')}</dt>

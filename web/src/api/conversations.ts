@@ -1,4 +1,5 @@
 import { requestJson, requestVoid } from './client'
+import { mapRequiredTimestamps } from './mappers'
 import type { ConversationContextStatusDto, ConversationCreateResponseDto, ConversationDetailDto, ConversationSummaryDto } from '../types/api'
 import type { ConversationContextStatus, ConversationDetail, ConversationSummary, EventItem } from '../types/ops'
 
@@ -7,8 +8,7 @@ export function mapConversationSummary(dto: ConversationSummaryDto): Conversatio
     id: dto.id,
     title: dto.title,
     selectedModel: dto.selected_model,
-    createdAt: dto.created_at,
-    updatedAt: dto.updated_at,
+    ...mapRequiredTimestamps(dto),
     eventCount: dto.event_count,
     lastEventKind: dto.last_event_kind,
   }
@@ -19,8 +19,7 @@ export function mapConversationDetail(dto: ConversationDetailDto): ConversationD
     id: dto.id,
     title: dto.title,
     selectedModel: dto.selected_model,
-    createdAt: dto.created_at,
-    updatedAt: dto.updated_at,
+    ...mapRequiredTimestamps(dto),
     events: dto.events,
   }
 }

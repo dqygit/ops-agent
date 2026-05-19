@@ -1,4 +1,3 @@
-from types import SimpleNamespace
 import json
 import logging
 
@@ -17,6 +16,7 @@ from app.db.repositories.models import get_default_model_config, list_model_conf
 from app.db.session import get_session
 from app.services.asset_service import get_asset_record, list_asset_group_records, list_asset_records
 
+from app.utils.local_terminal_asset import build_local_terminal_asset
 from app.services.model_service import ModelService
 from app.services.terminal_service import TerminalService
 from app.services.console_app_service import ConsoleAppService, TaskOrchestrator
@@ -56,20 +56,7 @@ def get_console_bootstrap(
         model_options = [default_config.model_name, *model_options]
     local_terminal_asset = next((asset for asset in assets if asset.asset_type == AssetType.LOCAL_TERMINAL.value), None)
     if local_terminal_asset is None:
-        local_terminal_asset = SimpleNamespace(
-            id=0,
-            asset_type=AssetType.LOCAL_TERMINAL.value,
-            name="local-terminal",
-            host="localhost",
-            port=0,
-            username="",
-            auth_type="",
-            tags=[],
-            vendor="",
-            description="default local terminal asset",
-            group_id=None,
-            ssh_key_id=None,
-        )
+        local_terminal_asset = build_local_terminal_asset()
     terminal_session_result = terminal_service.open_session(local_terminal_asset, reuse_existing=True)
     terminal_session_id = terminal_session_result.get("terminal_id")
     terminal_output = ""

@@ -44,3 +44,5 @@ export type { MCPServerPayload, MCPServerUpdatePayload, MCPToolUpdatePayload } f
 export { getSkills, mapSkillPackage } from './skills'
 export { createSSHKey, deleteSSHKey, getSSHKeys, mapSSHKey, updateSSHKey } from './sshKeys'
 export type { SSHKeyPayload } from './sshKeys'
+export { getSerialPorts } from './system'
+export type { SerialPort } from './system'

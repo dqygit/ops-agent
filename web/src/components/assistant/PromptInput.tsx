@@ -1,8 +1,8 @@
 import { useAppearance } from '../../hooks/useAppearance'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { getSkills } from '../../api'
+import { useSkillPackages } from '../../hooks/useSkillPackages'
 import type { RunMode } from '../../types/api'
-import type { Asset, ConversationContextStatus, SkillPackage } from '../../types/ops'
+import type { Asset, ConversationContextStatus } from '../../types/ops'
 import { ModelSelector } from './ModelSelector'
 
 type PromptInputProps = {
@@ -102,38 +102,10 @@ export function PromptInput({
 }: PromptInputProps) {
   const { t } = useAppearance()
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
-  const skillsRequestRef = useRef<Promise<SkillPackage[]> | null>(null)
-  const [skillPackages, setSkillPackages] = useState<SkillPackage[] | null>(null)
-  const [skillsLoading, setSkillsLoading] = useState(false)
+  const { skillPackages, loading: skillsLoading, loadSkillPackages } = useSkillPackages()
 
   const slashSuggestionQuery = useMemo(() => getSlashSuggestionQuery(prompt), [prompt])
   const shouldShowSlashSuggestions = slashSuggestionQuery !== null
-
-  const loadSkillPackages = useCallback(async () => {
-    if (skillsRequestRef.current) {
-      return skillsRequestRef.current
-    }
-
-    setSkillsLoading(true)
-
-    const request = getSkills()
-      .then((packages) => {
-        const validPackages = packages.filter((skill) => skill.valid)
-        setSkillPackages(validPackages)
-        return validPackages
-      })
-      .catch(() => {
-        setSkillPackages([])
-        return []
-      })
-      .finally(() => {
-        skillsRequestRef.current = null
-        setSkillsLoading(false)
-      })
-
-    skillsRequestRef.current = request
-    return request
-  }, [])
 
   useEffect(() => {
     if (!shouldShowSlashSuggestions) {

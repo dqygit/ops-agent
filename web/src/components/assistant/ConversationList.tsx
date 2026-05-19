@@ -1,5 +1,6 @@
 import { useAppearance } from '../../hooks/useAppearance'
 import type { ConversationSummary, EventItem } from '../../types/ops'
+import { formatDateTime } from '../../utils/dateTime'
 
 type ConversationRunBadge = {
   conversationId: string
@@ -21,14 +22,6 @@ const timeFormatter = new Intl.DateTimeFormat('en-US', {
   hour: '2-digit',
   minute: '2-digit',
 })
-
-function formatUpdatedTime(value: string) {
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) {
-    return value
-  }
-  return timeFormatter.format(date)
-}
 
 type StatusMeta = { label: string; color: string }
 
@@ -170,7 +163,7 @@ export function ConversationList({ items, activeConversationId, backgroundRun, o
 
                       <div className="mt-2 flex items-center gap-2 text-[10px] font-bold leading-none text-ops-muted">
                         <span className="text-ops-border/40" aria-hidden="true">/</span>
-                        <span className="shrink-0 opacity-60">{formatUpdatedTime(item.updatedAt)}</span>
+                        <span className="shrink-0 opacity-60">{formatDateTime(item.updatedAt, timeFormatter, item.updatedAt)}</span>
           
                       </div>
                     </div>

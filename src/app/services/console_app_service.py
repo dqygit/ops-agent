@@ -2,16 +2,15 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Iterator
-from types import SimpleNamespace
 from typing import Any, cast
 
 from sqlmodel import Session
 
 from app.core.connectors.device_profiles import (
-    NETWORK_CLI_PROFILE,
     select_device_profile,
     select_execution_profile,
 )
+from app.core.connectors.execution_context import build_asset_summary, build_device_context, infer_os_type
 from app.core.llm.types import LLMTokenUsage
 from app.core.loop.loop_state import LoopContext, LoopMode, LoopState
 from app.core.loop.runtime_manager import LoopRuntimeManager, new_runtime_id
@@ -24,6 +23,7 @@ from app.db.repositories.model_usage import create_model_usage, sum_conversation
 from app.db.session import Session as DbSession, engine
 from app.services.approval_service import get_approval_service
 from app.services.context_manager import ContextManager, JsonObject
+from app.utils.local_terminal_asset import build_local_terminal_asset
 from app.services.mcp_service import McpService
 from app.services.model_service import ModelService
 from app.services.skill_service import SkillService
@@ -225,16 +225,13 @@ class ConsoleAppService:
                 terminal_id,
             )
             terminal_id = None
-        asset_summary = (
-            f"asset={getattr(asset, 'name', '')}, type={getattr(asset, 'asset_type', '')}, "
-            f"host={getattr(asset, 'host', '')}, user={getattr(asset, 'username', '')}"
-        )
+        asset_summary = build_asset_summary(asset)
         asset_type = str(getattr(asset, "asset_type", "") or "")
         shell_type = self._resolve_shell_type(terminal_service, terminal_id)
         execution_profile = select_execution_profile(asset_type, shell_type)
         device_profile = select_device_profile(asset_type, shell_type)
-        os_type = self._infer_os_type(shell_type, execution_profile=execution_profile)
-        device_context = self._build_device_context(execution_profile, device_profile)
+        os_type = infer_os_type(shell_type, execution_profile=execution_profile)
+        device_context = build_device_context(execution_profile, device_profile)
 
         context_result = self._prepare_conversation_context(conversation_id, model_config)
         conversation_history = context_result.prepared_messages
@@ -255,15 +252,7 @@ class ConsoleAppService:
                 try:
                     loaded_skill = self._skill_service.load_skill(manual_skill_name)
                 except ValueError as exc:
-                    yield {
-                        "id": f"evt-error-{runtime_id}",
-                        "kind": "error",
-                        "runtimeId": runtime_id,
-                        "sequence": -1,
-                        "ts": "",
-                        "text": str(exc),
-                        "recoverable": True,
-                    }
+                    yield self._runtime_error_event(runtime_id, str(exc), recoverable=True)
                     return
                 loaded_skill_name = loaded_skill.name
                 manual_skill_name = loaded_skill.name
@@ -331,21 +320,13 @@ class ConsoleAppService:
         for event in initial_runtime_events:
             yield event
 
-        try:
-            events = self.runtime_manager.run(runtime_id=runtime_id, terminal_service=terminal_service)
-            for event in events:
-                yield event
-        except Exception as exc:
-            logger.exception("stream_run failed conversation_id=%s runtime_id=%s", conversation_id, runtime_id)
-            yield {
-                "id": f"evt-error-{runtime_id}",
-                "kind": "error",
-                "runtimeId": runtime_id,
-                "sequence": -1,
-                "ts": "",
-                "text": str(exc),
-                "recoverable": True,
-            }
+        yield from self._stream_events_with_error_handling(
+            runtime_id=runtime_id,
+            log_message="stream_run failed conversation_id=%s runtime_id=%s",
+            event_iter_factory=lambda: self.runtime_manager.run(runtime_id=runtime_id, terminal_service=terminal_service),
+            conversation_id=conversation_id,
+            runtime_id_log=runtime_id,
+        )
 
     def stream_approve(
         self,
@@ -360,92 +341,80 @@ class ConsoleAppService:
         _ = session
         runtime = self.runtime_manager.get_runtime(runtime_id)
         if runtime is None:
-            yield {
-                "id": f"evt-error-{runtime_id}",
-                "kind": "error",
-                "runtimeId": runtime_id,
-                "sequence": -1,
-                "ts": "",
-                "text": "Runtime not found.",
-                "recoverable": False,
-            }
+            yield self._runtime_error_event(runtime_id, "Runtime not found.", recoverable=False)
             return
 
-        try:
+        def resume_events():
             if approved and allow_prefix:
                 get_approval_service().add_allow_prefix(allow_prefix)
-            events = self.runtime_manager.resume(
+            return self.runtime_manager.resume(
                 runtime_id=runtime_id,
                 approved=approved,
                 approval_token=approval_token,
                 terminal_service=terminal_service,
             )
-            for event in events:
-                yield event
-        except Exception as exc:
-            logger.exception("stream_approve failed runtime_id=%s", runtime_id)
-            yield {
-                "id": f"evt-error-{runtime_id}",
-                "kind": "error",
-                "runtimeId": runtime_id,
-                "sequence": -1,
-                "ts": "",
-                "text": str(exc),
-                "recoverable": True,
-            }
+
+        yield from self._stream_events_with_error_handling(
+            runtime_id=runtime_id,
+            log_message="stream_approve failed runtime_id=%s",
+            event_iter_factory=resume_events,
+            runtime_id_log=runtime_id,
+        )
 
     def update_plan(self, *, runtime_id: str, steps: list[dict]) -> dict:
         return self.runtime_manager.update_plan(runtime_id=runtime_id, steps=steps)
 
     def stream_plan_approval(self, *, runtime_id: str, terminal_service: TerminalService) -> Iterator[dict]:
-        try:
-            events = self.runtime_manager.approve_plan(runtime_id=runtime_id, terminal_service=terminal_service)
-            for event in events:
-                yield event
-        except Exception as exc:
-            logger.exception("stream_plan_approval failed runtime_id=%s", runtime_id)
-            yield {
-                "id": f"evt-error-{runtime_id}",
-                "kind": "error",
-                "runtimeId": runtime_id,
-                "sequence": -1,
-                "ts": "",
-                "text": str(exc),
-                "recoverable": True,
-            }
+        yield from self._stream_events_with_error_handling(
+            runtime_id=runtime_id,
+            log_message="stream_plan_approval failed runtime_id=%s",
+            event_iter_factory=lambda: self.runtime_manager.approve_plan(runtime_id=runtime_id, terminal_service=terminal_service),
+            runtime_id_log=runtime_id,
+        )
 
     def stream_after_terminal_request(self, *, runtime_id: str, resume_message: str, terminal_service: TerminalService, authorization_id: str | None = None) -> Iterator[dict]:
-        try:
-            events = self.runtime_manager.resume_after_terminal_request(
+        yield from self._stream_events_with_error_handling(
+            runtime_id=runtime_id,
+            log_message="stream_after_terminal_request failed runtime_id=%s",
+            event_iter_factory=lambda: self.runtime_manager.resume_after_terminal_request(
                 runtime_id=runtime_id,
                 resume_message=resume_message,
                 terminal_service=terminal_service,
                 authorization_id=authorization_id,
-            )
-            for event in events:
+            ),
+            runtime_id_log=runtime_id,
+        )
+
+    def _stream_events_with_error_handling(
+        self,
+        *,
+        runtime_id: str,
+        log_message: str,
+        event_iter_factory,
+        **log_context: Any,
+    ) -> Iterator[dict]:
+        try:
+            for event in event_iter_factory():
                 yield event
         except Exception as exc:
-            logger.exception("stream_after_terminal_request failed runtime_id=%s", runtime_id)
-            yield {
-                "id": f"evt-error-{runtime_id}",
-                "kind": "error",
-                "runtimeId": runtime_id,
-                "sequence": -1,
-                "ts": "",
-                "text": str(exc),
-                "recoverable": True,
-            }
+            logger.exception(log_message, *log_context.values())
+            yield self._runtime_error_event(runtime_id, str(exc), recoverable=True)
+
+    def _runtime_error_event(self, runtime_id: str, text: str, *, recoverable: bool) -> dict[str, Any]:
+        return {
+            "id": f"evt-error-{runtime_id}",
+            "kind": "error",
+            "runtimeId": runtime_id,
+            "sequence": -1,
+            "ts": "",
+            "text": text,
+            "recoverable": recoverable,
+        }
 
     def _resolve_asset(self, session: Session, asset_id: int):
         asset = get_asset(session, asset_id)
         if asset is None and asset_id == 0:
-            asset = SimpleNamespace(
-                id=0,
-                name="local-terminal",
-                asset_type="local_terminal",
-                host="localhost",
-                username="",
-            )
+            asset = build_local_terminal_asset()
         return asset
 
     def _resolve_model_config(self, session: Session, model_name: str | None):
@@ -467,40 +436,6 @@ class ConsoleAppService:
             except ValueError:
                 shell_type = "unknown"
         return shell_type
-
-    def _infer_os_type(self, shell_type: str, *, execution_profile: str = "posix-shell") -> str:
-        if execution_profile == NETWORK_CLI_PROFILE:
-            if shell_type == "serial":
-                return "serial-console"
-            return "network-device"
-        if shell_type in {"powershell", "cmd"}:
-            return "Windows"
-        if shell_type == "posix":
-            return "Darwin/Linux"
-        return "unknown"
-
-    def _build_device_context(self, execution_profile: str, device_profile) -> str:
-        if execution_profile != NETWORK_CLI_PROFILE or device_profile is None:
-            return ""
-
-        base_rules = [
-            "You are operating a network device CLI, not a Linux shell.",
-            "Do not use Linux commands.",
-            f"Use the current device vendor syntax: {device_profile.vendor}.",
-            "Prefer read-only inspection commands before changes.",
-            "Treat prompts, pagination, configuration modes, and confirmations as protocol state.",
-            "Never save configuration unless the user explicitly approves a save action.",
-            "If command output contains an error pattern or an unexpected confirmation prompt, stop and explain.",
-        ]
-        if device_profile.vendor == "generic":
-            base_rules.append(
-                "This is a generic network device profile. First use '?' to inspect available commands, then choose vendor-specific read-only commands from that output before entering configuration mode."
-            )
-        else:
-            base_rules.append(
-                f"Read-only prefixes: {', '.join(device_profile.read_prefixes)}. Save commands requiring separate approval: {', '.join(device_profile.save_commands)}."
-            )
-        return "\n".join(base_rules)
 
     def _prepare_conversation_context(self, conversation_id: str, model_config):
         context_manager = self._context_manager()

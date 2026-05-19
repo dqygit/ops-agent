@@ -1,4 +1,5 @@
 import { requestJson, requestVoid } from './client'
+import { mapTimestamps } from './mappers'
 import type { ModelConfig } from '../types/ops'
 
 export type ModelConfigPayload = {
@@ -141,8 +142,7 @@ export function mapModelConfig(config: ModelConfigDto): ModelConfig {
     temperature: config.temperature,
     maxTokens: config.max_tokens,
     description: config.description,
-    createdAt: config.created_at,
-    updatedAt: config.updated_at,
+    ...mapTimestamps(config),
   }
 }
 

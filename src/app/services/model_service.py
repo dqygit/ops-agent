@@ -13,8 +13,8 @@ from app.core.llm.factory import build_llm_provider
 
 from app.db.models import ModelConfigRecord
 from app.db.repositories.models import list_model_names_by_provider
+from app.utils.credential_factory import build_credential_service
 from app.services.credential_service import CredentialService
-from app.services.secret_key import get_ops_agent_secret_key
 from app.shared import config as shared_config
 from app.shared.enums import ModelProvider
 from app.shared.schemas import ModelConfig
@@ -286,7 +286,7 @@ class ModelService:
         }
 
     def _credential_service(self) -> CredentialService:
-        return CredentialService(secret_key=get_ops_agent_secret_key())
+        return build_credential_service()
 
     def _normalize_prompt_cache_ttl(self, value: object) -> PromptCacheTTL:
         if value == "one_hour":

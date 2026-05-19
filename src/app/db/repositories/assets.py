@@ -1,19 +1,16 @@
-from datetime import UTC, datetime
 from typing import Any, cast
 
-from sqlalchemy import desc
-from sqlmodel import Session, select
+from sqlalchemy import delete, desc, update
+from sqlmodel import Session, col, select
 
 from app.db.models import  Asset, AssetGroup, Credential, ModelUsage
+from app.db.repositories.common import commit_refresh, touch_updated_at
 from app.shared.schemas import AssetCreate
 
 
 def create_asset_group(session: Session, *, name: str, description: str = "") -> AssetGroup:
     row = AssetGroup(name=name, description=description)
-    session.add(row)
-    session.commit()
-    session.refresh(row)
-    return row
+    return commit_refresh(session, row)
 
 
 def list_asset_groups(session: Session) -> list[AssetGroup]:
@@ -32,21 +29,15 @@ def update_asset_group(session: Session, group_id: int, *, name: str | None = No
         row.name = name
     if description is not None:
         row.description = description
-    row.updated_at = datetime.now(UTC)
-    session.add(row)
-    session.commit()
-    session.refresh(row)
-    return row
+    touch_updated_at(row)
+    return commit_refresh(session, row)
 
 
 def delete_asset_group(session: Session, group_id: int) -> bool:
     row = get_asset_group(session, group_id)
     if row is None:
         return False
-    for asset in session.exec(select(Asset).where(Asset.group_id == group_id)).all():
-        asset.group_id = None
-        asset.updated_at = datetime.now(UTC)
-        session.add(asset)
+    session.exec(update(Asset).where(col(Asset.group_id) == group_id).values(group_id=None))
     session.delete(row)
     session.commit()
     return True
@@ -57,10 +48,7 @@ def create_asset(session: Session, data: AssetCreate) -> Asset:
     payload["asset_type"] = data.asset_type.value
     payload["tags"] = ",".join(data.tags)
     asset = Asset(**payload)
-    session.add(asset)
-    session.commit()
-    session.refresh(asset)
-    return asset
+    return commit_refresh(session, asset)
 
 
 def list_assets(session: Session) -> list[Asset]:
@@ -76,8 +64,7 @@ def delete_asset_graph(session: Session, asset_id: int) -> bool:
     if asset is None:
         return False
 
-    for row in session.exec(select(Credential).where(Credential.asset_id == asset_id)).all():
-        session.delete(row)
+    session.exec(delete(Credential).where(col(Credential.asset_id) == asset_id))
 
     session.delete(asset)
     session.commit()
