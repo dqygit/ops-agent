@@ -415,6 +415,8 @@ class ConsoleAppService:
         asset = get_asset(session, asset_id)
         if asset is None and asset_id == 0:
             asset = build_local_terminal_asset()
+        if asset is None:
+            raise ValueError(f"Asset not found: {asset_id}")
         return asset
 
     def _resolve_model_config(self, session: Session, model_name: str | None):

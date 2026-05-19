@@ -107,18 +107,23 @@ async def run_console_agent(
     if asset_id is None:
         raise HTTPException(status_code=400, detail="Asset id is required")
     
-    stream = orchestrator.stream_run(
-        session=session,
-        prompt=payload.prompt,
-        asset_id=asset_id,
-        terminal_id=payload.terminal_id,
-        model_name=payload.model_name,
-        selected_skill_name=payload.selected_skill_name,
-        conversation_id=payload.conversation_id,
-        mode=payload.mode,
-    )
+    try:
+        stream = orchestrator.stream_run(
+            session=session,
+            prompt=payload.prompt,
+            asset_id=asset_id,
+            terminal_id=payload.terminal_id,
+            model_name=payload.model_name,
+            selected_skill_name=payload.selected_skill_name,
+            conversation_id=payload.conversation_id,
+            mode=payload.mode,
+        )
+        first_event = next(stream)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     def event_stream():
+        yield _sse_event(first_event)
         t_first_event = None
         try:
             for event in stream:
