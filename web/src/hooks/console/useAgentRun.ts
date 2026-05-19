@@ -118,6 +118,11 @@ export function useAgentRun({
   const [pendingApprovalToken, setPendingApprovalToken] = useState<string | null>(null)
   const [backgroundRun, setBackgroundRun] = useState<BackgroundRunState | null>(null)
   const submittedApprovalKeyRef = useRef<string | null>(null)
+  const latestEventsRef = useRef<EventItem[]>(events)
+
+  useEffect(() => {
+    latestEventsRef.current = events
+  }, [events])
 
   const activeBackgroundRun = useMemo(() => {
     if (!backgroundRun || backgroundRun.conversationId === activeConversationId) {
@@ -295,7 +300,7 @@ export function useAgentRun({
 
       // Batch persist: only the latest snapshot per message, plus non-delta events
       const finalMessageSnapshots = Array.from(latestMessageSnapshots.values()) as EventItem[]
-      const finalEvents = flushDeltaBuffer(deltaBuffer, events)
+      const finalEvents = flushDeltaBuffer(deltaBuffer, latestEventsRef.current)
       const allPersistEvents = mergeEventsBySequence([...pendingPersistEvents, ...finalMessageSnapshots, ...finalEvents])
       if (allPersistEvents.length > 0) {
         const detail = await appendConversationEvents(conversationId, allPersistEvents)
@@ -445,7 +450,7 @@ export function useAgentRun({
 
         // Batch persist all non-delta events + message snapshots + delta buffer after stream ends
         const finalMessageSnapshots = Array.from(latestMessageSnapshots.values()) as EventItem[]
-        const finalEvents = flushDeltaBuffer(deltaBuffer, events)
+        const finalEvents = flushDeltaBuffer(deltaBuffer, latestEventsRef.current)
         const allPersistEvents = mergeEventsBySequence([...pendingPersistEvents, ...finalMessageSnapshots, ...finalEvents])
         if (allPersistEvents.length > 0) {
           const detail = await appendConversationEvents(conversationId, allPersistEvents)
@@ -572,7 +577,7 @@ export function useAgentRun({
       }
 
       const finalMessageSnapshots = Array.from(latestMessageSnapshots.values()) as EventItem[]
-      const finalEvents = flushDeltaBuffer(deltaBuffer, events)
+      const finalEvents = flushDeltaBuffer(deltaBuffer, latestEventsRef.current)
       const allPersistEvents = mergeEventsBySequence([...pendingPersistEvents, ...finalMessageSnapshots, ...finalEvents])
       if (allPersistEvents.length > 0) {
         const detail = await appendConversationEvents(activeConversationId, allPersistEvents)
