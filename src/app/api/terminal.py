@@ -3,7 +3,7 @@ from pydantic import BaseModel
 from sqlmodel import Session
 
 from app.api.assets import to_asset_view
-from app.api.schemas import AssetContextView
+from app.api.schemas import AssetContextView, TerminalEventSummaryView
 from app.core.connectors.server import connector_factory
 from app.db.session import get_session
 from app.services.asset_service import get_asset_record
@@ -77,7 +77,10 @@ def get_asset_context(
 
     return AssetContextView(
         asset=to_asset_view(asset),
-        recent_terminal_events=terminal_service.list_recent_events_for_asset(asset_id),
+        recent_terminal_events=[
+            TerminalEventSummaryView.model_validate(event)
+            for event in terminal_service.list_recent_events_for_asset(asset_id)
+        ],
     )
 
 
