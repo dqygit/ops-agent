@@ -317,18 +317,16 @@ class TerminalService:
     def _append_output(self, terminal_id: str, output: str) -> str:
         if not output:
             return ""
-            
-        # We still perform filtering to trigger side effects (like command events)
-        # but we ignore the filtered return value for the actual terminal UI.
-        # This ensures the user gets a "Normal Terminal" experience with raw fidelity.
-        self._filter_output(terminal_id, output)
-        
+
+        self._derive_command_events(terminal_id, output)
         sequence = self._output_sequences.get(terminal_id, 0) + 1
         self._output_sequences[terminal_id] = sequence
-        
-        # Store the raw output in the buffer to ensure consistent replay on reconnection
         self._output_buffers.setdefault(terminal_id, deque(maxlen=4000)).append((sequence, output))
         return output
+
+    def _derive_command_events(self, terminal_id: str, output: str) -> None:
+        # Raw output stays authoritative for terminal replay; filtered output only drives command cards.
+        self._filter_output(terminal_id, output)
 
     def _append_command_event(self, terminal_id: str, event: dict[str, Any]) -> None:
         sequence = self._command_event_sequences.get(terminal_id, 0) + 1
