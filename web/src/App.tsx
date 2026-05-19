@@ -1,5 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import type { RunMode } from './types/api'
+import { useEffect, useRef, useState } from 'react'
 import { Group as PanelGroup, Panel, Separator as PanelResizeHandle } from 'react-resizable-panels'
 import { AssetModals, type AssetModalsRef } from './components/assets/AssetModals'
 import { AssetSidebar } from './components/assets/AssetSidebar'
@@ -12,16 +11,12 @@ import { useAgentRun } from './hooks/console/useAgentRun'
 import { useAssetCatalog } from './hooks/console/useAssetCatalog'
 import { useConsoleBootstrap } from './hooks/console/useConsoleBootstrap'
 import { useConversationState } from './hooks/console/useConversationState'
+import { useConsolePageState } from './hooks/console/useConsolePageState'
 import { useTerminalSessions } from './hooks/console/useTerminalSessions'
 import { useAppearance } from './hooks/useAppearance'
 
-type ActiveModal = 'settings' | null
-
 export function App() {
   const { t } = useAppearance()
-  const [activeModal, setActiveModal] = useState<ActiveModal>(null)
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
-  const [runMode, setRunMode] = useState<RunMode>('agent')
   const centerFallbackClassName = 'flex h-full items-center justify-center border-x border-ops-border/40 bg-ops-deep'
   const assetModalsRef = useRef<AssetModalsRef>(null)
 
@@ -92,6 +87,19 @@ export function App() {
     setSelectedModel,
   })
 
+  const terminalOutput = activeTerminalTab?.output ?? ''
+  const selectedAssetId = selectedAsset?.id ?? 0
+  const [isConsoleInitialized, setIsConsoleInitialized] = useState(false)
+  const {
+    activeModal,
+    setActiveModal,
+    sidebarCollapsed,
+    setSidebarCollapsed,
+    runMode,
+    setRunMode,
+    busyCommand,
+  } = useConsolePageState({ events, activeRuntimeSnapshot })
+
   const {
     pendingApprovalRuntimeId,
     backgroundRun,
@@ -121,33 +129,6 @@ export function App() {
     setLoadError,
     setContextStatus,
   })
-
-  const terminalOutput = activeTerminalTab?.output ?? ''
-  const selectedAssetId = selectedAsset?.id ?? 0
-  const [isConsoleInitialized, setIsConsoleInitialized] = useState(false)
-
-  useEffect(() => {
-    if (activeRuntimeSnapshot) {
-      setRunMode(activeRuntimeSnapshot.mode)
-    }
-  }, [activeRuntimeSnapshot])
-
-  const busyCommand = useMemo(() => {
-    const commandsInOrder: Array<{ id: string; cmd: string }> = []
-    const ended = new Set<string>()
-    for (const evt of events) {
-      if (evt.kind === 'command_start') {
-        commandsInOrder.push({ id: evt.commandId, cmd: evt.command })
-      } else if (evt.kind === 'command_end') {
-        ended.add(evt.commandId)
-      }
-    }
-    for (let i = commandsInOrder.length - 1; i >= 0; i -= 1) {
-      const item = commandsInOrder[i]
-      if (!ended.has(item.id)) return item.cmd
-    }
-    return null
-  }, [events])
 
   useEffect(() => {
     if (!isBootstrapLoaded || loadError || isConsoleInitialized) {
