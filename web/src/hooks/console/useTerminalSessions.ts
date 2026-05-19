@@ -4,11 +4,9 @@ import {
   createTerminalSession,
   reconnectTerminalSession,
 } from '../../api'
-import { getDesktopApiBaseUrl } from '../../desktop'
 import type { Asset } from '../../types/ops'
 import { stripAnsi } from '../../components/assistant/conversation/utils'
 import {
-  buildTerminalWebSocketUrl,
   defaultLocalTerminalAsset,
   LOCAL_TERMINAL_ASSET_ID,
 } from './consoleShared'
@@ -18,6 +16,7 @@ import {
   readPersistedTerminalState,
   type TerminalTabState,
 } from './terminalSessionPersistence'
+import { useTerminalSockets } from './useTerminalSockets'
 
 type TerminalTab = TerminalTabState
 
@@ -57,7 +56,6 @@ export function useTerminalSessions({
     },
   ])
   const terminalSocketRef = useRef<WebSocket | null>(null)
-  const [runtimeApiBaseUrl, setRuntimeApiBaseUrl] = useState<string | null>(null)
   const hasRestoredTerminalStateRef = useRef(false)
   const firstOutputHandledRef = useRef<Record<number, boolean>>({
     [LOCAL_TERMINAL_ASSET_ID]: false,
@@ -193,14 +191,6 @@ export function useTerminalSessions({
     [syncTerminalTabs]
   )
 
-  const sendTerminalInput = useCallback((data: string) => {
-    const socket = terminalSocketRef.current
-    if (socket?.readyState !== WebSocket.OPEN) {
-      return
-    }
-    socket.send(JSON.stringify({ type: 'input', data }))
-  }, [])
-
   const clearActiveTerminal = useCallback(() => {
     syncTerminalTabs((currentTabs) =>
       currentTabs.map((tab) =>
@@ -268,29 +258,6 @@ export function useTerminalSessions({
     }
   }, [activeTerminalAssetId, syncTerminalTabs, setLoadError])
 
-  const lastTerminalSizeRef = useRef<{ cols: number; rows: number } | null>(null)
-
-  const resizeTerminal = useCallback((cols: number, rows: number) => {
-    lastTerminalSizeRef.current = { cols, rows }
-    const socket = terminalSocketRef.current
-    if (socket?.readyState !== WebSocket.OPEN) {
-      return
-    }
-    socket.send(JSON.stringify({ type: 'resize', cols, rows }))
-  }, [])
-
-  useEffect(() => {
-    let active = true
-    void getDesktopApiBaseUrl().then((baseUrl) => {
-      if (active) {
-        setRuntimeApiBaseUrl(baseUrl)
-      }
-    })
-    return () => {
-      active = false
-    }
-  }, [])
-
   const selectedAsset = useMemo(
     () =>
       terminalTabs.find((item) => item.assetId === activeTerminalAssetId)
@@ -306,6 +273,15 @@ export function useTerminalSessions({
   )
 
   const history = selectedAsset ? historyByAsset[selectedAsset.id] ?? [] : []
+  const { sendTerminalInput, resizeTerminal } = useTerminalSockets({
+    terminalTabs,
+    activeTerminalAssetId,
+    terminalSocketsRef,
+    activeSocketRef: terminalSocketRef,
+    firstOutputHandledRef,
+    syncTerminalTabs,
+    setLoadError,
+  })
 
   const selectAsset = useCallback(
     (assetId: number) => {
@@ -322,122 +298,6 @@ export function useTerminalSessions({
     },
     [assets, connectAssetTerminal, setLoadError]
   )
-
-  // WebSocket Management
-  useEffect(() => {
-    const currentSockets = terminalSocketsRef.current
-    const activeTab = terminalTabs.find(
-      (item) => item.assetId === activeTerminalAssetId
-    )
-    terminalSocketRef.current =
-      activeTab?.sessionId !== null && activeTab?.sessionId !== undefined
-        ? (currentSockets[activeTerminalAssetId] ?? null)
-        : null
-
-    for (const tabItem of terminalTabs) {
-      if (tabItem.sessionId === null || currentSockets[tabItem.assetId]) {
-        continue
-      }
-
-      const socket = new WebSocket(buildTerminalWebSocketUrl(tabItem.sessionId, runtimeApiBaseUrl))
-      currentSockets[tabItem.assetId] = socket
-      if (tabItem.assetId === activeTerminalAssetId) {
-        terminalSocketRef.current = socket
-      }
-
-      socket.addEventListener('open', () => {
-        if (tabItem.assetId === activeTerminalAssetId) {
-          terminalSocketRef.current = socket
-          if (lastTerminalSizeRef.current) {
-            socket.send(JSON.stringify({ type: 'resize', ...lastTerminalSizeRef.current }))
-          }
-        } else if (lastTerminalSizeRef.current) {
-           // We might want to size background tabs too, but active is most important
-           socket.send(JSON.stringify({ type: 'resize', ...lastTerminalSizeRef.current }))
-        }
-      })
-
-      socket.addEventListener('message', (event) => {
-        try {
-          const payload = JSON.parse(event.data) as {
-            type?: string
-            data?: string
-            message?: string
-          }
-
-          if (payload.type === 'output') {
-            const incomingOutput = payload.data ?? ''
-            if (incomingOutput.length === 0) {
-              return
-            }
-            syncTerminalTabs((currentTabs) =>
-              currentTabs.map((item) => {
-                if (item.assetId !== tabItem.assetId) {
-                  return item
-                }
-
-                const firstHandled = firstOutputHandledRef.current[tabItem.assetId] ?? false
-                if (!firstHandled) {
-                  firstOutputHandledRef.current[tabItem.assetId] = true
-                  if (incomingOutput.length > 0 && item.output.endsWith(incomingOutput)) {
-                    return item
-                  }
-                  if (incomingOutput.length > 0 && incomingOutput.endsWith(item.output)) {
-                    return { ...item, output: incomingOutput }
-                  }
-                }
-
-                return { ...item, output: `${item.output}${incomingOutput}` }
-              })
-            )
-            return
-          }
-
-          if (payload.type === 'error') {
-            setLoadError(payload.message ?? 'Terminal session error.')
-          }
-        } catch {
-          syncTerminalTabs((currentTabs) =>
-            currentTabs.map((item) =>
-              item.assetId === tabItem.assetId
-                ? { ...item, output: `${item.output}${String(event.data)}` }
-                : item
-            )
-          )
-        }
-      })
-
-      socket.addEventListener('error', () => {
-        setLoadError('Terminal websocket connection failed.')
-      })
-
-      socket.addEventListener('close', () => {
-        if (terminalSocketsRef.current[tabItem.assetId] === socket) {
-          delete terminalSocketsRef.current[tabItem.assetId]
-        }
-        if (tabItem.assetId === activeTerminalAssetId && terminalSocketRef.current === socket) {
-          terminalSocketRef.current = null
-        }
-      })
-    }
-
-    const activeAssetIds = new Set(terminalTabs.map((item) => item.assetId))
-    for (const key of Object.keys(currentSockets)) {
-      const assetId = Number(key)
-      if (activeAssetIds.has(assetId)) {
-        continue
-      }
-      const socket = currentSockets[assetId]
-      delete currentSockets[assetId]
-      if (
-        socket &&
-        (socket.readyState === WebSocket.OPEN ||
-          socket.readyState === WebSocket.CONNECTING)
-      ) {
-        socket.close()
-      }
-    }
-  }, [activeTerminalAssetId, runtimeApiBaseUrl, syncTerminalTabs, terminalTabs, setLoadError])
 
   useEffect(() => {
     if (!hasRestoredTerminalStateRef.current) {
@@ -481,24 +341,6 @@ export function useTerminalSessions({
       persistTerminalState(terminalTabs, activeTerminalAssetId)
     }
   }, [activeTerminalAssetId, syncTerminalTabs, terminalTabs, setLoadError])
-
-  // Cleanup all WebSockets
-  useEffect(() => {
-    return () => {
-      for (const tabItem of terminalTabsRef.current) {
-        const socket = terminalSocketsRef.current[tabItem.assetId]
-        delete terminalSocketsRef.current[tabItem.assetId]
-        if (
-          socket &&
-          (socket.readyState === WebSocket.OPEN ||
-            socket.readyState === WebSocket.CONNECTING)
-        ) {
-          socket.close()
-        }
-      }
-      terminalSocketRef.current = null
-    }
-  }, [])
 
   return {
     terminalTabs,
