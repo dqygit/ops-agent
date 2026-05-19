@@ -69,14 +69,15 @@ def open_terminal_session(
 def get_asset_context(
     asset_id: int,
     session: Session = Depends(get_session),
+    terminal_service: TerminalService = Depends(get_terminal_service),
 ) -> AssetContextView:
     asset = get_asset_record(session, asset_id)
     if asset is None:
         raise HTTPException(status_code=404, detail="Asset not found")
-    
+
     return AssetContextView(
         asset=to_asset_view(asset),
-        recent_terminal_events=[]
+        recent_terminal_events=terminal_service.list_recent_events_for_asset(asset_id),
     )
 
 

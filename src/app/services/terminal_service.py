@@ -2,6 +2,7 @@ from collections import deque
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from functools import partial
+import json
 import re
 import logging
 from typing import Any, Awaitable, Callable, TypeVar, cast
@@ -296,6 +297,22 @@ class TerminalService:
                 payloads.append(event)
                 latest_cursor = sequence
         return latest_cursor, payloads
+
+    def list_recent_events_for_asset(self, asset_id: int) -> list[dict[str, Any]]:
+        # Terminal context is sourced from live in-memory sessions, not persisted history.
+        recent_events: list[dict[str, Any]] = []
+        for terminal_id, session_key in self._session_keys.items():
+            if session_key != f"asset:{asset_id}" or terminal_id not in self._sessions:
+                continue
+            events = self._command_event_buffers.get(terminal_id, ())
+            for sequence, event in events:
+                recent_events.append({
+                    "id": sequence,
+                    "event_type": str(event.get("kind", "terminal_event")),
+                    "event_data": json.dumps(event, ensure_ascii=False),
+                    "created_at": datetime.now(UTC),
+                })
+        return recent_events[-50:]
 
     def _append_output(self, terminal_id: str, output: str) -> str:
         if not output:
