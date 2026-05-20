@@ -67,7 +67,7 @@ class LocalPtyConnector:
         ]
 
     def get_execution_result(self, execution_id: str) -> ExecutionResult:
-        result = self._execution_results.get(execution_id)
+        result = self._execution_results.pop(execution_id, None)
         if result is None:
             return ExecutionResult(execution_id=execution_id, output="", completed=False, success=False, needs_attention=True, completion_reason="unsupported")
         return result

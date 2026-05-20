@@ -20,6 +20,14 @@ export type PersistedTerminalState = {
 }
 
 const STORAGE_KEY = 'ops_agent_terminal_sessions'
+export const MAX_TERMINAL_OUTPUT_CHARS = 256 * 1024
+
+export function trimTerminalOutput(output: string): string {
+  if (output.length <= MAX_TERMINAL_OUTPUT_CHARS) {
+    return output
+  }
+  return output.slice(output.length - MAX_TERMINAL_OUTPUT_CHARS)
+}
 
 export function readPersistedTerminalState(): PersistedTerminalState | null {
   try {
@@ -78,7 +86,7 @@ export function buildRestoredTerminalState({
     assetId: LOCAL_TERMINAL_ASSET_ID,
     asset: defaultLocalTerminalAsset,
     sessionId: localSessionId,
-    output: localOutput,
+    output: trimTerminalOutput(localOutput),
   }
 
   if (!persisted) {

@@ -46,12 +46,14 @@ class TerminalSessionRuntime:
 
 class TerminalService:
     SESSION_TTL = timedelta(minutes=15)
+    MAX_OUTPUT_BUFFER_CHARS = 256 * 1024
 
     def __init__(self, connector_factory, persistence=None):
         self._connector_factory = connector_factory
         self._sessions: dict[str, TerminalSessionRuntime] = {}
         self._session_keys: dict[str, str] = {}
         self._output_buffers: dict[str, deque[tuple[int, str]]] = {}
+        self._output_buffer_sizes: dict[str, int] = {}
         self._output_sequences: dict[str, int] = {}
         self._output_filters: dict[str, dict[str, OutputFilterState]] = {}
         self._active_filter_ids: dict[str, str | None] = {}
@@ -93,6 +95,7 @@ class TerminalService:
         self._sessions[terminal_id] = TerminalSessionRuntime(session_manager=session_manager, state="created")
         self._session_keys[terminal_id] = session_key
         self._output_buffers[terminal_id] = deque(maxlen=4000)
+        self._output_buffer_sizes[terminal_id] = 0
         self._output_sequences[terminal_id] = 0
         self._output_filters[terminal_id] = {}
         self._active_filter_ids[terminal_id] = None
@@ -192,6 +195,7 @@ class TerminalService:
             return False
         self._session_keys.pop(terminal_id, None)
         self._output_buffers.pop(terminal_id, None)
+        self._output_buffer_sizes.pop(terminal_id, None)
         self._output_sequences.pop(terminal_id, None)
         self._output_filters.pop(terminal_id, None)
         self._active_filter_ids.pop(terminal_id, None)
@@ -321,8 +325,28 @@ class TerminalService:
         self._derive_command_events(terminal_id, output)
         sequence = self._output_sequences.get(terminal_id, 0) + 1
         self._output_sequences[terminal_id] = sequence
-        self._output_buffers.setdefault(terminal_id, deque(maxlen=4000)).append((sequence, output))
+        chunks = self._output_buffers.setdefault(terminal_id, deque(maxlen=4000))
+        if chunks.maxlen is not None and len(chunks) == chunks.maxlen:
+            self._output_buffer_sizes[terminal_id] = max(
+                0,
+                self._output_buffer_sizes.get(terminal_id, 0) - len(chunks[0][1]),
+            )
+        chunks.append((sequence, output))
+        self._output_buffer_sizes[terminal_id] = self._output_buffer_sizes.get(terminal_id, 0) + len(output)
+        self._trim_output_buffer(terminal_id)
         return output
+
+    def _trim_output_buffer(self, terminal_id: str) -> None:
+        chunks = self._output_buffers.get(terminal_id)
+        if not chunks:
+            self._output_buffer_sizes[terminal_id] = 0
+            return
+
+        current_size = self._output_buffer_sizes.get(terminal_id, sum(len(chunk) for _, chunk in chunks))
+        while current_size > self.MAX_OUTPUT_BUFFER_CHARS and chunks:
+            _, removed = chunks.popleft()
+            current_size -= len(removed)
+        self._output_buffer_sizes[terminal_id] = max(0, current_size)
 
     def _derive_command_events(self, terminal_id: str, output: str) -> None:
         # Raw output stays authoritative for terminal replay; filtered output only drives command cards.

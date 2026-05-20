@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, type MutableRefObject } from 'react'
 import { getDesktopApiBaseUrl } from '../../desktop'
 import type { TerminalTabState } from './terminalSessionPersistence'
+import { trimTerminalOutput } from './terminalSessionPersistence'
 import { buildTerminalWebSocketUrl } from './consoleShared'
 
 type UseTerminalSocketsProps = {
@@ -110,11 +111,11 @@ export function useTerminalSockets({
                     return item
                   }
                   if (incomingOutput.length > 0 && incomingOutput.endsWith(item.output)) {
-                    return { ...item, output: incomingOutput }
+                    return { ...item, output: trimTerminalOutput(incomingOutput) }
                   }
                 }
 
-                return { ...item, output: `${item.output}${incomingOutput}` }
+                return { ...item, output: trimTerminalOutput(`${item.output}${incomingOutput}`) }
               })
             )
             return
@@ -127,7 +128,7 @@ export function useTerminalSockets({
           syncTerminalTabs((currentTabs) =>
             currentTabs.map((item) =>
               item.assetId === tabItem.assetId
-                ? { ...item, output: `${item.output}${String(event.data)}` }
+                ? { ...item, output: trimTerminalOutput(`${item.output}${String(event.data)}`) }
                 : item
             )
           )

@@ -79,6 +79,7 @@ export function TerminalOutput({ sessionKey, output, onInput, onResize }: Termin
   const onResizeRef = useRef(onResize)
   const outputRef = useRef(output)
   const sessionKeyRef = useRef(sessionKey)
+  const resolvedThemeRef = useRef(resolvedTheme)
   const lastSentInputRef = useRef<{ value: string; timestamp: number } | null>(null)
 
   useEffect(() => {
@@ -86,7 +87,8 @@ export function TerminalOutput({ sessionKey, output, onInput, onResize }: Termin
     onResizeRef.current = onResize
     outputRef.current = output
     sessionKeyRef.current = sessionKey
-  }, [onInput, onResize, output, sessionKey])
+    resolvedThemeRef.current = resolvedTheme
+  }, [onInput, onResize, output, sessionKey, resolvedTheme])
 
   const emitInput = (data: string) => {
     if (replayingRef.current || /^\u001b\[(I|O|\?1;2c)$/.test(data)) {
@@ -106,7 +108,7 @@ export function TerminalOutput({ sessionKey, output, onInput, onResize }: Termin
       cursorBlink: true,
       fontFamily: 'JetBrains Mono, Cascadia Code, Consolas, monospace',
       fontSize: 13,
-      theme: resolvedTheme === 'light' ? lightTerminalTheme : darkTerminalTheme,
+      theme: resolvedThemeRef.current === 'light' ? lightTerminalTheme : darkTerminalTheme,
     })
     const fitAddon = new FitAddon()
     terminal.loadAddon(fitAddon)
@@ -202,7 +204,7 @@ export function TerminalOutput({ sessionKey, output, onInput, onResize }: Termin
       fitAddonRef.current = null
       writtenLengthRef.current = 0
     }
-  }, [resolvedTheme])
+  }, [])
 
   useEffect(() => {
     const terminal = terminalRef.current

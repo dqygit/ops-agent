@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { EmptyState } from '../layout/EmptyState'
 import type { EventItem, PlanStep } from '../../types/ops'
 import { CommandExecutionCard } from './conversation/CommandExecutionCard'
@@ -24,9 +24,18 @@ export function ConversationView({ events, pendingApprovalRuntimeId, onApprove, 
 
   const lastEvent = events[events.length - 1]
   const isStreamingNow = lastEvent?.kind === 'delta'
-  const latestPlanEvent = [...events].reverse().find((event) => event.kind === 'plan')
-  const settledTerminalRequestIds = collectSettledTerminalRequestIds(events)
-  const turns = buildConversationTurns(buildConversationGroups(events))
+  const latestPlanEvent = useMemo(
+    () => [...events].reverse().find((event) => event.kind === 'plan'),
+    [events]
+  )
+  const settledTerminalRequestIds = useMemo(
+    () => collectSettledTerminalRequestIds(events),
+    [events]
+  )
+  const turns = useMemo(
+    () => buildConversationTurns(buildConversationGroups(events)),
+    [events]
+  )
 
   useEffect(() => {
     const el = scrollContainerRef.current
