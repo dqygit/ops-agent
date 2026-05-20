@@ -2,149 +2,161 @@
 
 <img src="web/src/public/logo.png" alt="Ops Agent Logo" width="96" />
 
-# Ops Agent — 面向运维场景的 AI 助手控制台
-[功能特性](#-功能特性) · [快速开始](#-快速开始) · [开发指南](#-开发指南) · [构建发布](#-构建与发布) · [文档](#-文档)
+# Ops Agent
+
+**English** | [中文](README.zh.md)  
+
+An AI assistant console for controlled operations workflows.
+
+[Quick Start](#quick-start) · [Features](#features) · [Configuration](#configuration) · [Development](#development) · [Desktop](#desktop)
+
+![Python](https://img.shields.io/badge/Python-3.13%2B-3776AB?logo=python&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-0.136-009688?logo=fastapi&logoColor=white)
+![React](https://img.shields.io/badge/React-22-61DAFB?logo=react&logoColor=black)
+![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white)
+![Tauri](https://img.shields.io/badge/Tauri-2-24C8DB?logo=tauri&logoColor=white)
 
 </div>
 
----
+## What It Solves
 
-Ops Agent 把日常运维中分散在资产台账、终端工具、知识经验与执行记录之间的工作流，整合到一个统一的工作台。AI 提供建议，用户保留最终控制权。
-
-支持 **Web** 与 **桌面端（Tauri）** 两种运行形态，适合本地开发验证与运维流程演练。
+Operational work is often split across asset inventories, terminals, model chats, approval trails, and command output. Ops Agent brings those pieces into one console: the AI plans, explains, and iterates; the operator keeps final control over command execution.
 
 ```text
-选择资产  →  连接终端  →  AI 生成计划  →  人工审批  →  执行回传  →  继续迭代
+Configure model -> Select asset -> Open terminal -> Ask AI -> Review plan -> Approve command -> Execute -> Feed output back
 ```
 
-## ✨ 功能特性
+## Features
 
-- **资产统一管理** — 维护本地终端、Linux 主机、网络设备等资产清单。
-- **Web 终端工作台** — 支持本地 PTY、SSH 与网络设备连接，基于 xterm.js。
-- **AI 助手对话** — 结合资产与终端上下文生成计划、解释输出、迭代排障。
-- **命令审批闭环** — 命令默认需人工确认后执行，全程可追踪。
-- **多模型接入** — 支持 Anthropic 与 OpenAI Compatible 协议。
-- **跨平台桌面端** — 基于 Tauri 2 的 macOS / Linux / Windows 客户端。
+- Asset management for local terminals, Linux hosts, serial devices, and network devices.
+- Terminal workspace with local PTY, SSH, serial, and network CLI support.
+- AI operations assistant that uses asset, terminal, and conversation context for planning and troubleshooting.
+- Human approval before command execution, with traceable decisions, commands, and output.
+- Multiple model providers, including Anthropic, OpenAI Compatible, OpenAI Responses, Google Gemini, Azure OpenAI, and common compatible providers.
+- MCP and skills support for extending assistant capabilities.
+- Web and desktop modes, with Tauri packaging for desktop builds.
 
-> [!NOTE]
-> 设计原则：AI 提供建议，用户保留最终控制权。所有破坏性操作均需人工审批。
+## Safety Model
 
-## 🧱 技术栈
+- Default posture: AI suggests; the operator approves.
+- Command output, approval decisions, and conversation events are recorded for traceability.
+- Secrets should not be logged; production deployments must set `OPS_AGENT_SECRET_KEY`.
+- High-risk mutating commands should not be executed automatically.
 
-| 分层 | 技术选型 |
+## Tech Stack
+
+| Layer | Stack |
 | --- | --- |
-| 后端 | Python 3.11 · FastAPI · SQLModel · Uvicorn · SQLite |
-| 前端 | React 18 · TypeScript 5 · Vite 5 · Tailwind CSS 3 · xterm.js |
-| 桌面端 | Tauri 2 · Rust |
-| 包管理 | pip（后端） · pnpm（前端） |
+| Backend | Python 3.11+, FastAPI, SQLModel, SQLite, Uvicorn |
+| AI / Tools | Anthropic SDK, OpenAI SDK, Google GenAI, MCP, LangGraph, Netmiko, Paramiko |
+| Frontend | React 18, TypeScript, Vite, Tailwind CSS, xterm.js |
+| Desktop | Tauri 2, Rust |
+| Package managers | pip, pnpm |
 
-## 🚀 快速开始
+## Quick Start
 
-### 前置要求
+### Requirements
 
-- Python **3.11+**
-- Node.js **20+**，pnpm **10+**
-- Rust toolchain（仅桌面端构建需要）
+- Python 3.13+
+- Node.js 22+
+- pnpm 11+
+- Rust toolchain, only for Tauri desktop development or packaging
 
-### 安装与启动
+### Install Dependencies
 
-```bash
-# 1. 后端依赖
-python -m venv .venv && source .venv/bin/activate
+Windows PowerShell:
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-
-# 2. 前端依赖
-cd web && pnpm install && cd ..
-
-# 3. 一键启动后端 + 前端
-./run.sh
+cd web
+pnpm install
+cd ..
 ```
 
-启动后访问 `http://localhost:5173`，后端默认监听 `127.0.0.1:8000`。
-
-<details>
-<summary>分别启动后端与前端</summary>
+macOS / Linux / Git Bash:
 
 ```bash
-# 后端
-PYTHONPATH=src python -m app.main
-
-# 前端
-cd web && pnpm dev
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+cd web
+pnpm install
+cd ..
 ```
 
-可通过环境变量覆盖后端监听地址：
+## Configuration
 
-```bash
-OPS_AGENT_HOST=127.0.0.1 OPS_AGENT_PORT=8000 OPS_AGENT_RELOAD=true \
-  PYTHONPATH=src python -m app.main
-```
+Startup scripts load `.env` from the repository root.
 
-</details>
+| Variable | Default | Description |
+| --- | --- | --- |
+| `OPS_AGENT_HOST` | `127.0.0.1` | Backend bind host |
+| `OPS_AGENT_PORT` | `8000` | Backend port |
+| `OPS_AGENT_RELOAD` | `true` | Enable Uvicorn reload |
+| `OPS_AGENT_SECRET_KEY` | none | Required in production for secret encryption |
+| `OPS_AGENT_PROVIDER` | `openai_compatible` | Default model provider |
+| `OPS_AGENT_MODEL` | provider default | Default model name |
+| `OPS_AGENT_BASE_URL` | provider default | Default model base URL |
+| `OPS_AGENT_API_KEY` | `demo-key` | Default model API key |
+| `OPS_AGENT_TIMEOUT_SECONDS` | `30` | Model request timeout |
+| `OPS_AGENT_TEMPERATURE` | `0.2` | Model temperature |
+| `OPS_AGENT_MAX_TOKENS` | `2560` | Max model output tokens |
+| `OPS_AGENT_PROMPT_CACHE_ENABLED` | `true` | Enable prompt cache |
+| `OPS_AGENT_PROMPT_CACHE_TTL` | `ephemeral` | Prompt cache TTL |
+| `OPS_AGENT_PWSH_PATH` | auto-detect | Override PowerShell path on Windows |
+| `VITE_API_BASE_URL` | empty | Frontend API base URL; dev mode uses Vite proxy by default |
 
-## 🛠 开发指南
-
-```bash
-# 后端测试
-pytest
-
-# 前端类型检查 + 生产构建
-cd web && pnpm build
-
-# 桌面开发（Tauri）
-cd web && pnpm tauri:dev
-```
-
-### 目录结构
+Local runtime data:
 
 ```text
-.
-├── src/app/                 # Python 后端
-│   ├── api/                 # FastAPI 路由
-│   ├── core/                # 终端 / 连接器 / 执行引擎
-│   ├── db/                  # 数据模型与仓储
-│   ├── integrations/        # LLM / Prompt / Tool 集成
-│   ├── services/            # 业务服务层
-│   └── shared/              # 配置与共享类型
-├── web/                     # React + Vite 前端
-│   └── src-tauri/           # Tauri 桌面端工程
-├── scripts/                 # 后端二进制与桌面打包脚本
-├── docs/                    # 设计与流程文档
-└── run.sh                   # 本地联调启动脚本
+.ops-agent/
+├── ops_agent.db
+├── settings.json
+└── mcp_servers.json
 ```
 
-## 📦 构建与发布
-
-### 本地构建桌面包
+## Development
 
 ```bash
-./scripts/build_desktop_bundle.sh            # 当前平台
-./scripts/build_desktop_bundle.sh macos      # 显式指定
+# Tauri desktop dev
+pnpm --dir web tauri:dev
+
+# Tauri desktop build
+pnpm --dir web tauri:build
+```
+
+## Desktop
+
+The full desktop bundle first builds the backend executable with PyInstaller, then runs the Tauri build.
+
+```bash
+./scripts/build_desktop_bundle.sh
+./scripts/build_desktop_bundle.sh macos
 ./scripts/build_desktop_bundle.sh linux
 ./scripts/build_desktop_bundle.sh windows
 ```
 
-脚本依次执行：安装 Python 依赖与 `pyinstaller` → 构建后端二进制 → `pnpm tauri:build`。
+Notes:
 
-### GitHub Actions 发布
+- Build each desktop target on its native platform.
+- macOS can build Linux bundles through the script's Docker path.
+- Windows bundles must be built on Windows.
+- Linux builds require Tauri system dependencies such as `webkit2gtk`, `gtk`, `appindicator`, and `rsvg`.
+- Release signing and updater flows require `TAURI_PRIVATE_KEY`, `TAURI_KEY_PASSWORD`, and `TAURI_UPDATER_PUBKEY`.
 
-工作流文件：[`.github/workflows/desktop-release.yml`](.github/workflows/desktop-release.yml)
 
-- **触发方式**：手动触发（`workflow_dispatch`）
-- **构建平台**：macOS / Linux / Windows
-- **自动发布**：推送形如 `v*` 的 tag 时，创建 GitHub Release 并上传产物
+## Troubleshooting
 
-## ❓ 常见问题
+### Frontend cannot reach backend
 
-> [!TIP]
-> **前端无法访问后端接口** — 确认后端已运行在 `127.0.0.1:8000`，并检查前端环境变量 `VITE_API_BASE_URL`（留空时使用当前 origin）。
+In dev mode, `web/vite.config.ts` proxies `/api` to the backend. If `VITE_API_BASE_URL` is set, the frontend uses it first.
 
-> [!TIP]
-> **`pnpm tauri:build` 失败** — 检查 Rust toolchain 是否安装；Linux 需安装 `webkit2gtk` / `gtk` 等系统库；CI 中需配置 `TAURI_*` 与 Apple / Windows 签名相关环境变量。
+### PowerShell blocks activation scripts
 
-> [!TIP]
-> **启动脚本端口冲突** — `run.sh` 会尝试清理 `8000` 与 `5173` 端口；若仍冲突请手动排查占用进程。
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+```
 
-## 📚 文档
-
-- [工作流说明](docs/workflow.md)
+Then activate `.venv` again or use `scripts\run.bat`.
