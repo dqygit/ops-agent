@@ -42,6 +42,13 @@ def get_terminal_service() -> TerminalService:
     return _terminal_service
 
 
+def _get_terminal_asset(session: Session, asset_id: int):
+    asset = get_asset_record(session, asset_id)
+    if asset is None and asset_id == 0:
+        return build_local_terminal_asset()
+    return asset
+
+
 def _runtime_manager():
     from app.api.console import _console_app_service
 
@@ -54,7 +61,7 @@ def open_terminal_session(
     session: Session = Depends(get_session),
     terminal_service: TerminalService = Depends(get_terminal_service),
 ) -> TerminalSessionResponse:
-    asset = get_asset_record(session, payload.asset_id)
+    asset = _get_terminal_asset(session, payload.asset_id)
     if asset is None:
         raise HTTPException(status_code=404, detail="Asset not found")
     result = terminal_service.open_session(asset)
@@ -138,9 +145,7 @@ def reconnect_terminal_session(
     session: Session = Depends(get_session),
     terminal_service: TerminalService = Depends(get_terminal_service),
 ) -> TerminalSessionResponse:
-    asset = get_asset_record(session, payload.asset_id)
-    if asset is None and payload.asset_id == 0:
-        asset = build_local_terminal_asset()
+    asset = _get_terminal_asset(session, payload.asset_id)
     if asset is None:
         raise HTTPException(status_code=404, detail="Asset not found")
     result = terminal_service.open_session(asset)

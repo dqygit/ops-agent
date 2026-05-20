@@ -139,7 +139,11 @@ export function App() {
 
     void (async () => {
       try {
-        initializeLocalTerminal(bootstrap.terminalSessionId, bootstrap.terminalOutput)
+        initializeLocalTerminal(
+          bootstrap.terminalSessionId,
+          bootstrap.terminalOutput,
+          bootstrap.terminalSessionError
+        )
 
         const items = await refreshConversationList()
         if (!active) {
@@ -186,6 +190,7 @@ export function App() {
     }
   }, [
     bootstrap.terminalOutput,
+    bootstrap.terminalSessionError,
     bootstrap.terminalSessionId,
     createConversation,
     initializeLocalTerminal,

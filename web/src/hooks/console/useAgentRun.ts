@@ -53,6 +53,59 @@ type PendingApprovalState = {
   approvalKey: string
 }
 
+type DeltaBatchItem = {
+  messageId: string
+  text: string
+  stage?: string
+}
+
+const DELTA_FLUSH_INTERVAL_MS = 60
+
+function createDeltaBatcher({
+  setEvents,
+  isActive,
+}: {
+  setEvents: UseAgentRunProps['setEvents']
+  isActive: () => boolean
+}) {
+  const pending = new Map<string, DeltaBatchItem>()
+  let timer: ReturnType<typeof window.setTimeout> | null = null
+
+  const flush = () => {
+    if (timer !== null) {
+      window.clearTimeout(timer)
+      timer = null
+    }
+    if (pending.size === 0 || !isActive()) {
+      pending.clear()
+      return
+    }
+    const items = Array.from(pending.values())
+    pending.clear()
+    setEvents((currentEvents: EventItem[]) =>
+      items.reduce(
+        (nextEvents, item) => mergeDeltaEvent(nextEvents, item.messageId, item.text, item.stage),
+        currentEvents
+      )
+    )
+  }
+
+  const scheduleFlush = () => {
+    if (timer !== null) {
+      return
+    }
+    timer = window.setTimeout(flush, DELTA_FLUSH_INTERVAL_MS)
+  }
+
+  return {
+    push(item: DeltaBatchItem) {
+      pending.set(item.messageId, item)
+      scheduleFlush()
+    },
+    flush,
+  }
+}
+
 function getApprovalKey(event: EventItem) {
   if (event.kind === 'approval_required' || event.kind === 'approval_decision' || event.kind === 'approval_granted' || event.kind === 'approval_rejected') {
     return event.stepId || `${event.runtimeId || 'runtime'}:${event.command}`
@@ -212,6 +265,10 @@ export function useAgentRun({
       )
 
       const deltaBuffer = new Map<string, string>()
+      const deltaBatcher = createDeltaBatcher({
+        setEvents,
+        isActive: () => activeConversationIdRef.current === conversationId,
+      })
       const pendingPersistEvents: EventItem[] = []
       const latestMessageSnapshots = new Map<string, AgentMessage>()
 
@@ -249,14 +306,11 @@ export function useAgentRun({
 
           const isViewingRunConversation = activeConversationIdRef.current === conversationId
           if (isViewingRunConversation) {
-            setEvents((currentEvents: EventItem[]) =>
-              mergeDeltaEvent(
-                currentEvents,
-                event.messageId!,
-                newText,
-                'stage' in event ? event.stage : undefined
-              )
-            )
+            deltaBatcher.push({
+              messageId: event.messageId,
+              text: newText,
+              stage: 'stage' in event ? event.stage : undefined,
+            })
           } else {
             setBackgroundRun((currentRun) => currentRun?.conversationId === conversationId ? { ...currentRun, hasUnread: true } : currentRun)
           }
@@ -297,6 +351,8 @@ export function useAgentRun({
           setPendingApprovalToken(null)
         }
       }
+
+      deltaBatcher.flush()
 
       // Batch persist: only the latest snapshot per message, plus non-delta events
       const finalMessageSnapshots = Array.from(latestMessageSnapshots.values()) as EventItem[]
@@ -395,6 +451,10 @@ export function useAgentRun({
       try {
         const stream = await streamApproveAgent(runId, approved, approvalToken ?? undefined, allowPrefix)
         const deltaBuffer = new Map<string, string>()
+        const deltaBatcher = createDeltaBatcher({
+          setEvents,
+          isActive: () => activeConversationIdRef.current === conversationId,
+        })
         const pendingPersistEvents: EventItem[] = []
         const latestMessageSnapshots = new Map<string, AgentMessage>()
 
@@ -419,14 +479,11 @@ export function useAgentRun({
             const newText = currentText + event.text
             deltaBuffer.set(event.messageId, newText)
 
-            setEvents((currentEvents: EventItem[]) =>
-              mergeDeltaEvent(
-                currentEvents,
-                event.messageId!,
-                newText,
-                'stage' in event ? event.stage : undefined
-              )
-            )
+            deltaBatcher.push({
+              messageId: event.messageId,
+              text: newText,
+              stage: 'stage' in event ? event.stage : undefined,
+            })
             continue
           }
 
@@ -447,6 +504,8 @@ export function useAgentRun({
             setPendingApprovalToken(null)
           }
         }
+
+        deltaBatcher.flush()
 
         // Batch persist all non-delta events + message snapshots + delta buffer after stream ends
         const finalMessageSnapshots = Array.from(latestMessageSnapshots.values()) as EventItem[]
@@ -498,6 +557,7 @@ export function useAgentRun({
     },
     [
       pendingApprovalRuntimeId,
+      pendingApprovalToken,
       activeConversationId,
       activeConversationIdRef,
       setLoadError,
@@ -540,6 +600,10 @@ export function useAgentRun({
         approved: input.approved,
       })
       const deltaBuffer = new Map<string, string>()
+      const deltaBatcher = createDeltaBatcher({
+        setEvents,
+        isActive: () => activeConversationIdRef.current === activeConversationId,
+      })
       const pendingPersistEvents: EventItem[] = []
       const latestMessageSnapshots = new Map<string, AgentMessage>()
 
@@ -558,14 +622,11 @@ export function useAgentRun({
           const newText = currentText + event.text
           deltaBuffer.set(event.messageId, newText)
           if (activeConversationIdRef.current === activeConversationId) {
-            setEvents((currentEvents: EventItem[]) =>
-              mergeDeltaEvent(
-                currentEvents,
-                event.messageId!,
-                newText,
-                'stage' in event ? event.stage : undefined
-              )
-            )
+            deltaBatcher.push({
+              messageId: event.messageId,
+              text: newText,
+              stage: 'stage' in event ? event.stage : undefined,
+            })
           }
           continue
         }
@@ -575,6 +636,8 @@ export function useAgentRun({
         }
         pendingPersistEvents.push(event)
       }
+
+      deltaBatcher.flush()
 
       const finalMessageSnapshots = Array.from(latestMessageSnapshots.values()) as EventItem[]
       const finalEvents = flushDeltaBuffer(deltaBuffer, latestEventsRef.current)

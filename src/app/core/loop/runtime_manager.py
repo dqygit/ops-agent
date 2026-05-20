@@ -87,6 +87,8 @@ class RuntimeState:
 
 
 class LoopRuntimeManager:
+    COMPLETED_RUNTIME_TTL = timedelta(minutes=30)
+
     def __init__(self, *, tools_factory, usage_callback=None):
         self._tools_factory = tools_factory
         self._usage_callback = usage_callback
@@ -99,6 +101,27 @@ class LoopRuntimeManager:
 
     def _hash_token(self, token: str) -> str:
         return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+    def _expire_completed_runtimes(self) -> None:
+        now = self._now()
+        expired_runtime_ids = [
+            runtime_id
+            for runtime_id, runtime in self._by_runtime.items()
+            if runtime.state.phase in {"completed", "failed"}
+            and now - runtime.updated_at >= self.COMPLETED_RUNTIME_TTL
+        ]
+        for runtime_id in expired_runtime_ids:
+            runtime = self._by_runtime.pop(runtime_id, None)
+            if runtime is None:
+                continue
+            conversation_runtimes = self._by_conversation.get(runtime.conversation_id)
+            if conversation_runtimes is not None:
+                conversation_runtimes.pop(runtime_id, None)
+                if not conversation_runtimes:
+                    self._by_conversation.pop(runtime.conversation_id, None)
+            for terminal_id, owner_runtime_id in list(self._terminal_slots.items()):
+                if owner_runtime_id == runtime_id:
+                    self._terminal_slots.pop(terminal_id, None)
 
     def _request_view(self, request: PendingTerminalRequest, approval_token: str | None = None) -> dict[str, Any]:
         return {
@@ -563,6 +586,7 @@ class LoopRuntimeManager:
             self._terminal_slots.pop(terminal_id, None)
 
     def create_runtime(self, *, conversation_id: str, asset_id: int, terminal_id: str | None, context: LoopContext) -> LoopState:
+        self._expire_completed_runtimes()
         runtime_id = context.runtime_id
         state = LoopState(phase="executing", context=context)
         runtime = RuntimeState(
@@ -581,12 +605,15 @@ class LoopRuntimeManager:
         return state
 
     def get_runtime(self, runtime_id: str) -> RuntimeState | None:
+        self._expire_completed_runtimes()
         return self._by_runtime.get(runtime_id)
 
     def list_runtimes(self, conversation_id: str) -> list[RuntimeState]:
+        self._expire_completed_runtimes()
         return list(self._by_conversation.get(conversation_id, {}).values())
 
     def events_since(self, runtime_id: str, since: int) -> tuple[int, list[dict]]:
+        self._expire_completed_runtimes()
         rt = self._by_runtime.get(runtime_id)
         if rt is None:
             raise ValueError("runtime not found")
@@ -595,6 +622,7 @@ class LoopRuntimeManager:
         return rt.sequence, events
 
     def get_snapshot(self, runtime_id: str) -> dict:
+        self._expire_completed_runtimes()
         rt = self._by_runtime.get(runtime_id)
         if rt is None:
             raise ValueError("runtime not found")

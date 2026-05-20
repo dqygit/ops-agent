@@ -78,11 +78,14 @@ export function useTerminalSessions({
   )
 
   const initializeLocalTerminal = useCallback(
-    (terminalSessionId: string | null, terminalOutput: string) => {
+    (terminalSessionId: string | null, terminalOutput: string, terminalError = '') => {
+      const initialOutput = terminalSessionId === null && terminalError
+        ? `\r\n\x1b[31m[ERROR] ${terminalError}\x1b[0m\r\n`
+        : terminalOutput
       const restoredState = buildRestoredTerminalState({
         assets,
         localSessionId: terminalSessionId,
-        localOutput: terminalOutput,
+        localOutput: initialOutput,
         persisted: readPersistedTerminalState(),
       })
       setTerminalTabs(restoredState.tabs)

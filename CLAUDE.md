@@ -13,7 +13,11 @@ Ops Agent 是一个面向运维场景的 AI 助手控制台，包含 Python Fast
 ### 初始化
 
 ```bash
+# 如果是windows：
+uv python install 3.13.5 && uv venv .venv --seed && .\venv\Scripts\activate
+# 如果是linux\mac:
 python -m venv .venv && source .venv/bin/activate
+
 pip install -r requirements.txt
 cd web && pnpm install
 ```
