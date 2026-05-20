@@ -80,6 +80,11 @@ class ExecuteCommandHandler:
             args["asset_id"] = authorization.asset_id
             args["asset_name"] = authorization.asset_name
             args["terminal_id"] = authorization.terminal_id
+            args["asset_type"] = authorization.asset_type
+            args["shell_type"] = authorization.shell_type
+            args["execution_profile"] = authorization.execution_profile
+            if authorization.device_vendor:
+                args["device_vendor"] = authorization.device_vendor
         context = ApprovalContext(
             asset_type=str(args.get("asset_type", "") or ""),
             shell_type=str(args.get("shell_type", "") or ""),
@@ -117,6 +122,11 @@ class ExecuteCommandHandler:
         args["asset_id"] = authorization.asset_id
         args["asset_name"] = authorization.asset_name
         args["terminal_id"] = authorization.terminal_id
+        args["asset_type"] = authorization.asset_type
+        args["shell_type"] = authorization.shell_type
+        args["execution_profile"] = authorization.execution_profile
+        if authorization.device_vendor:
+            args["device_vendor"] = authorization.device_vendor
         if not self._terminal.session_belongs_to_asset(terminal_id, authorization.asset_id):
             error = "Authorized terminal no longer belongs to the expected asset."
             if manager:

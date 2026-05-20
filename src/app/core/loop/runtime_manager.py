@@ -9,6 +9,8 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
 
+from app.core.connectors.device_profiles import select_device_profile, select_execution_profile
+from app.core.connectors.execution_context import build_asset_summary, build_device_context, infer_os_type
 from app.core.loop.agent_loop import AgentLoop
 from app.core.loop.loop_events import LoopEvent
 from app.core.loop.loop_state import LoopContext, LoopRuntimeStep, LoopState
@@ -57,6 +59,13 @@ class RuntimeTerminalAuthorization:
     output_cursor: int
     created_at: datetime
     updated_at: datetime
+    asset_type: str = ""
+    asset_summary: str = ""
+    shell_type: str = "unknown"
+    os_type: str = "unknown"
+    execution_profile: str = "posix-shell"
+    device_vendor: str | None = None
+    device_context: str = ""
     revoked_at: datetime | None = None
     revoke_reason: str | None = None
     replaced_by_authorization_id: str | None = None
@@ -116,6 +125,11 @@ class LoopRuntimeManager:
             "approvedBy": authorization.approved_by,
             "requestId": authorization.request_id,
             "status": authorization.status,
+            "assetType": authorization.asset_type,
+            "shellType": authorization.shell_type,
+            "osType": authorization.os_type,
+            "executionProfile": authorization.execution_profile,
+            "deviceVendor": authorization.device_vendor,
             "replacedByAuthorizationId": authorization.replaced_by_authorization_id,
             "revokeReason": authorization.revoke_reason,
         }
@@ -141,6 +155,35 @@ class LoopRuntimeManager:
         runtime.events.append(stored_event)
         return event
 
+    def _authorization_context_from_asset(self, asset: Any, terminal_service: Any, terminal_id: str) -> dict[str, Any]:
+        asset_type = str(getattr(asset, "asset_type", "") or "")
+        try:
+            shell_type = terminal_service.get_shell_kind(terminal_id)
+        except ValueError:
+            shell_type = "unknown"
+        execution_profile = select_execution_profile(asset_type, shell_type)
+        device_profile = select_device_profile(asset_type, shell_type)
+        return {
+            "asset_type": asset_type,
+            "asset_summary": build_asset_summary(asset),
+            "shell_type": shell_type,
+            "os_type": infer_os_type(shell_type, execution_profile=execution_profile),
+            "execution_profile": execution_profile,
+            "device_vendor": device_profile.vendor if device_profile else None,
+            "device_context": build_device_context(execution_profile, device_profile),
+        }
+
+    def _authorization_context_from_runtime(self, context: LoopContext) -> dict[str, Any]:
+        return {
+            "asset_type": context.asset_type,
+            "asset_summary": context.asset_summary,
+            "shell_type": context.shell_type,
+            "os_type": context.os_type,
+            "execution_profile": context.execution_profile,
+            "device_vendor": context.device_vendor,
+            "device_context": context.device_context,
+        }
+
     def create_initial_terminal_authorization(
         self,
         runtime_id: str,
@@ -164,6 +207,7 @@ class LoopRuntimeManager:
         if existing is not None:
             return existing
         now = self._now()
+        context_values = self._authorization_context_from_runtime(runtime.state.context)
         authorization = RuntimeTerminalAuthorization(
             authorization_id=str(uuid.uuid4()),
             runtime_id=runtime_id,
@@ -178,6 +222,7 @@ class LoopRuntimeManager:
             output_cursor=0,
             created_at=now,
             updated_at=now,
+            **context_values,
         )
         runtime.terminal_authorizations[authorization.authorization_id] = authorization
         self._append_runtime_event(
@@ -382,6 +427,7 @@ class LoopRuntimeManager:
             return self._terminal_request_decision_response(request)
         request.terminal_creation_status = "opened"
         request.terminal_finished_at = self._now()
+        context_values = self._authorization_context_from_asset(asset, terminal_service, terminal_id)
         authorization = RuntimeTerminalAuthorization(
             authorization_id=str(uuid.uuid4()),
             runtime_id=runtime_id,
@@ -396,6 +442,7 @@ class LoopRuntimeManager:
             output_cursor=0,
             created_at=request.terminal_finished_at,
             updated_at=request.terminal_finished_at,
+            **context_values,
         )
         runtime.terminal_authorizations[authorization.authorization_id] = authorization
         self._append_runtime_event(
@@ -740,10 +787,22 @@ class LoopRuntimeManager:
             for authorization in rt.terminal_authorizations.values()
             if authorization.status == "active"
         ]
-        authorization_lines = [
-            f"- {authorization.asset_name} (asset_id={authorization.asset_id}) authorization_id={authorization.authorization_id}"
-            for authorization in active_authorizations
-        ]
+        authorization_lines = []
+        for authorization in active_authorizations:
+            authorization_lines.append(
+                "\n".join(
+                    [
+                        f"- {authorization.asset_name} (asset_id={authorization.asset_id}) authorization_id={authorization.authorization_id}",
+                        f"  Asset Type: {authorization.asset_type or 'unknown'}",
+                        f"  Shell: {authorization.shell_type}",
+                        f"  Operating System Type: {authorization.os_type}",
+                        f"  Execution Profile: {authorization.execution_profile}",
+                        f"  Device Vendor: {authorization.device_vendor or 'unknown'}",
+                        f"  Current Host Information: {authorization.asset_summary}",
+                        f"  Device Execution Rules:\n{authorization.device_context}" if authorization.device_context else "  Device Execution Rules: none",
+                    ]
+                )
+            )
         authorization_summary = "\n".join(authorization_lines) if authorization_lines else "- None"
         return (
             f"Terminal request result: {resume_message}\n\n"

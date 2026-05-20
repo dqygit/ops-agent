@@ -485,6 +485,11 @@ class TerminalAuthorizationView(BaseModel):
     approved_by: str = Field(alias="approvedBy")
     request_id: str | None = Field(default=None, alias="requestId")
     status: str
+    asset_type: str = Field(default="", alias="assetType")
+    shell_type: str = Field(default="unknown", alias="shellType")
+    os_type: str = Field(default="unknown", alias="osType")
+    execution_profile: str = Field(default="posix-shell", alias="executionProfile")
+    device_vendor: str | None = Field(default=None, alias="deviceVendor")
     replaced_by_authorization_id: str | None = Field(default=None, alias="replacedByAuthorizationId")
     revoke_reason: str | None = Field(default=None, alias="revokeReason")
 

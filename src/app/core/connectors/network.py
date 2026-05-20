@@ -161,12 +161,17 @@ class NetworkConnector:
         except Exception:
             pass
         client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        connect_timeout = float(self.device_params.get("conn_timeout", 15))
         connect_kwargs = {
             "hostname": self.ssh_params.get("host"),
             "port": self.ssh_params.get("port", 22),
             "username": self.ssh_params.get("username"),
             "allow_agent": False,
             "look_for_keys": False,
+            "timeout": connect_timeout,
+            "banner_timeout": connect_timeout,
+            "auth_timeout": connect_timeout,
+            "channel_timeout": connect_timeout,
         }
         private_key = self.ssh_params.get("private_key")
         password = self.ssh_params.get("password")
