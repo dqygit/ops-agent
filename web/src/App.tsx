@@ -38,17 +38,19 @@ export function App() {
     activeConversationIdRef,
     activeConversationTitle,
     events,
+    eventWindow,
+    isLoadingOlderEvents,
     setEvents,
     runtimeSummaries,
     activeRuntimeSnapshot,
     contextStatus,
     setContextStatus,
     loadConversation,
+    loadOlderConversationEvents,
     syncConversationRuntimes,
     refreshConversationList,
     createConversation,
     deleteConversation,
-    applyConversationDetailIfActive,
     upsertConversationSummary,
   } = useConversationState(selectedModel)
 
@@ -118,7 +120,6 @@ export function App() {
     events,
     setEvents,
     createConversation,
-    applyConversationDetailIfActive,
     upsertConversationSummary,
     refreshConversationList,
     syncConversationRuntimes,
@@ -244,6 +245,8 @@ export function App() {
                 activeConversationTitle={activeConversationTitle}
                 backgroundRun={activeBackgroundRun}
                 events={events}
+                eventWindow={eventWindow}
+                isLoadingOlderEvents={isLoadingOlderEvents}
                 pendingApprovalRuntimeId={pendingApprovalRuntimeId}
                 runtimeSummaries={runtimeSummaries}
                 activeRuntimeSnapshot={activeRuntimeSnapshot}
@@ -283,6 +286,7 @@ export function App() {
                   void rejectRun()
                 }}
                 onTerminalRequestDecision={decideTerminalAccess}
+                onLoadOlderEvents={loadOlderConversationEvents}
                 onSavePlan={savePlan}
                 onApprovePlan={approvePlan}
               />

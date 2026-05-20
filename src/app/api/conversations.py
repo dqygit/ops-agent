@@ -6,7 +6,9 @@ from fastapi import APIRouter, HTTPException, Response, status
 
 from app.api.schemas import (
     ConversationAppendEventsRequest,
+    ConversationAppendEventsResponse,
     ConversationContextStatusView,
+    ConversationEventsPageView,
     ConversationTokenUsageView,
     ConversationCreateRequest,
     ConversationCreateResponse,
@@ -54,14 +56,35 @@ def get_conversation(conversation_id: str) -> ConversationDetailView:
     return ConversationDetailView.model_validate(detail.__dict__)
 
 
-@router.post("/api/conversations/{conversation_id}/events", response_model=ConversationDetailView)
-def append_conversation_events(conversation_id: str, payload: ConversationAppendEventsRequest) -> ConversationDetailView:
+@router.get("/api/conversations/{conversation_id}/events", response_model=ConversationEventsPageView)
+def get_conversation_events(conversation_id: str, offset: int = 0, limit: int = 200, tail: int | None = None) -> ConversationEventsPageView:
+    service = get_conversation_service()
+    try:
+        page = service.get_events_tail(conversation_id, limit=tail) if tail is not None else service.get_events_page(conversation_id, offset=offset, limit=limit)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Conversation not found") from exc
+    return ConversationEventsPageView(
+        conversation=ConversationSummaryView.model_validate(page.conversation.__dict__),
+        events=page.events,
+        offset=page.offset,
+        limit=page.limit,
+        total=page.total,
+        has_more_before=page.has_more_before,
+        has_more_after=page.has_more_after,
+    )
+
+
+@router.post("/api/conversations/{conversation_id}/events", response_model=ConversationAppendEventsResponse)
+def append_conversation_events(conversation_id: str, payload: ConversationAppendEventsRequest) -> ConversationAppendEventsResponse:
     service = get_conversation_service()
     try:
         detail = service.append_events(conversation_id, payload.events)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Conversation not found") from exc
-    return ConversationDetailView.model_validate(detail.__dict__)
+    return ConversationAppendEventsResponse(
+        conversation=ConversationSummaryView.model_validate(service.to_summary(detail).__dict__),
+        appended_count=len(payload.events),
+    )
 
 
 @router.get("/api/conversations/{conversation_id}/context", response_model=ConversationContextStatusView)

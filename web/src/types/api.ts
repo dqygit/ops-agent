@@ -21,6 +21,21 @@ export type ConversationDetailDto = {
   events: EventItem[]
 }
 
+export type ConversationEventsPageDto = {
+  conversation: ConversationSummaryDto
+  events: EventItem[]
+  offset: number
+  limit: number
+  total: number
+  has_more_before: boolean
+  has_more_after: boolean
+}
+
+export type ConversationAppendEventsResponseDto = {
+  conversation: ConversationSummaryDto
+  appended_count: number
+}
+
 export type ConversationCreateResponseDto = {
   conversation: ConversationSummaryDto
   events: EventItem[]
@@ -57,7 +72,6 @@ export type SkillsResponseDto = {
 export type ConsoleRunRequest = {
   prompt: string
   mode: RunMode
-  currentEvents: EventItem[]
   assetId?: number
   terminalId?: string | null
   modelName?: string
@@ -68,7 +82,6 @@ export type ConsoleRunRequest = {
 export type ConsoleRunRequestDto = {
   prompt: string
   mode: RunMode
-  currentEvents: EventItem[]
   asset_id?: number
   terminal_id?: string | null
   model_name?: string

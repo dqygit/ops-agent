@@ -6,6 +6,8 @@ from typing import Any, Protocol
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_COMMAND_TIMEOUT_SECONDS = 15.0
+
 from app.core.loop.loop_events import (
     LoopEvent,
     emit_failed,
@@ -162,7 +164,7 @@ class ExecuteCommandHandler:
             )
             execution_id = session_manager.start_execution(
                 command,
-                ExecutionContext(working_directory=step.working_directory),
+                ExecutionContext(working_directory=step.working_directory, timeout_seconds=DEFAULT_COMMAND_TIMEOUT_SECONDS),
             )
             execution = session_manager.get_execution_result(execution_id)
             

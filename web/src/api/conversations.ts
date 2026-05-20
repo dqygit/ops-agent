@@ -1,7 +1,7 @@
 import { requestJson, requestVoid } from './client'
 import { mapRequiredTimestamps } from './mappers'
-import type { ConversationContextStatusDto, ConversationCreateResponseDto, ConversationDetailDto, ConversationSummaryDto } from '../types/api'
-import type { ConversationContextStatus, ConversationDetail, ConversationSummary, EventItem } from '../types/ops'
+import type { ConversationAppendEventsResponseDto, ConversationContextStatusDto, ConversationCreateResponseDto, ConversationDetailDto, ConversationEventsPageDto, ConversationSummaryDto } from '../types/api'
+import type { ConversationContextStatus, ConversationDetail, ConversationEventsPage, ConversationSummary, EventItem } from '../types/ops'
 
 export function mapConversationSummary(dto: ConversationSummaryDto): ConversationSummary {
   return {
@@ -21,6 +21,25 @@ export function mapConversationDetail(dto: ConversationDetailDto): ConversationD
     selectedModel: dto.selected_model,
     ...mapRequiredTimestamps(dto),
     events: dto.events,
+  }
+}
+
+export function mapConversationEventsPage(dto: ConversationEventsPageDto): ConversationEventsPage {
+  return {
+    conversation: mapConversationSummary(dto.conversation),
+    events: dto.events,
+    offset: dto.offset,
+    limit: dto.limit,
+    total: dto.total,
+    hasMoreBefore: dto.has_more_before,
+    hasMoreAfter: dto.has_more_after,
+  }
+}
+
+export function mapConversationAppendResponse(dto: ConversationAppendEventsResponseDto): { conversation: ConversationSummary; appendedCount: number } {
+  return {
+    conversation: mapConversationSummary(dto.conversation),
+    appendedCount: dto.appended_count,
   }
 }
 
@@ -61,17 +80,27 @@ export async function getConversation(conversationId: string): Promise<Conversat
   return mapConversationDetail(conversation)
 }
 
+export async function getConversationEventsTail(conversationId: string, limit = 200): Promise<ConversationEventsPage> {
+  const page = await requestJson<ConversationEventsPageDto>(`/api/conversations/${conversationId}/events?tail=${limit}`)
+  return mapConversationEventsPage(page)
+}
+
+export async function getConversationEventsPage(conversationId: string, offset: number, limit = 200): Promise<ConversationEventsPage> {
+  const page = await requestJson<ConversationEventsPageDto>(`/api/conversations/${conversationId}/events?offset=${offset}&limit=${limit}`)
+  return mapConversationEventsPage(page)
+}
+
 export async function getConversationContext(conversationId: string): Promise<ConversationContextStatus> {
   const status = await requestJson<ConversationContextStatusDto>(`/api/conversations/${conversationId}/context`)
   return mapConversationContextStatus(status)
 }
 
-export async function appendConversationEvents(conversationId: string, events: EventItem[]): Promise<ConversationDetail> {
-  const conversation = await requestJson<ConversationDetailDto>(`/api/conversations/${conversationId}/events`, {
+export async function appendConversationEvents(conversationId: string, events: EventItem[]): Promise<{ conversation: ConversationSummary; appendedCount: number }> {
+  const response = await requestJson<ConversationAppendEventsResponseDto>(`/api/conversations/${conversationId}/events`, {
     method: 'POST',
     body: JSON.stringify({ events }),
   })
-  return mapConversationDetail(conversation)
+  return mapConversationAppendResponse(response)
 }
 
 export async function deleteConversation(conversationId: string): Promise<void> {

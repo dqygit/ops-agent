@@ -37,6 +37,17 @@ class ConversationDetail:
     events: list[dict]
 
 
+@dataclass
+class ConversationEventsPage:
+    conversation: ConversationSummary
+    events: list[dict]
+    offset: int
+    limit: int
+    total: int
+    has_more_before: bool
+    has_more_after: bool
+
+
 class ConversationService:
     def __init__(self, base_dir: Path, model_service=None):
         self._base_dir = Path(base_dir)
@@ -75,6 +86,38 @@ class ConversationService:
     def get_conversation(self, conversation_id: str) -> ConversationDetail:
         payload = json.loads(self._detail_path(conversation_id).read_text(encoding="utf-8"))
         return ConversationDetail(**payload)
+
+    def get_events_page(self, conversation_id: str, *, offset: int, limit: int) -> ConversationEventsPage:
+        detail = self.get_conversation(conversation_id)
+        total = len(detail.events)
+        normalized_limit = max(1, min(limit, 500))
+        normalized_offset = max(0, min(offset, total))
+        page_events = detail.events[normalized_offset : normalized_offset + normalized_limit]
+        return ConversationEventsPage(
+            conversation=self._to_summary(detail),
+            events=page_events,
+            offset=normalized_offset,
+            limit=normalized_limit,
+            total=total,
+            has_more_before=normalized_offset > 0,
+            has_more_after=normalized_offset + len(page_events) < total,
+        )
+
+    def get_events_tail(self, conversation_id: str, *, limit: int) -> ConversationEventsPage:
+        detail = self.get_conversation(conversation_id)
+        total = len(detail.events)
+        normalized_limit = max(1, min(limit, 500))
+        offset = max(0, total - normalized_limit)
+        page_events = detail.events[offset:]
+        return ConversationEventsPage(
+            conversation=self._to_summary(detail),
+            events=page_events,
+            offset=offset,
+            limit=normalized_limit,
+            total=total,
+            has_more_before=offset > 0,
+            has_more_after=False,
+        )
 
     def append_events(self, conversation_id: str, events: list[dict], *, async_title_generation: bool = True) -> ConversationDetail:
         detail = self.get_conversation(conversation_id)
@@ -186,6 +229,9 @@ class ConversationService:
             return None
         title = title.strip()
         return title or None
+
+    def to_summary(self, detail: ConversationDetail) -> ConversationSummary:
+        return self._to_summary(detail)
 
     def _to_summary(self, detail: ConversationDetail) -> ConversationSummary:
         return ConversationSummary(

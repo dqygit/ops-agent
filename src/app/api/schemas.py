@@ -616,6 +616,21 @@ class ConversationAppendEventsRequest(BaseModel):
     events: list[dict] = Field(default_factory=list)
 
 
+class ConversationAppendEventsResponse(BaseModel):
+    conversation: ConversationSummaryView
+    appended_count: int = 0
+
+
+class ConversationEventsPageView(BaseModel):
+    conversation: ConversationSummaryView
+    events: list[dict] = Field(default_factory=list)
+    offset: int
+    limit: int
+    total: int
+    has_more_before: bool
+    has_more_after: bool
+
+
 class PendingApprovalStepView(BaseModel):
     title: str
     command: str

@@ -24,6 +24,7 @@ class OpenAICompatibleLLMProvider:
         request: LLMCompletionRequest,
     ) -> Iterator[LLMCompletionChunk]:
         params = self._build_completion_params(config=config, request=request, stream=True)
+        self._log_request_summary(config=config, params=params, stream=True)
         try:
             response = self._get_client(config).chat.completions.create(**params)
             finish_reason: str | None = None
@@ -114,6 +115,23 @@ class OpenAICompatibleLLMProvider:
             self._tool_call_ids(params),
         )
 
+    def _log_request_summary(self, *, config: ModelConfig, params: dict[str, Any], stream: bool) -> None:
+        logger.info(
+            "OpenAI-compatible request summary: model=%s provider=%s base_url=%s stream=%s messages=%d roles=%s tools=%d tool_choice=%s response_format=%s extra_body_keys=%s tool_call_ids=%s message_summary=%s",
+            config.model_name,
+            config.provider,
+            config.base_url,
+            stream,
+            self._message_count(params),
+            self._message_roles(params),
+            self._tools_count(params),
+            self._tool_choice_summary(params),
+            self._response_format_type(params),
+            self._extra_body_keys(params),
+            self._tool_call_ids(params),
+            self._message_summary(params),
+        )
+
     def _extract_error_body(self, exc: Exception) -> Any:
         body = getattr(exc, "body", None)
         if body is not None:
@@ -129,11 +147,58 @@ class OpenAICompatibleLLMProvider:
             except Exception:
                 return None
 
+    def _message_count(self, params: dict[str, Any]) -> int:
+        messages = params.get("messages")
+        return len(messages) if isinstance(messages, list) else 0
+
     def _message_roles(self, params: dict[str, Any]) -> list[str]:
         messages = params.get("messages")
         if not isinstance(messages, list):
             return []
         return [str(message.get("role", "")) for message in messages if isinstance(message, dict)]
+
+    def _message_summary(self, params: dict[str, Any]) -> list[dict[str, Any]]:
+        messages = params.get("messages")
+        if not isinstance(messages, list):
+            return []
+        summary: list[dict[str, Any]] = []
+        for index, message in enumerate(messages):
+            if not isinstance(message, dict):
+                continue
+            tool_calls = message.get("tool_calls")
+            summary.append(
+                {
+                    "index": index,
+                    "role": message.get("role"),
+                    "has_content": bool(message.get("content")),
+                    "tool_calls": len(tool_calls) if isinstance(tool_calls, list) else 0,
+                    "tool_call_id": message.get("tool_call_id") if message.get("role") == "tool" else None,
+                }
+            )
+        return summary
+
+    def _tools_count(self, params: dict[str, Any]) -> int:
+        tools = params.get("tools")
+        return len(tools) if isinstance(tools, list) else 0
+
+    def _tool_choice_summary(self, params: dict[str, Any]) -> Any:
+        tool_choice = params.get("tool_choice")
+        if isinstance(tool_choice, dict):
+            function = tool_choice.get("function")
+            return {"type": tool_choice.get("type"), "function": function.get("name") if isinstance(function, dict) else None}
+        return tool_choice
+
+    def _response_format_type(self, params: dict[str, Any]) -> Any:
+        response_format = params.get("response_format")
+        if isinstance(response_format, dict):
+            return response_format.get("type")
+        return response_format
+
+    def _extra_body_keys(self, params: dict[str, Any]) -> list[str]:
+        extra_body = params.get("extra_body")
+        if not isinstance(extra_body, dict):
+            return []
+        return sorted(str(key) for key in extra_body)
 
     def _tool_call_ids(self, params: dict[str, Any]) -> dict[str, list[str]]:
         assistant_ids: list[str] = []

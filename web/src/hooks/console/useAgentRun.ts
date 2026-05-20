@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react'
 import { appendConversationEvents, streamApproveAgent, streamApproveRuntimePlan, streamDecideTerminalRequest, streamRunAgent, updateRuntimePlan } from '../../api'
 import type { RunMode } from '../../types/api'
-import type { AgentMessage, Asset, ConversationContextStatus, EventItem, PlanStep, RuntimeSummary } from '../../types/ops'
-import { flushDeltaBuffer, LOCAL_TERMINAL_ASSET_ID, mergeDeltaEvent, mergeEventsBySequence, mergePersistedEventsWithTransient, PENDING_ASSISTANT_MESSAGE_ID, upsertMessageEvent, upsertStreamEvent } from './consoleShared'
+import type { AgentMessage, Asset, ConversationContextStatus, ConversationSummary, EventItem, PlanStep, RuntimeSummary } from '../../types/ops'
+import { flushDeltaBuffer, LOCAL_TERMINAL_ASSET_ID, mergeDeltaEvent, mergeEventsBySequence, PENDING_ASSISTANT_MESSAGE_ID, upsertMessageEvent, upsertStreamEvent } from './consoleShared'
 
 interface UseAgentRunProps {
   // Conversation dependencies
@@ -12,18 +12,7 @@ interface UseAgentRunProps {
   events: EventItem[]
   setEvents: (updater: EventItem[] | ((prev: EventItem[]) => EventItem[])) => void
   createConversation: () => Promise<string>
-  applyConversationDetailIfActive: (
-    conversationId: string,
-    detail: { title: string; events: EventItem[] }
-  ) => void
-  upsertConversationSummary: (detail: {
-    id: string
-    title: string
-    selectedModel: string | null
-    createdAt: string
-    updatedAt: string
-    events: EventItem[]
-  }) => void
+  upsertConversationSummary: (summary: ConversationSummary) => void
   refreshConversationList: () => Promise<any>
   syncConversationRuntimes: (conversationId: string) => Promise<RuntimeSummary[]>
 
@@ -156,7 +145,6 @@ export function useAgentRun({
   events,
   setEvents,
   createConversation,
-  applyConversationDetailIfActive,
   upsertConversationSummary,
   refreshConversationList,
   syncConversationRuntimes,
@@ -255,7 +243,6 @@ export function useAgentRun({
 
       const stream = await streamRunAgent(
         runPrompt,
-        [...events, userEvent],
         selectedAsset?.id === LOCAL_TERMINAL_ASSET_ID ? undefined : selectedAsset?.id,
         activeTerminalTab?.sessionId ?? null,
         selectedModel,
@@ -359,13 +346,8 @@ export function useAgentRun({
       const finalEvents = flushDeltaBuffer(deltaBuffer, latestEventsRef.current)
       const allPersistEvents = mergeEventsBySequence([...pendingPersistEvents, ...finalMessageSnapshots, ...finalEvents])
       if (allPersistEvents.length > 0) {
-        const detail = await appendConversationEvents(conversationId, allPersistEvents)
-        upsertConversationSummary(detail)
-        if (activeConversationIdRef.current === conversationId) {
-          setEvents((currentEvents: EventItem[]) => mergePersistedEventsWithTransient(detail.events, currentEvents))
-        } else {
-          applyConversationDetailIfActive(conversationId, detail)
-        }
+        const response = await appendConversationEvents(conversationId, allPersistEvents)
+        upsertConversationSummary(response.conversation)
       }
       await syncConversationRuntimes(conversationId)
       setBackgroundRun((currentRun) => currentRun?.conversationId === conversationId ? { ...currentRun, status: 'completed', hasUnread: activeConversationIdRef.current !== conversationId } : currentRun)
@@ -383,13 +365,8 @@ export function useAgentRun({
             kind: 'error',
             text: errorMessage,
           }
-          const detail = await appendConversationEvents(conversationId, [errorEvent])
-          upsertConversationSummary(detail)
-          if (activeConversationIdRef.current === conversationId) {
-            setEvents((currentEvents: EventItem[]) => mergePersistedEventsWithTransient(detail.events, currentEvents))
-          } else {
-            applyConversationDetailIfActive(conversationId, detail)
-          }
+          const response = await appendConversationEvents(conversationId, [errorEvent])
+          upsertConversationSummary(response.conversation)
           await syncConversationRuntimes(conversationId)
         } catch {
           // Fall back to loadError if persisting the error event also fails.
@@ -416,10 +393,8 @@ export function useAgentRun({
     setContextStatus,
     upsertConversationSummary,
     setEvents,
-    applyConversationDetailIfActive,
     refreshConversationList,
     syncConversationRuntimes,
-    events,
   ])
 
   const submitApproval = useCallback(
@@ -512,13 +487,8 @@ export function useAgentRun({
         const finalEvents = flushDeltaBuffer(deltaBuffer, latestEventsRef.current)
         const allPersistEvents = mergeEventsBySequence([...pendingPersistEvents, ...finalMessageSnapshots, ...finalEvents])
         if (allPersistEvents.length > 0) {
-          const detail = await appendConversationEvents(conversationId, allPersistEvents)
-          upsertConversationSummary(detail)
-          if (activeConversationIdRef.current === conversationId) {
-            setEvents((currentEvents: EventItem[]) => mergePersistedEventsWithTransient(detail.events, currentEvents))
-          } else {
-            applyConversationDetailIfActive(conversationId, detail)
-          }
+          const response = await appendConversationEvents(conversationId, allPersistEvents)
+          upsertConversationSummary(response.conversation)
         }
         await syncConversationRuntimes(conversationId)
       } catch (error) {
@@ -531,13 +501,8 @@ export function useAgentRun({
             kind: 'error',
             text: errorMessage,
           }
-          const detail = await appendConversationEvents(conversationId, [errorEvent])
-          upsertConversationSummary(detail)
-          if (activeConversationIdRef.current === conversationId) {
-            setEvents((currentEvents: EventItem[]) => mergePersistedEventsWithTransient(detail.events, currentEvents))
-          } else {
-            applyConversationDetailIfActive(conversationId, detail)
-          }
+          const response = await appendConversationEvents(conversationId, [errorEvent])
+          upsertConversationSummary(response.conversation)
           await syncConversationRuntimes(conversationId)
         } catch {
           // Fall back to loadError if persisting the error event also fails.
@@ -562,7 +527,6 @@ export function useAgentRun({
       activeConversationIdRef,
       setLoadError,
       upsertConversationSummary,
-      applyConversationDetailIfActive,
       setEvents,
       refreshConversationList,
       syncConversationRuntimes,
@@ -584,13 +548,8 @@ export function useAgentRun({
       if (activeConversationIdRef.current === activeConversationId) {
         setEvents((currentEvents: EventItem[]) => upsertStreamEvent(currentEvents, event))
       }
-      const detail = await appendConversationEvents(activeConversationId, [event])
-      upsertConversationSummary(detail)
-      if (activeConversationIdRef.current === activeConversationId) {
-        setEvents((currentEvents: EventItem[]) => mergePersistedEventsWithTransient(detail.events, currentEvents))
-      } else {
-        applyConversationDetailIfActive(activeConversationId, detail)
-      }
+      const response = await appendConversationEvents(activeConversationId, [event])
+      upsertConversationSummary(response.conversation)
     }
 
     try {
@@ -643,13 +602,8 @@ export function useAgentRun({
       const finalEvents = flushDeltaBuffer(deltaBuffer, latestEventsRef.current)
       const allPersistEvents = mergeEventsBySequence([...pendingPersistEvents, ...finalMessageSnapshots, ...finalEvents])
       if (allPersistEvents.length > 0) {
-        const detail = await appendConversationEvents(activeConversationId, allPersistEvents)
-        upsertConversationSummary(detail)
-        if (activeConversationIdRef.current === activeConversationId) {
-          setEvents((currentEvents: EventItem[]) => mergePersistedEventsWithTransient(detail.events, currentEvents))
-        } else {
-          applyConversationDetailIfActive(activeConversationId, detail)
-        }
+        const response = await appendConversationEvents(activeConversationId, allPersistEvents)
+        upsertConversationSummary(response.conversation)
       }
       await syncConversationRuntimes(activeConversationId)
     } catch (error) {
@@ -662,7 +616,7 @@ export function useAgentRun({
       })
       await syncConversationRuntimes(activeConversationId)
     }
-  }, [activeConversationId, activeConversationIdRef, applyConversationDetailIfActive, setEvents, setLoadError, syncConversationRuntimes, upsertConversationSummary])
+  }, [activeConversationId, activeConversationIdRef, setEvents, setLoadError, syncConversationRuntimes, upsertConversationSummary])
 
   const savePlan = useCallback(async (runtimeId: string, steps: PlanStep[]) => {
     if (!activeConversationId) {
@@ -672,15 +626,10 @@ export function useAgentRun({
     if (activeConversationIdRef.current === activeConversationId) {
       setEvents((currentEvents: EventItem[]) => upsertStreamEvent(currentEvents, event))
     }
-    const detail = await appendConversationEvents(activeConversationId, [event])
-    upsertConversationSummary(detail)
-    if (activeConversationIdRef.current === activeConversationId) {
-      setEvents((currentEvents: EventItem[]) => mergePersistedEventsWithTransient(detail.events, currentEvents))
-    } else {
-      applyConversationDetailIfActive(activeConversationId, detail)
-    }
+    const response = await appendConversationEvents(activeConversationId, [event])
+    upsertConversationSummary(response.conversation)
     await syncConversationRuntimes(activeConversationId)
-  }, [activeConversationId, activeConversationIdRef, applyConversationDetailIfActive, setEvents, syncConversationRuntimes, upsertConversationSummary])
+  }, [activeConversationId, activeConversationIdRef, setEvents, syncConversationRuntimes, upsertConversationSummary])
 
   const approvePlan = useCallback(async (runtimeId: string) => {
     if (!activeConversationId) {
@@ -706,16 +655,11 @@ export function useAgentRun({
 
     const allPersistEvents = mergeEventsBySequence([...pendingPersistEvents, ...Array.from(latestMessageSnapshots.values()) as EventItem[]])
     if (allPersistEvents.length > 0) {
-      const detail = await appendConversationEvents(activeConversationId, allPersistEvents)
-      upsertConversationSummary(detail)
-      if (activeConversationIdRef.current === activeConversationId) {
-        setEvents((currentEvents: EventItem[]) => mergePersistedEventsWithTransient(detail.events, currentEvents))
-      } else {
-        applyConversationDetailIfActive(activeConversationId, detail)
-      }
+      const response = await appendConversationEvents(activeConversationId, allPersistEvents)
+      upsertConversationSummary(response.conversation)
     }
     await syncConversationRuntimes(activeConversationId)
-  }, [activeConversationId, activeConversationIdRef, applyConversationDetailIfActive, setEvents, syncConversationRuntimes, upsertConversationSummary])
+  }, [activeConversationId, activeConversationIdRef, setEvents, syncConversationRuntimes, upsertConversationSummary])
 
   return {
     pendingApprovalRuntimeId,

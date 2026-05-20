@@ -13,6 +13,31 @@ def _resolve_working_directory(context: ExecutionContext | None) -> str | None:
     return os.path.expandvars(os.path.expanduser(context.working_directory))
 
 
+def _resolve_timeout(context: ExecutionContext | None) -> float | None:
+    if context is None or context.timeout_seconds is None or context.timeout_seconds <= 0:
+        return None
+    return context.timeout_seconds
+
+
+def _timeout_result(command: str, exc: subprocess.TimeoutExpired) -> ExecutionResult:
+    stdout = exc.stdout.decode(errors="ignore") if isinstance(exc.stdout, bytes) else exc.stdout or ""
+    stderr = exc.stderr.decode(errors="ignore") if isinstance(exc.stderr, bytes) else exc.stderr or ""
+    output = f"{stdout}{stderr}".strip()
+    if output:
+        output = f"{output}\nCommand timed out after {exc.timeout:g} seconds: {command}"
+    else:
+        output = f"Command timed out after {exc.timeout:g} seconds: {command}"
+    return ExecutionResult(
+        execution_id="local-sync",
+        output=output,
+        completed=True,
+        success=False,
+        needs_attention=True,
+        exit_code=None,
+        completion_reason="timeout",
+    )
+
+
 def _resolve_windows_shell() -> str:
     pwsh_path = os.environ.get("OPS_AGENT_PWSH_PATH")
     if pwsh_path:
@@ -73,23 +98,47 @@ class LocalPtyConnector:
         return result
 
     def run_command(self, command: str, context: ExecutionContext | None = None) -> ExecutionResult:
-        if platform.system() == "Windows":
-            shell = _resolve_windows_shell()
-            shell_name = Path(shell).name.lower()
-            if "pwsh" in shell_name or shell_name == "powershell.exe":
-                completed = subprocess.run(
-                    [shell, "-NoLogo", "-NoProfile", "-Command", command],
-                    capture_output=True,
-                    text=True,
-                    cwd=_resolve_working_directory(context),
+        timeout = _resolve_timeout(context)
+        try:
+            if platform.system() == "Windows":
+                shell = _resolve_windows_shell()
+                shell_name = Path(shell).name.lower()
+                if "pwsh" in shell_name or shell_name == "powershell.exe":
+                    completed = subprocess.run(
+                        [shell, "-NoLogo", "-NoProfile", "-Command", command],
+                        capture_output=True,
+                        text=True,
+                        cwd=_resolve_working_directory(context),
+                        timeout=timeout,
+                    )
+                else:
+                    completed = subprocess.run(
+                        [shell, "/c", command],
+                        capture_output=True,
+                        text=True,
+                        cwd=_resolve_working_directory(context),
+                        timeout=timeout,
+                    )
+                output = f"{completed.stdout}{completed.stderr}".strip()
+                return ExecutionResult(
+                    execution_id="local-sync",
+                    output=output,
+                    completed=True,
+                    success=completed.returncode == 0,
+                    needs_attention=completed.returncode != 0,
+                    exit_code=completed.returncode,
+                    completion_reason="exit_code",
                 )
-            else:
-                completed = subprocess.run(
-                    [shell, "/c", command],
-                    capture_output=True,
-                    text=True,
-                    cwd=_resolve_working_directory(context),
-                )
+
+            completed = subprocess.run(
+                command,
+                shell=True,
+                capture_output=True,
+                text=True,
+                cwd=_resolve_working_directory(context),
+                executable=os.environ.get("SHELL") or "/bin/sh",
+                timeout=timeout,
+            )
             output = f"{completed.stdout}{completed.stderr}".strip()
             return ExecutionResult(
                 execution_id="local-sync",
@@ -100,25 +149,8 @@ class LocalPtyConnector:
                 exit_code=completed.returncode,
                 completion_reason="exit_code",
             )
-
-        completed = subprocess.run(
-            command,
-            shell=True,
-            capture_output=True,
-            text=True,
-            cwd=_resolve_working_directory(context),
-            executable=os.environ.get("SHELL") or "/bin/sh",
-        )
-        output = f"{completed.stdout}{completed.stderr}".strip()
-        return ExecutionResult(
-            execution_id="local-sync",
-            output=output,
-            completed=True,
-            success=completed.returncode == 0,
-            needs_attention=completed.returncode != 0,
-            exit_code=completed.returncode,
-            completion_reason="exit_code",
-        )
+        except subprocess.TimeoutExpired as exc:
+            return _timeout_result(command, exc)
 
     def open_interactive(self) -> str:
         if platform.system() == "Windows":

@@ -138,29 +138,11 @@ export function buildTerminalWebSocketUrl(terminalSessionId: string, runtimeApiB
   return `${protocol}//${window.location.host}/api/terminal/sessions/${terminalSessionId}/ws`
 }
 
-export function upsertConversationSummaryFromDetail(
+export function upsertConversationSummary(
   currentItems: ConversationSummary[],
-  detail: {
-    id: string
-    title: string
-    selectedModel: string | null
-    createdAt: string
-    updatedAt: string
-    events: EventItem[]
-  }
+  summary: ConversationSummary
 ): ConversationSummary[] {
-  const lastEvent = detail.events[detail.events.length - 1]
-  const summary: ConversationSummary = {
-    id: detail.id,
-    title: detail.title,
-    selectedModel: detail.selectedModel,
-    createdAt: detail.createdAt,
-    updatedAt: detail.updatedAt,
-    eventCount: detail.events.length,
-    lastEventKind: lastEvent?.kind ?? null,
-  }
-
-  const nextItems = currentItems.filter((item) => item.id !== detail.id)
+  const nextItems = currentItems.filter((item) => item.id !== summary.id)
   return [summary, ...nextItems]
 }
 
@@ -215,87 +197,6 @@ export function flushDeltaBuffer(
   }
   
   return finalEvents
-}
-
-export function mergePersistedEventsWithTransient(
-  persistedEvents: EventItem[],
-  currentEvents: EventItem[]
-): EventItem[] {
-  // Deduplicate persisted events: for AgentMessages (kind === 'message'), keep only the latest per ID
-  const deduped: EventItem[] = []
-  const seenMessageIds = new Map<string, number>()
-  
-  for (let i = 0; i < persistedEvents.length; i++) {
-    const event = persistedEvents[i]
-    if ('type' in event && (event.type === 'say' || event.type === 'ask') && event.kind === 'message') {
-      const prevIndex = seenMessageIds.get(event.id)
-      if (prevIndex !== undefined) {
-        // Replace the earlier snapshot with this later one
-        deduped[prevIndex] = event
-      } else {
-        seenMessageIds.set(event.id, deduped.length)
-        deduped.push(event)
-      }
-    } else {
-      deduped.push(event)
-    }
-  }
-
-  const hasTerminalError = deduped.some((event) => event.kind === 'error')
-  const pendingAssistantEvent = hasTerminalError
-    ? undefined
-    : currentEvents.find((event) => event.id === PENDING_ASSISTANT_MESSAGE_ID)
-  const transientEvents = currentEvents.filter((event) => (
-    event.kind === 'delta'
-    || event.kind === 'terminal_session_request'
-    || 'type' in event
-  ) && event.id !== PENDING_ASSISTANT_MESSAGE_ID)
-  const hasAssistantDelta = hasTerminalError || deduped.some((event) => event.kind === 'delta' || 'type' in event) || transientEvents.length > 0
-  const nextEvents = [...deduped]
-
-  if (pendingAssistantEvent && !hasAssistantDelta) {
-    nextEvents.push(pendingAssistantEvent)
-  }
-
-  if (transientEvents.length === 0) {
-    return normalizePlanEvents(nextEvents)
-  }
-
-  const persistedIds = new Set(nextEvents.map((event) => event.id))
-  const persistedTerminalRequestIds = new Map<string, number>()
-  nextEvents.forEach((event, index) => {
-    const requestId = getTerminalRequestId(event)
-    if (requestId) {
-      persistedTerminalRequestIds.set(requestId, index)
-    }
-  })
-
-  for (const event of transientEvents) {
-    const requestId = getTerminalRequestId(event)
-    const existingIndex = persistedIds.has(event.id)
-      ? nextEvents.findIndex((nextEvent) => nextEvent.id === event.id)
-      : (requestId ? persistedTerminalRequestIds.get(requestId) ?? -1 : -1)
-
-    if (existingIndex >= 0) {
-      const approvalToken = getApprovalToken(event)
-      if (approvalToken) {
-        nextEvents[existingIndex] = {
-          ...nextEvents[existingIndex],
-          ...(nextEvents[existingIndex].kind === 'terminal_session_request' ? { approvalToken } : {}),
-          ...('toolCall' in nextEvents[existingIndex] ? {
-            toolCall: {
-              ...nextEvents[existingIndex].toolCall,
-              approvalToken,
-            },
-          } : {}),
-        } as EventItem
-      }
-      continue
-    }
-    nextEvents.push(event)
-  }
-
-  return normalizePlanEvents(nextEvents)
 }
 
 export function upsertStreamEvent(

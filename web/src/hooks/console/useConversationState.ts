@@ -3,14 +3,24 @@ import {
   appendConversationEvents,
   createConversation as createConversationApi,
   deleteConversation as deleteConversationApi,
-  getConversation,
   getConversationContext,
+  getConversationEventsPage,
+  getConversationEventsTail,
   getConversations,
   getRuntimeSnapshot,
   listConversationRuntimes,
 } from '../../api'
 import type { ConversationContextStatus, ConversationSummary, EventItem, RuntimeSnapshot, RuntimeSummary } from '../../types/ops'
-import { normalizePlanEvents, upsertConversationSummaryFromDetail, upsertStreamEvent } from './consoleShared'
+import { normalizePlanEvents, upsertConversationSummary, upsertStreamEvent } from './consoleShared'
+
+const CONVERSATION_EVENTS_PAGE_SIZE = 200
+
+type ConversationEventWindow = {
+  offset: number
+  total: number
+  hasMoreBefore: boolean
+  hasMoreAfter: boolean
+}
 
 function terminalSnapshotEvents(snapshot: RuntimeSnapshot | null): EventItem[] {
   if (!snapshot) return []
@@ -51,11 +61,21 @@ function mergeSnapshotTerminalEvents(events: EventItem[], snapshot: RuntimeSnaps
   return terminalSnapshotEvents(snapshot).reduce((currentEvents, event) => upsertStreamEvent(currentEvents, event), normalizePlanEvents(events))
 }
 
+function mergePrependedEvents(olderEvents: EventItem[], currentEvents: EventItem[]): EventItem[] {
+  const currentIds = new Set(currentEvents.map((event) => event.id))
+  return normalizePlanEvents([
+    ...olderEvents.filter((event) => !currentIds.has(event.id)),
+    ...currentEvents,
+  ])
+}
+
 export function useConversationState(selectedModel: string) {
   const [conversationSummaries, setConversationSummaries] = useState<ConversationSummary[]>([])
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null)
   const [activeConversationTitle, setActiveConversationTitle] = useState('')
   const [events, setEvents] = useState<EventItem[]>([])
+  const [eventWindow, setEventWindow] = useState<ConversationEventWindow | null>(null)
+  const [isLoadingOlderEvents, setIsLoadingOlderEvents] = useState(false)
   const [runtimeSummaries, setRuntimeSummaries] = useState<RuntimeSummary[]>([])
   const [activeRuntimeId, setActiveRuntimeId] = useState<string | null>(null)
   const [activeRuntimeSnapshot, setActiveRuntimeSnapshot] = useState<RuntimeSnapshot | null>(null)
@@ -74,20 +94,26 @@ export function useConversationState(selectedModel: string) {
     activeConversationIdRef.current = conversationId
     setContextStatus(null)
 
-    const detail = await getConversation(conversationId)
+    const page = await getConversationEventsTail(conversationId, CONVERSATION_EVENTS_PAGE_SIZE)
     if (loadConversationRequestRef.current !== requestId) {
-      return detail
+      return page.conversation
     }
-    setActiveConversationId(detail.id)
-    setActiveConversationTitle(detail.title)
-    setEvents(normalizePlanEvents(detail.events))
+    setActiveConversationId(page.conversation.id)
+    setActiveConversationTitle(page.conversation.title)
+    setEvents(normalizePlanEvents(page.events))
+    setEventWindow({
+      offset: page.offset,
+      total: page.total,
+      hasMoreBefore: page.hasMoreBefore,
+      hasMoreAfter: page.hasMoreAfter,
+    })
 
     const [runtimes, nextContextStatus] = await Promise.all([
       listConversationRuntimes(conversationId),
       getConversationContext(conversationId),
     ])
     if (loadConversationRequestRef.current !== requestId) {
-      return detail
+      return page.conversation
     }
     setContextStatus(nextContextStatus)
     setRuntimeSummaries(runtimes)
@@ -95,11 +121,11 @@ export function useConversationState(selectedModel: string) {
     setActiveRuntimeId(nextRuntimeId)
     const nextRuntimeSnapshot = nextRuntimeId ? await getRuntimeSnapshot(nextRuntimeId) : null
     if (loadConversationRequestRef.current !== requestId) {
-      return detail
+      return page.conversation
     }
     setActiveRuntimeSnapshot(nextRuntimeSnapshot)
     setEvents((currentEvents) => mergeSnapshotTerminalEvents(currentEvents, nextRuntimeSnapshot))
-    return detail
+    return page.conversation
   }, [])
 
   const refreshConversationList = useCallback(async () => {
@@ -108,16 +134,43 @@ export function useConversationState(selectedModel: string) {
     return items
   }, [])
 
-  const applyConversationDetailIfActive = useCallback(
-    (conversationId: string, detail: { title: string; events: EventItem[] }) => {
+  const applyConversationSummaryIfActive = useCallback((summary: ConversationSummary) => {
+    if (activeConversationIdRef.current !== summary.id) {
+      return
+    }
+    setActiveConversationTitle(summary.title)
+    setEventWindow((currentWindow) => currentWindow ? {
+      ...currentWindow,
+      total: summary.eventCount,
+      hasMoreBefore: currentWindow.offset > 0,
+      hasMoreAfter: currentWindow.offset + events.length < summary.eventCount,
+    } : currentWindow)
+  }, [events.length])
+
+  const loadOlderConversationEvents = useCallback(async () => {
+    const conversationId = activeConversationIdRef.current
+    if (!conversationId || !eventWindow?.hasMoreBefore || isLoadingOlderEvents) {
+      return
+    }
+    setIsLoadingOlderEvents(true)
+    try {
+      const nextOffset = Math.max(0, eventWindow.offset - CONVERSATION_EVENTS_PAGE_SIZE)
+      const nextLimit = eventWindow.offset - nextOffset
+      const page = await getConversationEventsPage(conversationId, nextOffset, nextLimit)
       if (activeConversationIdRef.current !== conversationId) {
         return
       }
-      setActiveConversationTitle(detail.title)
-      setEvents(normalizePlanEvents(detail.events))
-    },
-    []
-  )
+      setEvents((currentEvents) => mergePrependedEvents(page.events, currentEvents))
+      setEventWindow({
+        offset: page.offset,
+        total: page.total,
+        hasMoreBefore: page.hasMoreBefore,
+        hasMoreAfter: page.hasMoreAfter || eventWindow.hasMoreAfter,
+      })
+    } finally {
+      setIsLoadingOlderEvents(false)
+    }
+  }, [eventWindow, isLoadingOlderEvents])
 
   const syncConversationRuntimes = useCallback(async (conversationId: string) => {
     const runtimes = await listConversationRuntimes(conversationId)
@@ -142,6 +195,7 @@ export function useConversationState(selectedModel: string) {
     setActiveConversationId(created.conversation.id)
     setActiveConversationTitle(created.conversation.title)
     setEvents(normalizePlanEvents(created.events))
+    setEventWindow({ offset: 0, total: 0, hasMoreBefore: false, hasMoreAfter: false })
     setRuntimeSummaries([])
     setActiveRuntimeId(null)
     setActiveRuntimeSnapshot(null)
@@ -173,23 +227,14 @@ export function useConversationState(selectedModel: string) {
     setActiveConversationTitle(title)
   }, [])
 
-  const upsertConversationSummary = useCallback(
-    (detail: {
-      id: string
-      title: string
-      selectedModel: string | null
-      createdAt: string
-      updatedAt: string
-      events: EventItem[]
-    }) => {
+  const upsertConversationSummaryState = useCallback(
+    (summary: ConversationSummary) => {
       setConversationSummaries((currentItems) =>
-        upsertConversationSummaryFromDetail(currentItems, detail)
+        upsertConversationSummary(currentItems, summary)
       )
-      if (activeConversationIdRef.current === detail.id) {
-        setActiveConversationTitle(detail.title)
-      }
+      applyConversationSummaryIfActive(summary)
     },
-    []
+    [applyConversationSummaryIfActive]
   )
 
   return {
@@ -198,6 +243,8 @@ export function useConversationState(selectedModel: string) {
     activeConversationIdRef,
     activeConversationTitle,
     events,
+    eventWindow,
+    isLoadingOlderEvents,
     setEvents,
     runtimeSummaries,
     activeRuntimeId,
@@ -209,8 +256,8 @@ export function useConversationState(selectedModel: string) {
     refreshConversationList,
     createConversation,
     deleteConversation,
-    applyConversationDetailIfActive,
+    loadOlderConversationEvents,
     setActiveConversationMeta,
-    upsertConversationSummary,
+    upsertConversationSummary: upsertConversationSummaryState,
   }
 }

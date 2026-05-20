@@ -162,7 +162,6 @@ async function* readEventStream(response: Response): AsyncGenerator<EventItem, v
 function buildConsoleRunRequestDto({
   prompt,
   mode,
-  currentEvents,
   assetId,
   terminalId,
   modelName,
@@ -172,7 +171,6 @@ function buildConsoleRunRequestDto({
   return {
     prompt,
     mode,
-    currentEvents,
     asset_id: assetId,
     terminal_id: terminalId,
     model_name: modelName,
@@ -183,7 +181,6 @@ function buildConsoleRunRequestDto({
 
 export async function streamRunAgent(
   prompt: string,
-  currentEvents: EventItem[],
   assetId?: number,
   terminalId?: string | null,
   modelName?: string,
@@ -197,7 +194,6 @@ export async function streamRunAgent(
       buildConsoleRunRequestDto({
         prompt,
         mode,
-        currentEvents,
         assetId,
         terminalId,
         modelName,

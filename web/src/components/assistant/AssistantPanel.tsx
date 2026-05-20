@@ -21,6 +21,8 @@ type AssistantPanelProps = {
   activeConversationTitle: string
   backgroundRun: BackgroundRunState | null
   events: EventItem[]
+  eventWindow: { hasMoreBefore: boolean } | null
+  isLoadingOlderEvents: boolean
   pendingApprovalRuntimeId: string | null
   runtimeSummaries: RuntimeSummary[]
   activeRuntimeSnapshot: RuntimeSnapshot | null
@@ -42,6 +44,7 @@ type AssistantPanelProps = {
   onApprove: (allowPrefix?: string) => void
   onReject: () => void
   onTerminalRequestDecision?: (input: { runtimeId: string; requestId: string; approvalToken: string; approved: boolean }) => Promise<void>
+  onLoadOlderEvents: () => Promise<void>
   onSavePlan: (runtimeId: string, steps: PlanStep[]) => Promise<void>
   onApprovePlan: (runtimeId: string) => Promise<void>
 }
@@ -65,6 +68,8 @@ export function AssistantPanel({
   activeConversationTitle,
   backgroundRun,
   events,
+  eventWindow,
+  isLoadingOlderEvents,
   pendingApprovalRuntimeId,
   runtimeSummaries,
   activeRuntimeSnapshot,
@@ -86,6 +91,7 @@ export function AssistantPanel({
   onApprove,
   onReject,
   onTerminalRequestDecision,
+  onLoadOlderEvents,
   onSavePlan,
   onApprovePlan,
 }: AssistantPanelProps) {
@@ -142,7 +148,10 @@ export function AssistantPanel({
 
           <ConversationView
             events={events}
+            hasMoreBefore={eventWindow?.hasMoreBefore ?? false}
+            isLoadingOlder={isLoadingOlderEvents}
             pendingApprovalRuntimeId={pendingApprovalRuntimeId}
+            onLoadOlder={onLoadOlderEvents}
             onApprove={onApprove}
             onReject={onReject}
             onTerminalRequestDecision={onTerminalRequestDecision}

@@ -173,7 +173,7 @@ export function PromptInput({
 
   return (
     <div className="relative mx-5 mb-3 mt-1 shrink-0 rounded-[22px] border border-ops-cyan/10 bg-ops-deep/80 p-[1px] shadow-[0_16px_48px_rgb(var(--ops-bg)/0.38)] backdrop-blur-xl transition-all duration-300 before:pointer-events-none before:absolute before:inset-x-8 before:bottom-[-1px] before:h-px before:bg-gradient-to-r before:from-transparent before:via-ops-cyan/60 before:to-transparent focus-within:border-ops-cyan/40 focus-within:shadow-[0_20px_58px_rgb(var(--ops-bg)/0.48),0_0_28px_rgb(var(--ops-cyan)/0.12)]">
-      <div className="relative overflow-hidden rounded-[21px] border border-ops-border/10 bg-[radial-gradient(circle_at_18%_0%,rgb(var(--ops-cyan)/0.14),transparent_34%),linear-gradient(180deg,rgb(var(--ops-panel)/0.92),rgb(var(--ops-deep)/0.96))]">
+      <div className="relative overflow-visible rounded-[21px] border border-ops-border/10 bg-[radial-gradient(circle_at_18%_0%,rgb(var(--ops-cyan)/0.14),transparent_34%),linear-gradient(180deg,rgb(var(--ops-panel)/0.92),rgb(var(--ops-deep)/0.96))]">
         <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(90deg,rgb(var(--ops-text)/0.025)_1px,transparent_1px),linear-gradient(180deg,rgb(var(--ops-text)/0.018)_1px,transparent_1px)] bg-[size:28px_28px] opacity-40" />
         <div className="relative flex items-center gap-3 border-b border-ops-border/10 px-3 py-1.5">
           <div className="flex min-w-0 flex-1 items-center gap-2" aria-label={t('assistant.context')}>
@@ -255,8 +255,8 @@ export function PromptInput({
           </div>
         ) : null}
 
-        <div className="relative flex items-center gap-3 border-t border-ops-border/10 bg-ops-deep/45 px-3 py-2">
-          <div className="flex flex-1 items-center gap-3 overflow-x-auto scrollbar-none">
+        <div className="relative z-20 flex items-center gap-3 border-t border-ops-border/10 bg-ops-deep/45 px-3 py-2">
+          <div className="flex flex-1 items-center gap-3 overflow-visible">
             <ModelSelector models={models} selectedModel={selectedModel} onModelChange={onModelChange} />
 
             <div className="group flex min-w-fit items-center gap-3">

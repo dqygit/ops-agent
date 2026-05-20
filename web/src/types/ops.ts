@@ -434,6 +434,16 @@ export type ConversationDetail = {
   events: EventItem[]
 }
 
+export type ConversationEventsPage = {
+  conversation: ConversationSummary
+  events: EventItem[]
+  offset: number
+  limit: number
+  total: number
+  hasMoreBefore: boolean
+  hasMoreAfter: boolean
+}
+
 export type DeleteConversationResult = {
   deletedConversationId: string
   activeConversationId: string | null
