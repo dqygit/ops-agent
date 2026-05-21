@@ -344,6 +344,7 @@ export function App() {
 
       <AssetModals
         ref={assetModalsRef}
+        assets={bootstrap.assets}
         groups={bootstrap.groups}
         sshKeys={bootstrap.sshKeys}
         onAddAsset={addAsset}

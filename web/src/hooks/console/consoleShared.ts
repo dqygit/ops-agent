@@ -76,6 +76,7 @@ export const defaultLocalTerminalAsset: Asset = {
   vendor: '',
   description: 'Default local terminal',
   sshKeyId: null,
+  proxyAssetId: null,
 }
 
 export function normalizePlanEvents(rawEvents: EventItem[]): EventItem[] {

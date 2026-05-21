@@ -11,7 +11,18 @@ engine = create_engine(f"sqlite:///{DB_PATH}", connect_args={"check_same_thread"
 
 def init_db() -> None:
     SQLModel.metadata.create_all(engine)
+    _ensure_asset_columns()
     _ensure_model_usage_columns()
+
+
+def _ensure_asset_columns() -> None:
+    inspector = inspect(engine)
+    if "assets" not in inspector.get_table_names():
+        return
+    existing = {column["name"] for column in inspector.get_columns("assets")}
+    with engine.begin() as connection:
+        if "proxy_asset_id" not in existing:
+            connection.execute(text("ALTER TABLE assets ADD COLUMN proxy_asset_id INTEGER"))
 
 
 def _ensure_model_usage_columns() -> None:

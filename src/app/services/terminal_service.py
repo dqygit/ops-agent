@@ -12,6 +12,7 @@ from starlette.websockets import WebSocketDisconnect
 
 from app.core.connectors.context_bridge import build_terminal_context
 from app.core.connectors.session_manager import TerminalSessionManager
+from app.core.connectors.ssh_proxy import describe_ssh_proxy_error
 
 
 T = TypeVar("T")
@@ -91,7 +92,7 @@ class TerminalService:
                 session_manager.close()
             elif connector is not None:
                 connector.close()
-            return {"terminal_id": None, "channel": None, "error": str(exc)}
+            return {"terminal_id": None, "channel": None, "error": describe_ssh_proxy_error(exc)}
         self._sessions[terminal_id] = TerminalSessionRuntime(session_manager=session_manager, state="created")
         self._session_keys[terminal_id] = session_key
         self._output_buffers[terminal_id] = deque(maxlen=4000)

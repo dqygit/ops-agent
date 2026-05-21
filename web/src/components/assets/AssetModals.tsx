@@ -18,6 +18,7 @@ type AddAssetForm = {
   authType: string
   credentialSecret: string
   sshKeyId: string
+  proxyAssetId: string
   serialPort: string
   baudRate: string
   dataBits: string
@@ -36,12 +37,21 @@ const emptyAddAssetForm: AddAssetForm = {
   authType: 'password',
   credentialSecret: '',
   sshKeyId: '',
+  proxyAssetId: '',
   serialPort: '',
   baudRate: '9600',
   dataBits: '8',
   parity: 'none',
   stopBits: '1',
   groupId: '',
+}
+
+function supportsSshProxyTarget(assetKind: AssetKind): boolean {
+  return ['linux', 'network', 'cisco', 'huawei', 'juniper', 'h3c'].includes(assetKind)
+}
+
+function isProxyCandidate(asset: Asset, targetAssetId: number | null): boolean {
+  return asset.id !== targetAssetId && asset.proxyAssetId === null && asset.assetType === 'linux'
 }
 
 function buildConnectionTags(form: AddAssetForm): string[] {
@@ -64,6 +74,7 @@ export interface AssetModalsRef {
 }
 
 interface AssetModalsProps {
+  assets: Asset[]
   groups: AssetGroup[]
   sshKeys: SSHKey[]
   onAddAsset: (payload: any) => Promise<void>
@@ -74,6 +85,8 @@ interface AssetModalsProps {
 type AssetFormModalProps = {
   mode: 'add-asset' | 'edit-asset'
   form: AddAssetForm
+  assets: Asset[]
+  targetAsset: Asset | null
   groups: AssetGroup[]
   sshKeys: SSHKey[]
   serialPorts: SerialPort[]
@@ -90,8 +103,10 @@ type DeleteAssetModalProps = {
   onDelete: () => Promise<void>
 }
 
-function AssetFormModal({ mode, form, groups, sshKeys, serialPorts, error, onChange, onClose, onSubmit }: AssetFormModalProps) {
+function AssetFormModal({ mode, form, assets, targetAsset, groups, sshKeys, serialPorts, error, onChange, onClose, onSubmit }: AssetFormModalProps) {
   const { t } = useAppearance()
+  const proxyCandidates = assets.filter((asset) => isProxyCandidate(asset, targetAsset?.id ?? null))
+  const proxySelectorDisabled = !supportsSshProxyTarget(form.assetKind)
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-ops-bg/60 backdrop-blur-md animate-in fade-in duration-300" role="presentation">
@@ -161,6 +176,20 @@ function AssetFormModal({ mode, form, groups, sshKeys, serialPorts, error, onCha
                   <option value="key">{t('assets.sshKeypair')}</option>
                   <option value="password_and_key">{t('assets.twoFactor')}</option>
                 </select>
+              </label>
+              <label className="flex flex-col gap-2 text-[11px] font-bold  tracking-widest text-ops-muted/70 col-span-2 sm:col-span-1">
+                SSH Jump Asset
+                <select className="field-control" value={form.proxyAssetId} onChange={(event) => onChange('proxyAssetId', event.target.value)} disabled={proxySelectorDisabled}>
+                  <option value="">Direct connection</option>
+                  {proxyCandidates.map((asset) => (
+                    <option key={asset.id} value={asset.id}>{asset.name}</option>
+                  ))}
+                </select>
+                {proxySelectorDisabled ? (
+                  <span className="text-[10px] normal-case tracking-normal text-ops-muted/70">
+                    SSH proxy is supported only for Linux and network device assets in this version.
+                  </span>
+                ) : null}
               </label>
               {['key', 'password_and_key'].includes(form.authType) ? (
                 <label className="flex flex-col gap-2 text-[11px] font-bold  tracking-widest text-ops-muted/70 col-span-2 sm:col-span-1">
@@ -262,7 +291,7 @@ function DeleteAssetModal({ asset, error, onClose, onDelete }: DeleteAssetModalP
 }
 
 export const AssetModals = forwardRef<AssetModalsRef, AssetModalsProps>(
-  ({ groups, sshKeys, onAddAsset, onUpdateAsset, onDeleteAsset }, ref) => {
+  ({ assets, groups, sshKeys, onAddAsset, onUpdateAsset, onDeleteAsset }, ref) => {
     const [activeModal, setActiveModal] = useState<ActiveModal>(null)
     const [targetAsset, setTargetAsset] = useState<Asset | null>(null)
     const [addAssetForm, setAddAssetForm] = useState<AddAssetForm>(emptyAddAssetForm)
@@ -288,7 +317,16 @@ export const AssetModals = forwardRef<AssetModalsRef, AssetModalsProps>(
     }, [activeModal, addAssetForm.mode])
 
     const updateAddAssetForm = (field: keyof AddAssetForm, value: string) => {
-      setAddAssetForm((currentForm) => ({ ...currentForm, [field]: value }))
+      setAddAssetForm((currentForm) => {
+        const nextForm = { ...currentForm, [field]: value }
+        if (field === 'mode' && value !== 'ssh') {
+          nextForm.proxyAssetId = ''
+        }
+        if (field === 'assetKind' && !supportsSshProxyTarget(value as AssetKind)) {
+          nextForm.proxyAssetId = ''
+        }
+        return nextForm
+      })
     }
 
     const closeModal = () => {
@@ -303,11 +341,15 @@ export const AssetModals = forwardRef<AssetModalsRef, AssetModalsProps>(
     }
 
     const openEditModal = (asset: Asset) => {
+      if (asset.assetType === 'local_terminal') {
+        return
+      }
       setTargetAsset(asset)
       const mode: ConnectionMode = asset.assetType === 'serial' ? 'serial' : 'ssh'
       const assetKind: AssetKind = ['linux', 'network', 'cisco', 'huawei', 'juniper', 'h3c'].includes(asset.assetType)
         ? (asset.assetType as AssetKind)
         : 'linux'
+      const supportsProxy = supportsSshProxyTarget(assetKind)
       const tagValue = (prefix: string, fallback: string) => asset.tags.find((tag) => tag.startsWith(`${prefix}:`))?.split(':')[1] ?? fallback
 
       setAddAssetForm({
@@ -320,6 +362,7 @@ export const AssetModals = forwardRef<AssetModalsRef, AssetModalsProps>(
         authType: asset.authType || 'password',
         credentialSecret: '',
         sshKeyId: asset.sshKeyId ? String(asset.sshKeyId) : '',
+        proxyAssetId: supportsProxy && asset.proxyAssetId ? String(asset.proxyAssetId) : '',
         serialPort: mode === 'serial' ? asset.host : '',
         baudRate: mode === 'serial' ? String(asset.port) : '9600',
         dataBits: tagValue('data-bits', '8'),
@@ -354,6 +397,7 @@ export const AssetModals = forwardRef<AssetModalsRef, AssetModalsProps>(
             port: Number(addAssetForm.baudRate),
             username: '',
             auth_type: '',
+            proxy_asset_id: null,
             tags: buildConnectionTags(addAssetForm),
             vendor: targetAsset?.vendor || '',
             description: targetAsset?.description || '',
@@ -367,6 +411,7 @@ export const AssetModals = forwardRef<AssetModalsRef, AssetModalsProps>(
             username: addAssetForm.username.trim(),
             auth_type: addAssetForm.authType,
             ssh_key_id: ['key', 'password_and_key'].includes(addAssetForm.authType) ? (addAssetForm.sshKeyId ? Number(addAssetForm.sshKeyId) : null) : null,
+            proxy_asset_id: supportsSshProxyTarget(addAssetForm.assetKind) && addAssetForm.proxyAssetId ? Number(addAssetForm.proxyAssetId) : null,
             credential_secret: addAssetForm.credentialSecret.trim() || undefined,
             tags: buildConnectionTags(addAssetForm),
             vendor: targetAsset?.vendor || '',
@@ -403,6 +448,8 @@ export const AssetModals = forwardRef<AssetModalsRef, AssetModalsProps>(
           <AssetFormModal
             mode={activeModal}
             form={addAssetForm}
+            assets={assets}
+            targetAsset={targetAsset}
             groups={groups}
             sshKeys={sshKeys}
             serialPorts={systemSerialPorts}
