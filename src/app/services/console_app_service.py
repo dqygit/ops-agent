@@ -266,7 +266,6 @@ class ConsoleAppService:
             knowledge_service = get_knowledge_service()
             knowledge_entries = knowledge_service.search_for_agent(
                 prompt,
-                asset_id=asset_id,
                 asset_label=asset_label,
                 asset_group=asset_group,
                 conversation_id=conversation_id,

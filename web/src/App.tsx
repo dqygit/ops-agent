@@ -3,6 +3,7 @@ import { Group as PanelGroup, Panel, Separator as PanelResizeHandle } from 'reac
 import { AssetModals, type AssetModalsRef } from './components/assets/AssetModals'
 import { AssetSidebar } from './components/assets/AssetSidebar'
 import { AssistantPanel } from './components/assistant/AssistantPanel'
+import { KnowledgeDrawer } from './components/knowledge/KnowledgeDrawer'
 import { LoadingState } from './components/layout/LoadingState'
 import { TopBar } from './components/layout/TopBar'
 import { SettingsDialog } from './components/settings/SettingsDialog'
@@ -93,6 +94,7 @@ export function App() {
   const terminalOutput = activeTerminalTab?.output ?? ''
   const selectedAssetId = selectedAsset?.id ?? 0
   const [isConsoleInitialized, setIsConsoleInitialized] = useState(false)
+  const [knowledgeDrawerOpen, setKnowledgeDrawerOpen] = useState(false)
   const {
     activeModal,
     setActiveModal,
@@ -233,7 +235,10 @@ export function App() {
 
   return (
     <div className="flex h-screen w-screen flex-col overflow-hidden bg-[linear-gradient(180deg,rgb(var(--ops-panel))_0,rgb(var(--ops-bg))_92px)] text-ops-text dark:bg-ops-bg">
-      <TopBar onOpenSettings={() => setActiveModal('settings')} />
+      <TopBar
+        onOpenSettings={() => setActiveModal('settings')}
+        onOpenKnowledge={() => setKnowledgeDrawerOpen(true)}
+      />
 
       <main className="flex flex-1 overflow-hidden">
         <AssetSidebar
@@ -280,25 +285,6 @@ export function App() {
                 selectedAsset={selectedAsset}
                 contextStatus={contextStatus}
                 loadError={loadError}
-                knowledgeDraft={knowledgeDraft}
-                knowledgeDraftSourceConversation={knowledgeDraftSourceConversation}
-                knowledgeDraftLoading={knowledgeDraftLoading}
-                knowledgeDraftError={knowledgeDraftError}
-                knowledgeSaving={knowledgeSaving}
-                knowledgeEntries={knowledgeEntries}
-                knowledgeTotal={knowledgeTotal}
-                knowledgeLimit={knowledgeLimit}
-                knowledgeOffset={knowledgeOffset}
-                knowledgeLoading={knowledgeLoading}
-                knowledgeError={knowledgeError}
-                knowledgeReindexing={knowledgeReindexing}
-                onKnowledgeSearch={searchKnowledge}
-                onKnowledgeDeleteEntry={deleteKnowledgeEntry}
-                onKnowledgeReindex={reindexKnowledge}
-                onKnowledgeGenerateDraft={generateKnowledgeDraft}
-                onKnowledgeSaveDraft={saveKnowledgeDraft}
-                onKnowledgeClearDraft={clearKnowledgeDraft}
-                onKnowledgeDraftChange={setKnowledgeDraft}
                 onModelChange={setSelectedModel}
                 onRunModeChange={setRunMode}
                 onPromptChange={setPrompt}
@@ -393,6 +379,34 @@ export function App() {
           await updateAsset(id, payload)
         }}
         onDeleteAsset={deleteAsset}
+      />
+
+      <KnowledgeDrawer
+        open={knowledgeDrawerOpen}
+        conversationId={activeConversationId}
+        selectedModel={selectedModel}
+        draft={knowledgeDraft}
+        draftSourceConversation={knowledgeDraftSourceConversation}
+        draftLoading={knowledgeDraftLoading}
+        draftError={knowledgeDraftError}
+        saving={knowledgeSaving}
+        entries={knowledgeEntries}
+        total={knowledgeTotal}
+        limit={knowledgeLimit}
+        offset={knowledgeOffset}
+        loading={knowledgeLoading}
+        error={knowledgeError}
+        reindexing={knowledgeReindexing}
+        knowledgeEntriesInjected={contextStatus?.knowledgeEntriesInjected}
+        knowledgeContextChars={contextStatus?.knowledgeContextChars}
+        onClose={() => setKnowledgeDrawerOpen(false)}
+        onSearch={searchKnowledge}
+        onDeleteEntry={deleteKnowledgeEntry}
+        onReindex={reindexKnowledge}
+        onGenerateDraft={generateKnowledgeDraft}
+        onSaveDraft={saveKnowledgeDraft}
+        onClearDraft={clearKnowledgeDraft}
+        onDraftChange={setKnowledgeDraft}
       />
 
       {activeModal === 'settings' ? (

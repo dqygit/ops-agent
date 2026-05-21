@@ -17,7 +17,6 @@ type KnowledgeBrowserProps = {
   loading: boolean
   error: string | null
   reindexing: boolean
-  activeAssetId: number | null
   onSearch: (params?: KnowledgeSearchParams) => Promise<KnowledgeSearchResponse>
   onDeleteEntry: (entryId: string) => Promise<boolean>
   onReindex: () => Promise<KnowledgeReindexResponse | null>
@@ -74,7 +73,6 @@ export function KnowledgeBrowser({
   loading,
   error,
   reindexing,
-  activeAssetId,
   onSearch,
   onDeleteEntry,
   onReindex,
@@ -82,14 +80,12 @@ export function KnowledgeBrowser({
   const [expanded, setExpanded] = useState(false)
   const [query, setQuery] = useState('')
   const [tag, setTag] = useState('')
-  const [currentAssetOnly, setCurrentAssetOnly] = useState(false)
   const [expandedEntryId, setExpandedEntryId] = useState<string | null>(null)
   const hasLoadedRef = useRef(false)
 
   const effectiveLimit = limit > 0 ? limit : PAGE_SIZE
   const currentPage = Math.floor(offset / effectiveLimit) + 1
   const totalPages = Math.max(1, Math.ceil(total / effectiveLimit))
-  const canUseAssetFilter = activeAssetId !== null
   const canGoPrevious = offset > 0 && !loading
   const canGoNext = offset + effectiveLimit < total && !loading
 
@@ -107,12 +103,9 @@ export function KnowledgeBrowser({
     if (compactTag) {
       params.tag = compactTag
     }
-    if (currentAssetOnly && activeAssetId !== null) {
-      params.assetId = activeAssetId
-    }
 
     return params
-  }, [activeAssetId, currentAssetOnly, query, tag])
+  }, [query, tag])
 
   useEffect(() => {
     if (!expanded || hasLoadedRef.current) {
@@ -122,12 +115,6 @@ export function KnowledgeBrowser({
     hasLoadedRef.current = true
     void onSearch({ limit: PAGE_SIZE, offset: 0 })
   }, [expanded, onSearch])
-
-  useEffect(() => {
-    if (activeAssetId === null) {
-      setCurrentAssetOnly(false)
-    }
-  }, [activeAssetId])
 
   const handleSearch = (nextOffset = 0) => {
     void onSearch({ ...baseParams, offset: nextOffset })
@@ -194,16 +181,6 @@ export function KnowledgeBrowser({
               }}
             />
             <div className="flex flex-wrap items-center gap-2">
-              <label className={`inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-[10px] font-black transition ${canUseAssetFilter ? 'cursor-pointer border-ops-border/20 text-ops-muted hover:border-ops-emerald/40 hover:text-ops-emerald' : 'cursor-not-allowed border-ops-border/10 text-ops-muted/40'}`}>
-                <input
-                  type="checkbox"
-                  className="h-3 w-3 accent-ops-emerald"
-                  checked={currentAssetOnly && canUseAssetFilter}
-                  disabled={!canUseAssetFilter}
-                  onChange={(event) => setCurrentAssetOnly(event.target.checked)}
-                />
-                仅当前资产
-              </label>
               <button
                 type="button"
                 className="rounded-xl border border-ops-emerald/30 bg-ops-emerald/10 px-3 py-2 text-[10px] font-black tracking-[0.08em] text-ops-emerald transition hover:bg-ops-emerald/20 active:scale-95 disabled:cursor-not-allowed disabled:opacity-45"

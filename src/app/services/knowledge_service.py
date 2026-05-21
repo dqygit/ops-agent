@@ -161,7 +161,6 @@ class KnowledgeService:
     def search_for_agent(
         self,
         prompt: str,
-        asset_id: int | None = None,
         asset_label: str = "",
         asset_group: str = "",
         conversation_id: str | None = None,
@@ -170,7 +169,6 @@ class KnowledgeService:
         page = self.search(
             KnowledgeSearchFilters(
                 query=query,
-                assetId=asset_id,
                 limit=3,
                 offset=0,
             )
