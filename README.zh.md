@@ -47,7 +47,7 @@
 
 | 层级 | 技术 |
 | --- | --- |
-| 后端 | Python 3.11+、FastAPI、SQLModel、SQLite、Uvicorn |
+| 后端 | Python 3.13+、FastAPI、SQLModel、SQLite、Uvicorn |
 | AI / 工具 | Anthropic SDK、OpenAI SDK、Google GenAI、MCP、LangGraph、Netmiko、Paramiko |
 | 前端 | React 18、TypeScript、Vite、Tailwind CSS、xterm.js |
 | 桌面端 | Tauri 2、Rust |
@@ -59,7 +59,7 @@
 
 - Python 3.13+
 - Node.js 22+
-- pnpm 11+
+- pnpm 10+
 - Rust toolchain，仅桌面端开发或打包需要
 
 ### 安装依赖

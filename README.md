@@ -47,7 +47,7 @@ Configure model -> Select asset -> Open terminal -> Ask AI -> Review plan -> App
 
 | Layer | Stack |
 | --- | --- |
-| Backend | Python 3.11+, FastAPI, SQLModel, SQLite, Uvicorn |
+| Backend | Python 3.13+, FastAPI, SQLModel, SQLite, Uvicorn |
 | AI / Tools | Anthropic SDK, OpenAI SDK, Google GenAI, MCP, LangGraph, Netmiko, Paramiko |
 | Frontend | React 18, TypeScript, Vite, Tailwind CSS, xterm.js |
 | Desktop | Tauri 2, Rust |
