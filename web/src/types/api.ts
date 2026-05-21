@@ -1,4 +1,4 @@
-import type { Asset, AssetGroup, EventItem, RunMode, RuntimeSnapshot, RuntimeSummary, SessionRecord, SSHKey, SkillPackage } from './ops'
+import type { Asset, AssetGroup, EventItem, KnowledgeAssetRef, KnowledgeCommand, KnowledgeDraft, KnowledgeEntry, KnowledgeGenerateDraftResponse, KnowledgeReindexResponse, KnowledgeSearchResponse, KnowledgeSourceConversation, KnowledgeSourceRef, RunMode, RuntimeSnapshot, RuntimeSummary, SessionRecord, SSHKey, SkillPackage } from './ops'
 
 export type { RunMode }
 
@@ -187,4 +187,33 @@ export type RuntimeEventsResponseDto = {
 export type RuntimeApiModels = {
   summary: RuntimeSummary
   snapshot: RuntimeSnapshot
+}
+
+export type KnowledgeCommandDto = KnowledgeCommand
+
+export type KnowledgeAssetRefDto = KnowledgeAssetRef
+
+export type KnowledgeSourceRefDto = KnowledgeSourceRef
+
+export type KnowledgeSourceConversationDto = KnowledgeSourceConversation
+
+export type KnowledgeDraftDto = KnowledgeDraft
+
+export type KnowledgeEntryDto = KnowledgeEntry
+
+export type KnowledgeSearchResponseDto = KnowledgeSearchResponse
+
+export type KnowledgeReindexResponseDto = KnowledgeReindexResponse
+
+export type KnowledgeGenerateDraftResponseDto = KnowledgeGenerateDraftResponse
+
+export type KnowledgeEntryPayloadDto = KnowledgeDraftDto & {
+  sourceConversationId?: string | null
+  sourceConversationTitle?: string
+  sourceConversationUpdatedAt?: string | null
+}
+
+export type KnowledgeGenerateDraftRequestDto = {
+  maxSourceEvents?: number
+  modelName?: string | null
 }

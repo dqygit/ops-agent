@@ -1,7 +1,25 @@
 import { useMemo } from 'react'
 import { PanelCard } from '../layout/PanelCard'
 import type { RunMode } from '../../types/api'
-import type { Asset, ConversationContextStatus, ConversationSummary, EventItem, PlanStep, RuntimeSnapshot, RuntimeSummary } from '../../types/ops'
+import type {
+  Asset,
+  ConversationContextStatus,
+  ConversationSummary,
+  EventItem,
+  KnowledgeDraft,
+  KnowledgeEntry,
+  KnowledgeEntryPayload,
+  KnowledgeGenerateDraftResponse,
+  KnowledgeReindexResponse,
+  KnowledgeSearchParams,
+  KnowledgeSearchResponse,
+  KnowledgeSourceConversation,
+  PlanStep,
+  RuntimeSnapshot,
+  RuntimeSummary,
+} from '../../types/ops'
+import { KnowledgeBrowser } from '../knowledge/KnowledgeBrowser'
+import { KnowledgeDraftReview } from '../knowledge/KnowledgeDraftReview'
 import { ConversationView } from './ConversationView'
 import { PromptInput } from './PromptInput'
 import { useAppearance } from '../../hooks/useAppearance'
@@ -33,6 +51,25 @@ type AssistantPanelProps = {
   selectedAsset: Asset
   contextStatus: ConversationContextStatus | null
   loadError: string | null
+  knowledgeDraft: KnowledgeDraft | null
+  knowledgeDraftSourceConversation: KnowledgeSourceConversation | null
+  knowledgeDraftLoading: boolean
+  knowledgeDraftError: string | null
+  knowledgeSaving: boolean
+  knowledgeEntries: KnowledgeEntry[]
+  knowledgeTotal: number
+  knowledgeLimit: number
+  knowledgeOffset: number
+  knowledgeLoading: boolean
+  knowledgeError: string | null
+  knowledgeReindexing: boolean
+  onKnowledgeSearch: (params?: KnowledgeSearchParams) => Promise<KnowledgeSearchResponse>
+  onKnowledgeDeleteEntry: (entryId: string) => Promise<boolean>
+  onKnowledgeReindex: () => Promise<KnowledgeReindexResponse | null>
+  onKnowledgeGenerateDraft: (conversationId: string, payload?: { maxSourceEvents?: number; modelName?: string | null }) => Promise<KnowledgeGenerateDraftResponse | null>
+  onKnowledgeSaveDraft: (payload?: Partial<KnowledgeEntryPayload>) => Promise<KnowledgeEntry | null>
+  onKnowledgeClearDraft: () => void
+  onKnowledgeDraftChange: (draft: KnowledgeDraft | null) => void
   onModelChange: (model: string) => void
   onRunModeChange: (mode: RunMode) => void
   onPromptChange: (prompt: string) => void
@@ -80,6 +117,25 @@ export function AssistantPanel({
   selectedAsset,
   contextStatus,
   loadError,
+  knowledgeDraft,
+  knowledgeDraftSourceConversation,
+  knowledgeDraftLoading,
+  knowledgeDraftError,
+  knowledgeSaving,
+  knowledgeEntries,
+  knowledgeTotal,
+  knowledgeLimit,
+  knowledgeOffset,
+  knowledgeLoading,
+  knowledgeError,
+  knowledgeReindexing,
+  onKnowledgeSearch,
+  onKnowledgeDeleteEntry,
+  onKnowledgeReindex,
+  onKnowledgeGenerateDraft,
+  onKnowledgeSaveDraft,
+  onKnowledgeClearDraft,
+  onKnowledgeDraftChange,
   onModelChange,
   onRunModeChange,
   onPromptChange,
@@ -145,6 +201,34 @@ export function AssistantPanel({
               </button>
             </div>
           ) : null}
+
+          <KnowledgeDraftReview
+            conversationId={activeConversationId}
+            selectedModel={selectedModel}
+            draft={knowledgeDraft}
+            draftSourceConversation={knowledgeDraftSourceConversation}
+            draftLoading={knowledgeDraftLoading}
+            draftError={knowledgeDraftError}
+            saving={knowledgeSaving}
+            onGenerateDraft={onKnowledgeGenerateDraft}
+            onSaveDraft={onKnowledgeSaveDraft}
+            onClearDraft={onKnowledgeClearDraft}
+            onDraftChange={onKnowledgeDraftChange}
+          />
+
+          <KnowledgeBrowser
+            entries={knowledgeEntries}
+            total={knowledgeTotal}
+            limit={knowledgeLimit}
+            offset={knowledgeOffset}
+            loading={knowledgeLoading}
+            error={knowledgeError}
+            reindexing={knowledgeReindexing}
+            activeAssetId={selectedAsset.id}
+            onSearch={onKnowledgeSearch}
+            onDeleteEntry={onKnowledgeDeleteEntry}
+            onReindex={onKnowledgeReindex}
+          />
 
           <ConversationView
             events={events}
