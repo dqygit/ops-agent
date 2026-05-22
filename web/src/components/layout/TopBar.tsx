@@ -3,9 +3,10 @@ import { useAppearance } from '../../hooks/useAppearance'
 
 type TopBarProps = {
   onOpenSettings?: () => void
+  onOpenKnowledge?: () => void
 }
 
-export function TopBar({ onOpenSettings }: TopBarProps) {
+export function TopBar({ onOpenSettings, onOpenKnowledge }: TopBarProps) {
   const { t } = useAppearance()
 
   return (
@@ -22,6 +23,18 @@ export function TopBar({ onOpenSettings }: TopBarProps) {
         </div>
       </div>
       <div className="flex items-center gap-6" aria-label="System status">
+        <button
+          type="button"
+          onClick={onOpenKnowledge}
+          className="button inline-flex h-8 items-center gap-2 px-3 text-[10px] font-black tracking-[0.12em] active:scale-95"
+          aria-label="打开全局知识库"
+        >
+          <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+            <path d="M4 4.5A2.5 2.5 0 0 1 6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5z" />
+          </svg>
+          <span className="hidden sm:inline">知识库</span>
+        </button>
         <button type="button" onClick={onOpenSettings} className="button flex h-8 w-8 items-center justify-center p-0 active:scale-95" aria-label={t('topBar.openSettings')}>
           <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z" />

@@ -310,6 +310,8 @@ export function useAgentRun({
               contextPercent: event.contextPercent ?? currentStatus?.contextPercent ?? 0,
               contextStatus: event.contextStatus ?? currentStatus?.contextStatus ?? 'normal',
               tokenUsage: event.tokenUsage ?? currentStatus?.tokenUsage,
+              knowledgeEntriesInjected: event.knowledgeEntriesInjected ?? currentStatus?.knowledgeEntriesInjected,
+              knowledgeContextChars: event.knowledgeContextChars ?? currentStatus?.knowledgeContextChars,
             }))
           }
           continue

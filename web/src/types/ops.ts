@@ -409,6 +409,8 @@ export type ConversationContextStatus = {
   contextPercent: number
   contextStatus: 'normal' | 'warning' | 'critical'
   tokenUsage?: ConversationTokenUsage
+  knowledgeEntriesInjected?: number
+  knowledgeContextChars?: number
 }
 
 export type ContextStatusEvent = Partial<ConversationContextStatus> & {
