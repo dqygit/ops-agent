@@ -81,6 +81,36 @@ class ModelService:
             title = title[:16]
         return title or self._fallback_conversation_title(prompt)
 
+    def generate_knowledge_draft(self, source_document: str, *, model_name: str | None = None) -> str:
+        config = self.load_settings()
+        if model_name and model_name != config.model_name:
+            config = config.model_copy(update={"model_name": model_name})
+        provider = self._provider_client or build_llm_provider(config)
+        max_tokens = config.max_tokens if isinstance(config.max_tokens, int) and config.max_tokens > 0 else 2048
+        request = LLMCompletionRequest(
+            messages=[
+                LLMMessage(
+                    role="system",
+                    content=(
+                        "You convert operations conversations into reusable knowledge drafts. "
+                        "Return strict JSON only: one parseable JSON object and no markdown, comments, or extra text. "
+                        "The object must contain these fields: title, summary, problem, diagnosis, "
+                        "resolution, commands, assets, tags, sources, redactionWarnings. "
+                        "commands must be an array of objects with command, purpose, outcome. "
+                        "assets must be an array of objects with assetId and label. "
+                        "sources must be an array of objects with conversationId, eventId, eventIndex, "
+                        "eventType, quote, relevance. Use empty strings or empty arrays when unknown."
+                    ),
+                ),
+                LLMMessage(role="user", content=source_document.strip()),
+            ],
+            temperature=0.1,
+            max_tokens=min(max_tokens, 2048),
+            json_mode=True,
+        )
+        response = provider.complete(config=config, request=request)
+        return (response.text or "").strip()
+
     def _fallback_conversation_title(self, prompt: str) -> str:
         text = prompt.strip()
         text = re.sub(r"^(请|麻烦|帮我|你帮我|请帮我|能不能|可以|是否)+", "", text)

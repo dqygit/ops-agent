@@ -46,3 +46,34 @@ export { createSSHKey, deleteSSHKey, getSSHKeys, mapSSHKey, updateSSHKey } from 
 export type { SSHKeyPayload } from './sshKeys'
 export { getSerialPorts } from './system'
 export type { SerialPort } from './system'
+export {
+  createKnowledgeEntry,
+  deleteKnowledgeEntry,
+  generateKnowledgeDraft,
+  getKnowledgeEntry,
+  mapKnowledgeAssetRef,
+  mapKnowledgeCommand,
+  mapKnowledgeDraft,
+  mapKnowledgeEntry,
+  mapKnowledgeGenerateDraftResponse,
+  mapKnowledgeReindexResponse,
+  mapKnowledgeSearchResponse,
+  mapKnowledgeSourceConversation,
+  mapKnowledgeSourceRef,
+  reindexKnowledgeEntries,
+  searchKnowledgeEntries,
+  updateKnowledgeEntry,
+} from './knowledge'
+export type {
+  KnowledgeAssetRef,
+  KnowledgeCommand,
+  KnowledgeDraft,
+  KnowledgeEntry,
+  KnowledgeEntryPayload,
+  KnowledgeGenerateDraftResponse,
+  KnowledgeReindexResponse,
+  KnowledgeSearchParams,
+  KnowledgeSearchResponse,
+  KnowledgeSourceConversation,
+  KnowledgeSourceRef,
+} from '../types/ops'

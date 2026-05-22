@@ -11,7 +11,7 @@ from app.core.connectors.device_profiles import (
     select_execution_profile,
 )
 from app.core.connectors.execution_context import build_asset_summary, build_device_context, infer_os_type
-from app.core.llm.types import LLMTokenUsage
+from app.core.llm.types import LLMMessage, LLMTokenUsage
 from app.core.loop.loop_state import LoopContext, LoopMode, LoopState
 from app.core.loop.runtime_manager import LoopRuntimeManager, new_runtime_id
 from app.core.tool.execute_command import ExecuteCommandHandler
@@ -198,6 +198,23 @@ class ConsoleAppService:
     def _context_status_for_percent(self, context_percent: int):
         return self._context_manager().status_for_percent(context_percent)
 
+    def _append_knowledge_context(
+        self,
+        conversation_history: list[LLMMessage],
+        knowledge_context: str,
+    ) -> list[LLMMessage]:
+        if not knowledge_context.strip():
+            return conversation_history
+        return [
+            *conversation_history,
+            LLMMessage(
+                role="system",
+                content=knowledge_context,
+                cache_segment="runtime_context",
+                cache_status="volatile",
+            ),
+        ]
+
     def build_orchestrator(self, terminal_service: TerminalService) -> TaskOrchestrator:
         return TaskOrchestrator(self, terminal_service)
 
@@ -235,6 +252,40 @@ class ConsoleAppService:
 
         context_result = self._prepare_conversation_context(conversation_id, model_config)
         conversation_history = context_result.prepared_messages
+        knowledge_entries_injected = 0
+        knowledge_context_chars = 0
+        try:
+            from app.services.knowledge_factory import get_knowledge_service
+
+            asset_label = str(getattr(asset, "name", "") or "")
+            asset_group = str(
+                getattr(asset, "group", "")
+                or getattr(asset, "group_name", "")
+                or ""
+            )
+            knowledge_service = get_knowledge_service()
+            knowledge_entries = knowledge_service.search_for_agent(
+                prompt,
+                asset_id=asset_id,
+                asset_label=asset_label,
+                asset_group=asset_group,
+                conversation_id=conversation_id,
+            )
+            knowledge_context = knowledge_service.format_agent_context(knowledge_entries)
+            if knowledge_context.strip():
+                conversation_history = self._append_knowledge_context(
+                    conversation_history,
+                    knowledge_context,
+                )
+                knowledge_entries_injected = len(knowledge_entries)
+                knowledge_context_chars = len(knowledge_context)
+        except Exception:
+            logger.warning(
+                "Failed to load knowledge context conversation_id=%s asset_id=%s",
+                conversation_id,
+                asset_id,
+                exc_info=True,
+            )
 
         runtime_id = new_runtime_id()
         skill_packages = self._skill_service.list_skills()
@@ -315,6 +366,8 @@ class ConsoleAppService:
             "fitStatus": context_result.fit_status,
             "summaryRevision": context_result.summary_revision,
             "sourceConversationRevision": context_result.source_conversation_revision,
+            "knowledgeEntriesInjected": knowledge_entries_injected,
+            "knowledgeContextChars": knowledge_context_chars,
         }
 
         for event in initial_runtime_events:

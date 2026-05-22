@@ -8,6 +8,7 @@ from app.api.assets import router as assets_router
 from app.api.approval import router as approval_router
 from app.api.groups import router as groups_router
 from app.api.health import router as health_router
+from app.api.knowledge import router as knowledge_router
 from app.api.mcp import router as mcp_router
 from app.api.models import router as models_router
 from app.api.console import router as console_router
@@ -49,6 +50,7 @@ app.include_router(terminal_router)
 app.include_router(groups_router)
 app.include_router(console_router)
 app.include_router(conversations_router)
+app.include_router(knowledge_router)
 app.include_router(skills_router)
 app.include_router(ssh_keys_router)
 app.include_router(system_router)
@@ -61,6 +63,7 @@ __all__ = [
     "get_terminal_service",
     "groups_router",
     "health_router",
+    "knowledge_router",
     "console_router",
     "conversations_router",
     "lifespan",

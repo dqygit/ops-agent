@@ -14,6 +14,7 @@ import { useConversationState } from './hooks/console/useConversationState'
 import { useConsolePageState } from './hooks/console/useConsolePageState'
 import { useTerminalSessions } from './hooks/console/useTerminalSessions'
 import { useAppearance } from './hooks/useAppearance'
+import { useKnowledgeBase } from './hooks/useKnowledgeBase'
 
 export function App() {
   const { t } = useAppearance()
@@ -130,6 +131,28 @@ export function App() {
     setLoadError,
     setContextStatus,
   })
+
+  const {
+    entries: knowledgeEntries,
+    total: knowledgeTotal,
+    limit: knowledgeLimit,
+    offset: knowledgeOffset,
+    loading: knowledgeLoading,
+    error: knowledgeError,
+    draft: knowledgeDraft,
+    draftSourceConversation: knowledgeDraftSourceConversation,
+    draftLoading: knowledgeDraftLoading,
+    draftError: knowledgeDraftError,
+    saving: knowledgeSaving,
+    reindexing: knowledgeReindexing,
+    search: searchKnowledge,
+    generateDraft: generateKnowledgeDraft,
+    clearDraft: clearKnowledgeDraft,
+    saveDraft: saveKnowledgeDraft,
+    deleteEntry: deleteKnowledgeEntry,
+    reindex: reindexKnowledge,
+    setDraft: setKnowledgeDraft,
+  } = useKnowledgeBase()
 
   useEffect(() => {
     if (!isBootstrapLoaded || loadError || isConsoleInitialized) {
@@ -257,6 +280,25 @@ export function App() {
                 selectedAsset={selectedAsset}
                 contextStatus={contextStatus}
                 loadError={loadError}
+                knowledgeDraft={knowledgeDraft}
+                knowledgeDraftSourceConversation={knowledgeDraftSourceConversation}
+                knowledgeDraftLoading={knowledgeDraftLoading}
+                knowledgeDraftError={knowledgeDraftError}
+                knowledgeSaving={knowledgeSaving}
+                knowledgeEntries={knowledgeEntries}
+                knowledgeTotal={knowledgeTotal}
+                knowledgeLimit={knowledgeLimit}
+                knowledgeOffset={knowledgeOffset}
+                knowledgeLoading={knowledgeLoading}
+                knowledgeError={knowledgeError}
+                knowledgeReindexing={knowledgeReindexing}
+                onKnowledgeSearch={searchKnowledge}
+                onKnowledgeDeleteEntry={deleteKnowledgeEntry}
+                onKnowledgeReindex={reindexKnowledge}
+                onKnowledgeGenerateDraft={generateKnowledgeDraft}
+                onKnowledgeSaveDraft={saveKnowledgeDraft}
+                onKnowledgeClearDraft={clearKnowledgeDraft}
+                onKnowledgeDraftChange={setKnowledgeDraft}
                 onModelChange={setSelectedModel}
                 onRunModeChange={setRunMode}
                 onPromptChange={setPrompt}
