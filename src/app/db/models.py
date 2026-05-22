@@ -18,6 +18,7 @@ class Asset(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     group_id: int | None = None
     ssh_key_id: int | None = None
+    proxy_asset_id: int | None = None
     name: str
     asset_type: str
     host: str = ""

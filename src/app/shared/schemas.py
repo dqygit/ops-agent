@@ -10,6 +10,7 @@ class AssetCreate(BaseModel):
     asset_type: AssetType
     group_id: int | None = None
     ssh_key_id: int | None = None
+    proxy_asset_id: int | None = None
     host: str = ""
     port: int = 22
     username: str = ""
@@ -22,10 +23,14 @@ class AssetCreate(BaseModel):
     @model_validator(mode="after")
     def validate_connection_fields(self):
         if self.asset_type is AssetType.LOCAL_TERMINAL:
+            if self.proxy_asset_id is not None:
+                raise ValueError("proxy_asset_id is not supported for local terminal assets")
             return self
         if not self.host:
             raise ValueError("host is required for remote assets")
         if self.asset_type is AssetType.SERIAL:
+            if self.proxy_asset_id is not None:
+                raise ValueError("proxy_asset_id is not supported for serial assets")
             if self.port <= 0 or self.port == 22:
                 raise ValueError("port must be an explicit positive baud rate for serial assets")
             return self

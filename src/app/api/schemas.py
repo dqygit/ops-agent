@@ -27,6 +27,7 @@ class AssetView(BaseModel):
     id: int
     group_id: int | None = None
     ssh_key_id: int | None = None
+    proxy_asset_id: int | None = None
     name: str
     asset_type: str
     host: str

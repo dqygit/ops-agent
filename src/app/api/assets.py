@@ -3,7 +3,18 @@ from sqlmodel import Session
 
 from app.api.schemas import AssetView
 from app.db.session import get_session
-from app.services.asset_service import GroupNotFoundError, SSHKeyNotFoundError, create_asset_record, delete_asset_record, get_asset_record, list_asset_records, update_asset_record
+from app.services.asset_service import (
+    GroupNotFoundError,
+    ProxyAssetInUseError,
+    ProxyAssetInvalidError,
+    ProxyAssetNotFoundError,
+    SSHKeyNotFoundError,
+    create_asset_record,
+    delete_asset_record,
+    get_asset_record,
+    list_asset_records,
+    update_asset_record,
+)
 from app.shared.schemas import AssetCreate
 
 router = APIRouter()
@@ -14,6 +25,7 @@ def to_asset_view(asset) -> AssetView:
         id=asset.id or 0,
         group_id=asset.group_id,
         ssh_key_id=asset.ssh_key_id,
+        proxy_asset_id=asset.proxy_asset_id,
         name=asset.name,
         asset_type=asset.asset_type,
         host=asset.host,
@@ -47,6 +59,10 @@ def create_asset(payload: AssetCreate, session: Session = Depends(get_session)) 
         raise HTTPException(status_code=404, detail="Group not found") from exc
     except SSHKeyNotFoundError as exc:
         raise HTTPException(status_code=404, detail="SSH key not found") from exc
+    except ProxyAssetNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Proxy asset not found") from exc
+    except ProxyAssetInvalidError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     return to_asset_view(asset)
 
 
@@ -58,6 +74,10 @@ def update_asset(asset_id: int, payload: AssetCreate, session: Session = Depends
         raise HTTPException(status_code=404, detail="Group not found") from exc
     except SSHKeyNotFoundError as exc:
         raise HTTPException(status_code=404, detail="SSH key not found") from exc
+    except ProxyAssetNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Proxy asset not found") from exc
+    except ProxyAssetInvalidError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     if asset is None:
         raise HTTPException(status_code=404, detail="Asset not found")
     return to_asset_view(asset)
@@ -65,7 +85,10 @@ def update_asset(asset_id: int, payload: AssetCreate, session: Session = Depends
 
 @router.delete("/api/assets/{asset_id}", status_code=204)
 def delete_asset(asset_id: int, session: Session = Depends(get_session)) -> Response:
-    deleted = delete_asset_record(session, asset_id)
+    try:
+        deleted = delete_asset_record(session, asset_id)
+    except ProxyAssetInUseError as exc:
+        raise HTTPException(status_code=409, detail=f"Proxy asset is used by {exc.dependent_count} asset(s)") from exc
     if not deleted:
         raise HTTPException(status_code=404, detail="Asset not found")
     return Response(status_code=204)

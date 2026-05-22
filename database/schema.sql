@@ -12,18 +12,20 @@ CREATE TABLE IF NOT EXISTS assets (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     group_id INTEGER,
     ssh_key_id INTEGER,
+    proxy_asset_id INTEGER,
     name TEXT NOT NULL,
-    asset_type TEXT NOT NULL CHECK (asset_type IN ('linux', 'local_terminal', 'huawei', 'network', 'cisco', 'juniper', 'h3c')),
+    asset_type TEXT NOT NULL CHECK (asset_type IN ('linux', 'local_terminal', 'huawei', 'network', 'cisco', 'juniper', 'h3c', 'serial')),
     vendor TEXT NOT NULL DEFAULT '',
     host TEXT NOT NULL,
-    port INTEGER NOT NULL DEFAULT 22 CHECK (port > 0 AND port <= 65535),
+    port INTEGER NOT NULL DEFAULT 22 CHECK (port > 0),
     username TEXT NOT NULL,
     auth_type TEXT NOT NULL DEFAULT '' CHECK (auth_type IN ('', 'password', 'key', 'password_and_key')),
     tags TEXT NOT NULL DEFAULT '',
     description TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (group_id) REFERENCES asset_groups(id) ON DELETE SET NULL
+    FOREIGN KEY (group_id) REFERENCES asset_groups(id) ON DELETE SET NULL,
+    FOREIGN KEY (proxy_asset_id) REFERENCES assets(id) ON DELETE RESTRICT
 );
 
 CREATE TABLE IF NOT EXISTS ssh_keys (

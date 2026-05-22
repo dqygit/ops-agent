@@ -12,6 +12,12 @@ from app.core.connectors.device_profiles import (
 )
 from app.core.connectors.execution import ExecutionContext, ExecutionEvent, ExecutionResult
 from app.core.connectors.network_cli import analyze_transcript, strip_pager_markers
+from app.core.connectors.ssh_proxy import (
+    SSHProxyChannelOpenError,
+    SSHProxyConfig,
+    SSHProxyConnectionError,
+    SSHTargetConnectionThroughProxyError,
+)
 
 
 class NetworkConnector:
@@ -24,11 +30,32 @@ class NetworkConnector:
         self.connection: Any | None = None
         self.ssh_client: Any | None = None
         self.channel: Any | None = None
+        self.proxy_client: Any | None = None
+        self.proxy_channel: Any | None = None
         self._execution_events: dict[str, list[ExecutionEvent]] = {}
         self._execution_results: dict[str, ExecutionResult] = {}
 
     def connect(self) -> None:
-        self.connection = ConnectHandler(**self.device_params)
+        proxy_config = self.ssh_params.get("proxy_config")
+        if proxy_config is None:
+            self.connection = ConnectHandler(**self.device_params)
+            return
+
+        channel = self._open_proxy_channel(cast(SSHProxyConfig, proxy_config))
+        try:
+            self.connection = ConnectHandler(**{**self.device_params, "sock": channel})
+        except TypeError as exc:
+            self.close()
+            raise SSHTargetConnectionThroughProxyError(
+                "Netmiko driver does not accept a proxy socket for this network device type."
+            ) from exc
+        except Exception as exc:
+            host = self.ssh_params.get("host")
+            port = self.ssh_params.get("port", 22)
+            self.close()
+            raise SSHTargetConnectionThroughProxyError(
+                f"Network device connection to {host}:{port} failed through proxy asset {proxy_config.name}."
+            ) from exc
 
     def run_command(self, command: str) -> str:
         if self.connection is None:
@@ -139,6 +166,14 @@ class NetworkConnector:
         except Exception:
             pass
 
+    def _close_proxy(self) -> None:
+        if self.proxy_channel is not None:
+            self.proxy_channel.close()
+            self.proxy_channel = None
+        if self.proxy_client is not None:
+            self.proxy_client.close()
+            self.proxy_client = None
+
     def close(self) -> None:
         if self.channel is not None:
             self.channel.close()
@@ -149,10 +184,35 @@ class NetworkConnector:
         if self.connection is not None:
             self.connection.disconnect()
             self.connection = None
+        self._close_proxy()
         self._execution_events.clear()
         self._execution_results.clear()
 
     def _connect_ssh(self) -> None:
+        proxy_config = self.ssh_params.get("proxy_config")
+        narrowed_proxy_config: SSHProxyConfig | None = None
+        sock = None
+        if proxy_config is not None:
+            if not isinstance(proxy_config, SSHProxyConfig):
+                raise ValueError("SSH proxy configuration is invalid")
+            narrowed_proxy_config = proxy_config
+            sock = self._open_proxy_channel(narrowed_proxy_config)
+
+        client = self._create_ssh_client()
+        try:
+            client.connect(**self._build_paramiko_connect_kwargs(sock=sock))
+            self.channel = client.invoke_shell(term="xterm-256color")
+        except Exception as exc:
+            client.close()
+            if narrowed_proxy_config is not None:
+                self.close()
+                raise SSHTargetConnectionThroughProxyError(
+                    f"Network device connection to {self.ssh_params.get('host')}:{self.ssh_params.get('port', 22)} failed through proxy asset {narrowed_proxy_config.name}."
+                ) from exc
+            raise
+        self.ssh_client = client
+
+    def _create_ssh_client(self) -> Any:
         import paramiko
 
         client = paramiko.SSHClient()
@@ -161,8 +221,11 @@ class NetworkConnector:
         except Exception:
             pass
         client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        return client
+
+    def _build_paramiko_connect_kwargs(self, *, sock: Any | None = None) -> dict[str, object]:
         connect_timeout = float(self.device_params.get("conn_timeout", 15))
-        connect_kwargs = {
+        connect_kwargs: dict[str, object] = {
             "hostname": self.ssh_params.get("host"),
             "port": self.ssh_params.get("port", 22),
             "username": self.ssh_params.get("username"),
@@ -173,6 +236,8 @@ class NetworkConnector:
             "auth_timeout": connect_timeout,
             "channel_timeout": connect_timeout,
         }
+        if sock is not None:
+            connect_kwargs["sock"] = sock
         private_key = self.ssh_params.get("private_key")
         password = self.ssh_params.get("password")
         passphrase = self.ssh_params.get("passphrase")
@@ -186,9 +251,75 @@ class NetworkConnector:
             connect_kwargs["password"] = password
         else:
             raise ValueError("Network device authentication material is required")
-        client.connect(**connect_kwargs)
-        self.ssh_client = client
-        self.channel = client.invoke_shell(term="xterm-256color")
+        return connect_kwargs
+
+    def _open_proxy_channel(self, proxy_config: SSHProxyConfig) -> Any:
+        proxy_client = self._create_ssh_client()
+        proxy_channel = None
+        try:
+            proxy_client.connect(**self._build_proxy_connect_kwargs(proxy_config))
+        except Exception as exc:
+            proxy_client.close()
+            raise SSHProxyConnectionError(
+                f"Failed to connect to SSH proxy asset {proxy_config.name} ({proxy_config.host}:{proxy_config.port})."
+            ) from exc
+
+        transport = proxy_client.get_transport()
+        if transport is None:
+            proxy_client.close()
+            raise SSHProxyChannelOpenError(
+                f"SSH proxy asset {proxy_config.name} did not provide an SSH transport."
+            )
+
+        host = self.ssh_params.get("host")
+        port = self.ssh_params.get("port", 22)
+        try:
+            proxy_channel = transport.open_channel(
+                "direct-tcpip",
+                (host, port),
+                ("127.0.0.1", 0),
+            )
+        except Exception as exc:
+            proxy_client.close()
+            raise SSHProxyChannelOpenError(
+                f"SSH proxy asset {proxy_config.name} could not open a channel to {host}:{port}."
+            ) from exc
+
+        if proxy_channel is None:
+            proxy_client.close()
+            raise SSHProxyChannelOpenError(
+                f"SSH proxy asset {proxy_config.name} could not open a channel to {host}:{port}."
+            )
+
+        self._close_proxy()
+        self.proxy_client = proxy_client
+        self.proxy_channel = proxy_channel
+        return proxy_channel
+
+    def _build_proxy_connect_kwargs(self, proxy_config: SSHProxyConfig) -> dict[str, object]:
+        connect_timeout = float(self.device_params.get("conn_timeout", 15))
+        connect_kwargs: dict[str, object] = {
+            "hostname": proxy_config.host,
+            "port": proxy_config.port,
+            "username": proxy_config.username,
+            "allow_agent": False,
+            "look_for_keys": False,
+            "timeout": connect_timeout,
+            "banner_timeout": connect_timeout,
+            "auth_timeout": connect_timeout,
+            "channel_timeout": connect_timeout,
+        }
+        if proxy_config.private_key:
+            connect_kwargs["pkey"] = self._load_private_key(proxy_config.private_key, proxy_config.passphrase)
+            if proxy_config.passphrase:
+                connect_kwargs["passphrase"] = proxy_config.passphrase
+            if proxy_config.password is not None:
+                connect_kwargs["password"] = proxy_config.password
+        elif proxy_config.password is not None:
+            connect_kwargs["password"] = proxy_config.password
+        else:
+            raise ValueError("SSH proxy authentication material is required")
+        return connect_kwargs
 
     def _load_private_key(self, private_key: str, passphrase: str | None) -> object:
         import paramiko

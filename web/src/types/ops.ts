@@ -12,6 +12,7 @@ export type Asset = {
   id: number
   groupId: number | null
   sshKeyId: number | null
+  proxyAssetId: number | null
   name: string
   assetType: AssetType
   host: string

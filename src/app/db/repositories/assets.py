@@ -55,6 +55,10 @@ def list_assets(session: Session) -> list[Asset]:
     return list(session.exec(select(Asset).order_by(desc(cast(Any, Asset.id)))).all())
 
 
+def list_assets_by_proxy_asset_id(session: Session, proxy_asset_id: int) -> list[Asset]:
+    return list(session.exec(select(Asset).where(col(Asset.proxy_asset_id) == proxy_asset_id)).all())
+
+
 def get_asset(session: Session, asset_id: int) -> Asset | None:
     return session.exec(select(Asset).where(Asset.id == asset_id)).first()
 
